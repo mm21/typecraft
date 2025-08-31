@@ -1,0 +1,37 @@
+[project]
+authors = [
+  {email = "mm21.dev@gmail.com", name = "mm21"}
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed"
+]
+description = "Toolkit for day-to-day package development"
+name = "packagekit"
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+version = "0.1.0"
+
+[project.urls]
+homepage = "https://github.com/mm21/packagekit"
+
+[build-system]
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0"]
+
+[tool.poetry]
+packages = [{include = "packagekit"}]
+
+[tool.poetry.dependencies]
+
+[tool.poetry.group.dev.dependencies]
+
+[tool.poetry.extras]
