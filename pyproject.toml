@@ -23,6 +23,8 @@ version = "0.1.0"
 [project.urls]
 homepage = "https://github.com/mm21/packagekit"
 
+[project.scripts]
+
 [build-system]
 build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core>=1.0.0"]
@@ -33,5 +35,25 @@ packages = [{include = "packagekit"}]
 [tool.poetry.dependencies]
 
 [tool.poetry.group.dev.dependencies]
+autoflake = "^2.3.1"
+black = "^25.1.0"
+doit = "^0.36.0"
+isort = "^6.0.1"
+pytest = "^8.4.2"
+toml-sort = "^0.24.2"
 
 [tool.poetry.extras]
+
+[tool.autoflake]
+remove_all_unused_imports = true
+remove_unused_variables = true
+
+[tool.black]
+target-version = ["py312", "py313"]
+
+[tool.isort]
+profile = "black"
+
+[tool.tomlsort]
+no_sort_tables = true
+sort_table_keys = true
