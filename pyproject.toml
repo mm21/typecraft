@@ -67,3 +67,7 @@ profile = "black"
 [tool.tomlsort]
 no_sort_tables = true
 sort_table_keys = true
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib -s -v -rA"
+testpaths = "test"
