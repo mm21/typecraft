@@ -2,17 +2,17 @@ from typing import Any, TypeVar, get_args, get_origin, overload
 
 
 @overload
-def extract_type_param[BaseT](cls, base_cls: type[BaseT]) -> type | None: ...
+def extract_type_param[BaseT](cls: type, base_cls: type[BaseT]) -> type | None: ...
 
 
 @overload
 def extract_type_param[BaseT, ParamT](
-    cls, base_cls: type[BaseT], param_base_cls: type[ParamT]
+    cls: type, base_cls: type[BaseT], param_base_cls: type[ParamT]
 ) -> type[ParamT] | None: ...
 
 
 def extract_type_param[BaseT, ParamT](
-    cls, base_cls: type[BaseT], param_base_cls: type[ParamT] | None = None
+    cls: type, base_cls: type[BaseT], param_base_cls: type[ParamT] | None = None
 ) -> type[ParamT] | type | None:
     """
     Extract the concrete type param from the given base class. If `base_cls` can be
