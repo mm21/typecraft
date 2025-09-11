@@ -41,9 +41,6 @@ class BaseTomlElement[TomlkitT](ABC):
     def __init_subclass__(cls):
         super().__init_subclass__()
 
-        if hasattr(cls, "_tomlkit_cls"):
-            return
-
         if tomlkit_cls := extract_type_param(cls, BaseTomlElement):
             cls._tomlkit_cls = tomlkit_cls
 
