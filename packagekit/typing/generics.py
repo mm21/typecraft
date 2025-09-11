@@ -1,9 +1,19 @@
-from typing import TypeVar, get_args, get_origin
+from typing import TypeVar, get_args, get_origin, overload
+
+
+@overload
+def extract_type_param[BaseT](cls, base_cls: type[BaseT]) -> type | None: ...
+
+
+@overload
+def extract_type_param[BaseT, ParamT](
+    cls, base_cls: type[BaseT], param_base_cls: type[ParamT]
+) -> type[ParamT] | None: ...
 
 
 def extract_type_param[BaseT, ParamT](
     cls, base_cls: type[BaseT], param_base_cls: type[ParamT] | None = None
-) -> type[ParamT] | None:
+) -> type[ParamT] | type | None:
     """
     Extract the concrete type param with the given class. If `base_cls` can be
     parameterized with multiple types, it's recommend to also pass `param_base_cls`
