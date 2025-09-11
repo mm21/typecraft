@@ -15,7 +15,7 @@ import tomlkit
 import tomlkit.items
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
-from ..typing.generics import extract_type_param
+from ..typing.generics import get_type_param
 
 type PrimitiveType = str | int | float | bool | Date | Time | DateTime
 """
@@ -28,21 +28,10 @@ class BaseTomlElement[TomlkitT](ABC):
     Abstracts a TOML element corresponding to a type from `tomlkit`.
     """
 
-    _tomlkit_cls: type[TomlkitT]
-    """
-    Corresponding class from `tomlkit`.
-    """
-
     _tomlkit_obj: TomlkitT
     """
     Corresponding object from `tomlkit`, either extracted upon load or newly created.
     """
-
-    def __init_subclass__(cls):
-        super().__init_subclass__()
-
-        if tomlkit_cls := extract_type_param(cls, BaseTomlElement):
-            cls._tomlkit_cls = tomlkit_cls
 
     @classmethod
     @abstractmethod
@@ -53,6 +42,15 @@ class BaseTomlElement[TomlkitT](ABC):
         obj = cls._coerce(tomlkit_obj)
         obj._tomlkit_obj = tomlkit_obj
         return obj
+
+    @classmethod
+    def _get_tomlkit_cls(cls) -> type[TomlkitT]:
+        """
+        Get corresponding class from `tomlkit`.
+        """
+        tomlkit_cls = get_type_param(cls, BaseTomlElement)
+        assert tomlkit_cls, f"Could not get type param for {cls}"
+        return tomlkit_cls
 
 
 class BasePrimitiveArray[ItemT: PrimitiveType](
@@ -122,7 +120,7 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
 
         # coerce value if type is element
         if issubclass(field_type, BaseTomlElement):
-            assert isinstance(value, field_type._tomlkit_cls)  # type: ignore
+            assert isinstance(value, field_type._get_tomlkit_cls())
             return field_type._create(value)
 
         # TODO: sanity check: ensure field is primitive
