@@ -5,21 +5,24 @@ Layer to map TOML files (via `tomlkit`) to/from Pydantic models.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
+from functools import cached_property
 from pathlib import Path
-from typing import Any, Mapping, Self, get_origin
+from typing import Any, Mapping, Self, get_args, get_origin
 
 import tomlkit
 import tomlkit.items
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic.fields import FieldInfo
 
 from ..typing.generics import get_type_param
 
-type PrimitiveType = str | int | float | bool | Date | Time | DateTime
+type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInlineTable
 """
-Primitive type which can be used as a container field.
+Types which can be used as fields of array items.
 """
 
 
@@ -33,14 +36,29 @@ class BaseTomlElement[TomlkitT](ABC):
     Corresponding object from `tomlkit`, either extracted upon load or newly created.
     """
 
-    @classmethod
-    @abstractmethod
-    def _coerce(cls, tomlkit_obj: TomlkitT) -> Self: ...
+    _field_info: FieldInfo | None
+    """
+    Field info, only applicable if element is nested (i.e. not a document).
+    """
 
     @classmethod
-    def _create(cls, tomlkit_obj: TomlkitT) -> Self:
-        obj = cls._coerce(tomlkit_obj)
+    @abstractmethod
+    def _coerce(
+        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+    ) -> Self: ...
+
+    @classmethod
+    def _from_tomlkit_obj(
+        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+    ) -> Self:
+        tomlkit_cls = cls._get_tomlkit_cls()
+        assert isinstance(
+            tomlkit_obj, tomlkit_cls
+        ), f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
+
+        obj = cls._coerce(tomlkit_obj, field_info=field_info)
         obj._tomlkit_obj = tomlkit_obj
+        obj._field_info = field_info
         return obj
 
     @classmethod
@@ -52,39 +70,7 @@ class BaseTomlElement[TomlkitT](ABC):
         assert tomlkit_cls, f"Could not get type param for {cls}"
         return tomlkit_cls
 
-
-class BasePrimitiveArray[ItemT: PrimitiveType](
-    list[ItemT], BaseTomlElement[tomlkit.items.Array]
-):
-    """
-    Base array of primitive types.
-    """
-
-    _default_multiline: bool | None = None
-    """
-    Default value for `tomlkit`'s multiline state for this array, only applicable if
-    newly created.
-    """
-
-    @classmethod
-    def _coerce(cls, tomlkit_obj: tomlkit.items.Array) -> Self:
-        return cls(tomlkit_obj.value)
-
-
-class PrimitiveArray[ItemT: PrimitiveType](BasePrimitiveArray[ItemT]):
-    """
-    Array of primitive types, using the multiline state from the underlying `tomlkit`
-    object.
-    """
-
-
-class MultilinePrimitiveArray[ItemT: PrimitiveType](PrimitiveArray[ItemT]):
-    """
-    Array of primitive types, ensuring the multiline state from the underlying `tomlkit`
-    object is enabled.
-    """
-
-    _default_multiline = True
+    # TODO: method to get tomlkit_obj, creating it if it doesn't exist
 
 
 # TODO: validate all fields upon class creation
@@ -105,30 +91,24 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
     def validate_field(cls, value: Any, info: ValidationInfo) -> Any:
         assert info.field_name
 
-        field = cls.model_fields.get(info.field_name)
-        assert field
+        field_info = cls.model_fields.get(info.field_name)
+        assert field_info
 
-        annotation = field.annotation
+        annotation = field_info.annotation
         assert annotation
 
-        origin = get_origin(annotation)
-
-        if origin:
-            field_type = origin
-        else:
-            field_type = annotation
+        field_cls = get_origin(annotation) or annotation
 
         # coerce value if type is element
-        if issubclass(field_type, BaseTomlElement):
-            assert isinstance(value, field_type._get_tomlkit_cls())
-            return field_type._create(value)
-
-        # TODO: sanity check: ensure field is primitive
+        if issubclass(field_cls, BaseTomlElement):
+            return field_cls._from_tomlkit_obj(value, field_info)
 
         return value
 
     @classmethod
-    def _coerce(cls, tomlkit_obj: TomlkitT) -> Self:
+    def _coerce(
+        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+    ) -> Self:
         """
         Extract model fields from container and return instance of this model with
         the original container stored.
@@ -160,7 +140,7 @@ class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
 
     @classmethod
     def loads(cls, string: str, /) -> Self:
-        return cls._create(tomlkit.loads(string))
+        return cls._from_tomlkit_obj(tomlkit.loads(string))
 
     def dump(self, file: Path, /):
         # TODO
@@ -173,14 +153,107 @@ class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
 
 class BaseTable(BaseContainer[tomlkit.items.Table]):
     """
-    Abstracts a TOML table.
-
-    Saves the parsed `tomlkit.items.Table` upon loading so it can be updated upon
-    storing, preserving item attributes like whether arrays are multiline.
+    Abstracts a table with nested primitive types or other tables.
     """
 
 
 class BaseInlineTable(BaseContainer[tomlkit.items.InlineTable]):
     """
-    Abstracts an inline table.
+    Abstracts an inline table with nested primitive types.
     """
+
+
+class BaseArray[TomlkitT, ItemT](list[ItemT], BaseTomlElement[TomlkitT]):
+    """
+    Base array of either primitive types or tables.
+    """
+
+    @staticmethod
+    @abstractmethod
+    def _get_item_values(tomlkit_obj: TomlkitT) -> list[Any]:
+        """
+        Get raw values from this tomlkit object.
+        """
+        ...
+
+    @classmethod
+    def _coerce(
+        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+    ) -> Self:
+        items: list[ItemT] = []
+
+        # get type with which this array is parameterized
+        assert field_info
+        item_cls = cls._get_item_cls(field_info)
+
+        # get raw values
+        item_values = cls._get_item_values(tomlkit_obj)
+
+        if issubclass(item_cls, BaseTomlElement):
+            for item_obj in item_values:
+                items.append(item_cls._from_tomlkit_obj(item_obj))
+        else:
+            items = item_values
+
+        return cls(items)
+
+    @classmethod
+    def _get_item_cls(cls, field_info: FieldInfo) -> type[ItemT]:
+        """
+        Get item with which this array is parameterized.
+        """
+        assert field_info.annotation
+
+        args = get_args(field_info.annotation)
+        assert (
+            len(args) == 1
+        ), f"Array must be parameterized with exactly one type, got {args}"
+
+        return args[0]
+
+
+@dataclass(kw_only=True)
+class ArrayInfo:
+    """
+    Extra metadata for arrays. Set by typing the field as:
+
+    ```python
+    my_array: Annotated[Array, ArrayInfo(multiline=True)]
+    ```
+    """
+
+    multiline: bool | None = None
+    """
+    Whether the array is multiline; preserves the original state if `None`.
+    """
+
+
+class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):
+    """
+    Array of primitive types.
+    """
+
+    @staticmethod
+    def _get_item_values(tomlkit_obj: tomlkit.items.Array) -> list[Any]:
+        return tomlkit_obj.value
+
+    @cached_property
+    def _array_info(self) -> ArrayInfo:
+        info = (
+            next(
+                (m for m in self._field_info.metadata if isinstance(m, ArrayInfo)), None
+            )
+            if self._field_info
+            else None
+        )
+        return info or ArrayInfo()
+
+
+class TableArray[TableT: BaseTable](BaseArray[tomlkit.items.AoT, TableT]):
+    """
+    Array of tables.
+    """
+
+    @staticmethod
+    def _get_item_values(tomlkit_obj: tomlkit.items.AoT) -> list[Any]:
+        return tomlkit_obj.body
