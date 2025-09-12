@@ -11,7 +11,7 @@ from datetime import datetime as DateTime
 from datetime import time as Time
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Mapping, Self, get_args, get_origin
+from typing import Any, Mapping, Self, cast, get_args, get_origin
 
 import tomlkit
 import tomlkit.items
@@ -20,7 +20,7 @@ from pydantic.fields import FieldInfo
 
 from ..typing.generics import get_type_param
 
-type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInlineTable
+type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInlineTable | Array
 """
 Types which can be used as fields of array items.
 """
@@ -44,19 +44,25 @@ class BaseTomlElement[TomlkitT](ABC):
     @classmethod
     @abstractmethod
     def _coerce(
-        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+        cls,
+        tomlkit_obj: TomlkitT,
+        field_info: FieldInfo | None = None,
+        annotation: type[Any] | None = None,
     ) -> Self: ...
 
     @classmethod
     def _from_tomlkit_obj(
-        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+        cls,
+        tomlkit_obj: TomlkitT,
+        field_info: FieldInfo | None = None,
+        annotation: type[Any] | None = None,
     ) -> Self:
         tomlkit_cls = cls._get_tomlkit_cls()
         assert isinstance(
             tomlkit_obj, tomlkit_cls
         ), f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
 
-        obj = cls._coerce(tomlkit_obj, field_info=field_info)
+        obj = cls._coerce(tomlkit_obj, field_info, annotation)
         obj._tomlkit_obj = tomlkit_obj
         obj._field_info = field_info
         return obj
@@ -101,13 +107,16 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
 
         # coerce value if type is element
         if issubclass(field_cls, BaseTomlElement):
-            return field_cls._from_tomlkit_obj(value, field_info)
+            return field_cls._from_tomlkit_obj(value, field_info, annotation)
 
         return value
 
     @classmethod
     def _coerce(
-        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+        cls,
+        tomlkit_obj: TomlkitT,
+        field_info: FieldInfo | None = None,
+        annotation: type[Any] | None = None,
     ) -> Self:
         """
         Extract model fields from container and return instance of this model with
@@ -178,38 +187,45 @@ class BaseArray[TomlkitT, ItemT](list[ItemT], BaseTomlElement[TomlkitT]):
 
     @classmethod
     def _coerce(
-        cls, tomlkit_obj: TomlkitT, field_info: FieldInfo | None = None
+        cls,
+        tomlkit_obj: TomlkitT,
+        field_info: FieldInfo | None = None,
+        annotation: type[Any] | None = None,
     ) -> Self:
+        assert annotation, "No annotation"
+
         items: list[ItemT] = []
 
         # get type with which this array is parameterized
-        assert field_info
-        item_cls = cls._get_item_cls(field_info)
+        item_cls, item_type = cls._get_item_cls(annotation)
 
         # get raw values
         item_values = cls._get_item_values(tomlkit_obj)
 
         if issubclass(item_cls, BaseTomlElement):
             for item_obj in item_values:
-                items.append(item_cls._from_tomlkit_obj(item_obj))
+                items.append(item_cls._from_tomlkit_obj(item_obj, annotation=item_type))
         else:
             items = item_values
 
         return cls(items)
 
     @classmethod
-    def _get_item_cls(cls, field_info: FieldInfo) -> type[ItemT]:
+    def _get_item_cls(cls, annotation: type[Any]) -> tuple[type[ItemT], type[Any]]:
         """
-        Get item with which this array is parameterized.
+        Get type with which this array is parameterized as (concrete type, full type).
         """
-        assert field_info.annotation
-
-        args = get_args(field_info.annotation)
+        # get full type with which this array is parameterized,
+        # e.g. Array[int] from Array[Array[int]]
+        args = get_args(annotation)
         assert (
             len(args) == 1
         ), f"Array must be parameterized with exactly one type, got {args}"
 
-        return args[0]
+        item_type = args[0]  # e.g. Array[int]
+        item_cls = cast(type[ItemT], get_origin(item_type) or item_type)
+
+        return item_cls, item_type
 
 
 @dataclass(kw_only=True)
