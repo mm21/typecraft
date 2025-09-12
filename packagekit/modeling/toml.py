@@ -46,7 +46,6 @@ class BaseTomlElement[TomlkitT](ABC):
     def _coerce(
         cls,
         tomlkit_obj: TomlkitT,
-        field_info: FieldInfo | None = None,
         annotation: type[Any] | None = None,
     ) -> Self: ...
 
@@ -62,7 +61,7 @@ class BaseTomlElement[TomlkitT](ABC):
             tomlkit_obj, tomlkit_cls
         ), f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
 
-        obj = cls._coerce(tomlkit_obj, field_info, annotation)
+        obj = cls._coerce(tomlkit_obj, annotation)
         obj._tomlkit_obj = tomlkit_obj
         obj._field_info = field_info
         return obj
@@ -107,16 +106,15 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
 
         # coerce value if type is element
         if issubclass(field_cls, BaseTomlElement):
-            return field_cls._from_tomlkit_obj(value, field_info, annotation)
+            return field_cls._from_tomlkit_obj(
+                value, field_info=field_info, annotation=annotation
+            )
 
         return value
 
     @classmethod
     def _coerce(
-        cls,
-        tomlkit_obj: TomlkitT,
-        field_info: FieldInfo | None = None,
-        annotation: type[Any] | None = None,
+        cls, tomlkit_obj: TomlkitT, annotation: type[Any] | None = None
     ) -> Self:
         """
         Extract model fields from container and return instance of this model with
@@ -187,10 +185,7 @@ class BaseArray[TomlkitT, ItemT](list[ItemT], BaseTomlElement[TomlkitT]):
 
     @classmethod
     def _coerce(
-        cls,
-        tomlkit_obj: TomlkitT,
-        field_info: FieldInfo | None = None,
-        annotation: type[Any] | None = None,
+        cls, tomlkit_obj: TomlkitT, annotation: type[Any] | None = None
     ) -> Self:
         assert annotation, "No annotation"
 
