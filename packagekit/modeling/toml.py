@@ -5,18 +5,15 @@ Layer to map TOML files (via `tomlkit`) to/from Pydantic models.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
-from functools import cached_property
 from pathlib import Path
 from typing import Any, Mapping, Self, cast, get_args, get_origin
 
 import tomlkit
 import tomlkit.items
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
-from pydantic.fields import FieldInfo
 
 from ..typing.generics import get_type_param
 
@@ -36,24 +33,22 @@ class BaseTomlElement[TomlkitT](ABC):
     Corresponding object from `tomlkit`, either extracted upon load or newly created.
     """
 
-    _field_info: FieldInfo | None
-    """
-    Field info, only applicable if element is nested (i.e. not a document).
-    """
-
     @classmethod
     @abstractmethod
     def _coerce(
         cls,
         tomlkit_obj: TomlkitT,
         annotation: type[Any] | None = None,
-    ) -> Self: ...
+    ) -> Self:
+        """
+        Create an instance of this class from the corresponding tomlkit object.
+        """
+        ...
 
     @classmethod
     def _from_tomlkit_obj(
         cls,
         tomlkit_obj: TomlkitT,
-        field_info: FieldInfo | None = None,
         annotation: type[Any] | None = None,
     ) -> Self:
         tomlkit_cls = cls._get_tomlkit_cls()
@@ -63,7 +58,6 @@ class BaseTomlElement[TomlkitT](ABC):
 
         obj = cls._coerce(tomlkit_obj, annotation)
         obj._tomlkit_obj = tomlkit_obj
-        obj._field_info = field_info
         return obj
 
     @classmethod
@@ -96,21 +90,26 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
     def validate_field(cls, value: Any, info: ValidationInfo) -> Any:
         assert info.field_name
 
-        field_info = cls.model_fields.get(info.field_name)
+        field_cls, annotation = cls._get_field_type(info.field_name)
+
+        # coerce value if type is element
+        if issubclass(field_cls, BaseTomlElement):
+            return field_cls._from_tomlkit_obj(value, annotation=annotation)
+
+        return value
+
+    @classmethod
+    def _get_field_type(cls, field_name: str) -> tuple[type[Any], type[Any]]:
+        """
+        Get the field type as (concrete class, annotation).
+        """
+        field_info = cls.model_fields.get(field_name)
         assert field_info
 
         annotation = field_info.annotation
         assert annotation
 
-        field_cls = get_origin(annotation) or annotation
-
-        # coerce value if type is element
-        if issubclass(field_cls, BaseTomlElement):
-            return field_cls._from_tomlkit_obj(
-                value, field_info=field_info, annotation=annotation
-            )
-
-        return value
+        return (get_origin(annotation) or annotation, annotation)
 
     @classmethod
     def _coerce(
@@ -223,22 +222,6 @@ class BaseArray[TomlkitT, ItemT](list[ItemT], BaseTomlElement[TomlkitT]):
         return item_cls, item_type
 
 
-@dataclass(kw_only=True)
-class ArrayInfo:
-    """
-    Extra metadata for arrays. Set by typing the field as:
-
-    ```python
-    my_array: Annotated[Array, ArrayInfo(multiline=True)]
-    ```
-    """
-
-    multiline: bool | None = None
-    """
-    Whether the array is multiline; preserves the original state if `None`.
-    """
-
-
 class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):
     """
     Array of primitive types.
@@ -247,17 +230,6 @@ class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):
     @staticmethod
     def _get_item_values(tomlkit_obj: tomlkit.items.Array) -> list[Any]:
         return tomlkit_obj.value
-
-    @cached_property
-    def _array_info(self) -> ArrayInfo:
-        info = (
-            next(
-                (m for m in self._field_info.metadata if isinstance(m, ArrayInfo)), None
-            )
-            if self._field_info
-            else None
-        )
-        return info or ArrayInfo()
 
 
 class TableArray[TableT: BaseTable](BaseArray[tomlkit.items.AoT, TableT]):

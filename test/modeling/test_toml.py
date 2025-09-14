@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated
-
 from packagekit.modeling.toml import (
     Array,
-    ArrayInfo,
     BaseDocument,
     BaseInlineTable,
     BaseTable,
@@ -18,7 +15,6 @@ class DocumentTest(BaseDocument):
     inline_table_test: InlineTableTest
 
     array_test: Array[int]
-    multiline_array_test: Annotated[Array[int], ArrayInfo(multiline=True)]
     nested_array_test: Array[Array[int]]
     # TODO: array of inline tables
 
@@ -40,7 +36,6 @@ string_test = "test string"
 int_test = 123
 inline_table_test = {inline_table_string_test = "abc", inline_table_int_test = 123}
 array_test = [1, 2, 3]
-multiline_array_test = [3, 2, 1] # will be converted to multiline upon dumping
 nested_array_test = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
 [table_test]
@@ -65,10 +60,6 @@ def test_document():
     assert document.inline_table_test.inline_table_int_test == 123
 
     assert document.array_test == [1, 2, 3]
-    assert document.array_test._array_info.multiline is None
-
-    assert document.multiline_array_test == [3, 2, 1]
-    assert document.multiline_array_test._array_info.multiline is True
 
     assert document.nested_array_test == [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
