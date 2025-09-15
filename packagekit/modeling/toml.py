@@ -13,9 +13,7 @@ from pathlib import Path
 from typing import (
     Any,
     Iterable,
-    Iterator,
     Mapping,
-    MutableMapping,
     MutableSequence,
     Self,
     cast,
@@ -138,6 +136,8 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
+    # TODO: write through
+
     @field_validator("*", mode="before", check_fields=False)
     @classmethod
     def validate_field(cls, value: Any, info: ValidationInfo) -> Any:
@@ -231,71 +231,6 @@ class BaseInlineTable(BaseContainer[tomlkit.items.InlineTable]):
         return tomlkit.inline_table()
 
 
-class ItemMapping[KT, VT](MutableMapping[KT, VT]):
-    """
-    Maintains a mapping based on object ids and a list of the objects in order to
-    preserve their reference counts. Especially useful for non-hashable objects.
-    """
-
-    _id_map: dict[int, VT]
-    """
-    Mapping of key id to object.
-    """
-
-    _key_list: list[KT]
-    """
-    List of key objects.
-    """
-
-    def __init__(self):
-        self._id_map = {}
-        self._key_list = []
-
-    def __getitem__(self, key: KT) -> VT:
-        key_id = id(key)
-        if key_id not in self._id_map:
-            raise KeyError(key)
-        return self._id_map[key_id]
-
-    def __setitem__(self, key: KT, value: VT) -> None:
-        key_id = id(key)
-
-        # if key doesn't exist, add it to item list to preserve reference
-        if key_id not in self._id_map:
-            self._key_list.append(key)
-
-        self._id_map[key_id] = value
-
-    def __delitem__(self, key: KT) -> None:
-        key_id = id(key)
-
-        if key_id not in self._id_map:
-            raise KeyError(key)
-
-        # remove from id mapping
-        del self._id_map[key_id]
-
-        # remove from item list
-        for i, item in enumerate(self._key_list):
-            if id(item) == key_id:
-                del self._key_list[i]
-                break
-
-    def __iter__(self) -> Iterator[KT]:
-        return iter(self._key_list)
-
-    def __len__(self) -> int:
-        return len(self._key_list)
-
-    def __repr__(self) -> str:
-        items = [(key, self._id_map[id(key)]) for key in self._key_list]
-        return f"{self.__class__.__name__}({dict(items)})"
-
-    def clear(self) -> None:
-        self._id_map.clear()
-        self._key_list.clear()
-
-
 class BaseArray[TomlkitT: list, ItemT](
     MutableSequence[ItemT], BaseTomlElement[TomlkitT]
 ):
@@ -303,14 +238,21 @@ class BaseArray[TomlkitT: list, ItemT](
     Base array of either primitive types or tables.
     """
 
-    _item_map: ItemMapping[Any, Any]
+    __list: list[ItemT]
     """
-    Mapping of tomlkit object to this array's item object, which may be a wrapper
-    object.
+    List of values, whether tomlkit objects or wrappers.
     """
 
-    def __init__(self):
-        self._item_map = ItemMapping()
+    @overload
+    def __init__(self): ...
+
+    @overload
+    def __init__(self, iterable: Iterable[ItemT], /): ...
+
+    def __init__(self, iterable: Iterable[ItemT] | None = None):
+        self.__list = []
+        if iterable:
+            self += iterable
 
     @overload
     def __getitem__(self, index: int) -> ItemT: ...
@@ -319,13 +261,7 @@ class BaseArray[TomlkitT: list, ItemT](
     def __getitem__(self, index: slice) -> list[ItemT]: ...
 
     def __getitem__(self, index: int | slice) -> ItemT | list[ItemT]:
-        if isinstance(index, int):
-            item_obj = self._tomlkit_obj[index]
-            return self._item_map.get(item_obj, item_obj)
-        else:
-            assert isinstance(index, slice)
-            item_objs = self._tomlkit_obj[index]
-            return [self._item_map.get(o, o) for o in item_objs]
+        return self.__list[index]
 
     @overload
     def __setitem__(self, index: int, value: ItemT) -> None: ...
@@ -336,17 +272,24 @@ class BaseArray[TomlkitT: list, ItemT](
     def __setitem__(self, index: int | slice, value: ItemT | Iterable[ItemT]) -> None:
         if isinstance(index, int):
             self._tomlkit_obj[index] = self._normalize_item(cast(ItemT, value))
+            self.__list[index] = (
+                value
+                if isinstance(value, BaseTomlElement)
+                else self._tomlkit_obj[index]
+            )
         else:
             assert isinstance(index, slice)
             assert isinstance(value, Iterable)
-            self._tomlkit_obj[index] = self._normalize_items(
-                cast(Iterable[ItemT], value)
+            value_ = list(value)  # in case value is a generator
+            self._tomlkit_obj[index] = self._normalize_items(value_)
+            self.__list[index] = (
+                value_
+                if any(isinstance(v, BaseTomlElement) for v in value_)
+                else self._tomlkit_obj[index]
             )
 
     def __delitem__(self, index: int | slice) -> None:
-        item_obj = self._tomlkit_obj[index]
-        if item_obj in self._item_map:
-            del self._item_map[item_obj]
+        del self.__list[index]
         del self._tomlkit_obj[index]
 
     def __len__(self) -> int:
@@ -359,7 +302,8 @@ class BaseArray[TomlkitT: list, ItemT](
         return list(self) == other
 
     def insert(self, index: int, value: ItemT) -> None:
-        self._tomlkit_obj.insert(index, value)
+        self.__list.insert(index, value)
+        self._tomlkit_obj.insert(index, self._normalize_item(value))
 
     @staticmethod
     @abstractmethod
@@ -377,18 +321,21 @@ class BaseArray[TomlkitT: list, ItemT](
         assert annotation, "No annotation"
         item_cls, item_type = cls._get_item_cls(annotation)
 
-        obj = cls()
-
         # get raw values
         item_values = cls._get_item_values(tomlkit_obj)
 
-        # create initial mappings from tomlkit items to wrapper items
-        if issubclass(item_cls, BaseTomlElement):
-            for item_obj in item_values:
-                obj._item_map[item_obj] = item_cls._from_tomlkit_obj(
-                    item_obj, annotation=item_type
-                )
+        # create new array
+        obj = cls()
 
+        # populate new array with values
+        if issubclass(item_cls, BaseTomlElement):
+            items = [
+                item_cls._from_tomlkit_obj(i, annotation=item_type) for i in item_values
+            ]
+        else:
+            items = item_values
+
+        obj._setup_items(items)
         return obj
 
     @classmethod
@@ -412,18 +359,20 @@ class BaseArray[TomlkitT: list, ItemT](
         """
         Normalize input to tomlkit object.
         """
-        if isinstance(item, BaseTomlElement):
-            item_obj = item._tomlkit_obj
-            self._item_map[item_obj] = item
-            return item_obj
-        else:
-            return item
+        return item._tomlkit_obj if isinstance(item, BaseTomlElement) else item
 
     def _normalize_items(self, items: Iterable[ItemT]) -> list[Any]:
         """
         Normalize inputs to tomlkit object.
         """
         return [self._normalize_item(i) for i in items]
+
+    def _setup_items(self, items: list[ItemT]):
+        """
+        Add initial items directly.
+        """
+        assert len(self.__list) == 0
+        self.__list += items
 
 
 class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):

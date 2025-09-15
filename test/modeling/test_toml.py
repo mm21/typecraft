@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tomlkit
 from tomlkit.items import Integer, String
 
 from packagekit.modeling.toml import (
@@ -17,9 +16,9 @@ class DocumentTest(BaseDocument):
     int_test: Integer
     inline_table_test: InlineTableTest
 
-    array_test: Array[Integer]
-    nested_array_test: Array[Array[Integer]]
-    # TODO: array of inline tables
+    array_test: Array[int]
+    nested_array_test: Array[Array[int]]
+    inline_table_array_test: Array[InlineTableTest]
 
     table_test: TableTest
     table_array_test: TableArray[TableTest]
@@ -30,8 +29,8 @@ class TableTest(BaseTable):
 
 
 class InlineTableTest(BaseInlineTable):
-    inline_table_string_test: String
-    inline_table_int_test: Integer
+    inline_table_string_test: str
+    inline_table_int_test: int
 
 
 DOCUMENT_STR = """
@@ -40,6 +39,10 @@ int_test = 123
 inline_table_test = {inline_table_string_test = "abc", inline_table_int_test = 123}
 array_test = [1, 2, 3]
 nested_array_test = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+inline_table_array_test = [
+    {inline_table_string_test = "def", inline_table_int_test = 1},
+    {inline_table_string_test = "ghi", inline_table_int_test = 2},
+]
 
 [table_test]
 table_string_test = "table test string"
@@ -66,6 +69,13 @@ def test_document():
 
     assert document.nested_array_test == [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
+    assert len(document.inline_table_array_test) == 2
+    it1, it2 = document.inline_table_array_test
+    assert it1.inline_table_string_test == "def"
+    assert it1.inline_table_int_test == 1
+    assert it2.inline_table_string_test == "ghi"
+    assert it2.inline_table_int_test == 2
+
     assert document.table_test.table_string_test == "table test string"
 
     assert len(document.table_array_test) == 2
@@ -75,10 +85,16 @@ def test_document():
 
     # modify and read back
 
-    document.array_test[0] = tomlkit.integer(10)
+    document.array_test[0] = 10
+    assert isinstance(document.array_test[0], Integer)
     assert document.array_test == [10, 2, 3]
 
-    new_inner_array = Array()
+    new_inner_array = Array([10])
     document.nested_array_test[0] = new_inner_array
-    new_inner_array.append(10)
-    assert document.nested_array_test[0][0] == 10
+    new_inner_array.append(20)
+    assert document.nested_array_test[0] == [10, 20]
+
+    document.inline_table_array_test.append(
+        InlineTableTest(inline_table_string_test="jkl", inline_table_int_test=3)
+    )
+    assert len(document.inline_table_array_test) == 3
