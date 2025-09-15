@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import (
     Any,
     Iterable,
-    Mapping,
+    MutableMapping,
     MutableSequence,
     Self,
     cast,
@@ -25,6 +25,7 @@ from typing import (
 import tomlkit
 import tomlkit.items
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic.fields import FieldInfo
 from tomlkit.items import Trivia
 
 from ..typing.generics import get_type_param
@@ -49,10 +50,20 @@ class BaseTomlElement[TomlkitT](ABC):
     Abstracts a TOML element corresponding to a type from `tomlkit`.
     """
 
-    __tomlkit_obj: TomlkitT | None = None
+    _tomlkit_obj: TomlkitT | None = None
     """
     Corresponding object from `tomlkit`, either extracted upon load or newly created.
     """
+
+    @property
+    def tomlkit_obj(self) -> TomlkitT:
+        """
+        Get tomlkit object, creating it if it doesn't exist.
+        """
+        if not self._tomlkit_obj:
+            self._set_tomlkit_obj(self._create_tomlkit_obj())
+        assert self._tomlkit_obj
+        return self._tomlkit_obj
 
     @classmethod
     @abstractmethod
@@ -73,6 +84,9 @@ class BaseTomlElement[TomlkitT](ABC):
         """
         ...
 
+    @abstractmethod
+    def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT): ...
+
     @classmethod
     def _from_tomlkit_obj(
         cls,
@@ -85,7 +99,7 @@ class BaseTomlElement[TomlkitT](ABC):
         ), f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
 
         obj = cls._coerce(tomlkit_obj, annotation)
-        obj._tomlkit_obj = tomlkit_obj
+        obj._set_tomlkit_obj(tomlkit_obj, bypass_propagate=True)
         return obj
 
     @classmethod
@@ -101,30 +115,21 @@ class BaseTomlElement[TomlkitT](ABC):
     def _tomlkit_cls(self) -> type[TomlkitT]:
         return type(self)._get_tomlkit_cls()
 
-    @property
-    def _tomlkit_obj(self) -> TomlkitT:
-        """
-        Get tomlkit object, creating it if it doesn't exist.
-        """
-        if not self.__tomlkit_obj:
-            self.__tomlkit_obj = self._create_tomlkit_obj()
-        return self.__tomlkit_obj
-
-    @_tomlkit_obj.setter
-    def _tomlkit_obj(self, tomlkit_obj: TomlkitT):
+    def _set_tomlkit_obj(self, tomlkit_obj: TomlkitT, bypass_propagate: bool = False):
         """
         Set tomlkit object, ensuring it has not already been set.
         """
         assert isinstance(tomlkit_obj, self._tomlkit_cls)
-        if self.__tomlkit_obj:
-            raise AttributeError(f"tomlkit_obj has already been set on {self}")
-        self.__tomlkit_obj = tomlkit_obj
+        assert self._tomlkit_obj is None, f"tomlkit_obj has already been set on {self}"
+        self._tomlkit_obj = tomlkit_obj
 
-    # TODO: method to get tomlkit_obj, creating it if it doesn't exist
+        if not bypass_propagate:
+            self._propagate_tomlkit_obj(tomlkit_obj)
 
 
-# TODO: validate all fields upon class creation
-class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
+class BaseContainer[TomlkitT: MutableMapping[str, Any]](
+    BaseModel, BaseTomlElement[TomlkitT]
+):
     """
     Container for items in a document or table. Upon reading a TOML file via
     `tomlkit`, coerces values from `tomlkit` types to the corresponding class
@@ -136,7 +141,13 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-    # TODO: write through
+    def __setattr__(self, name: str, value: Any):
+        """
+        Set attribute on model and additionally write through to tomlkit object.
+        """
+        super().__setattr__(name, value)
+        if self._tomlkit_obj and (field_info := type(self).model_fields.get(name)):
+            self._propagate_field(self._tomlkit_obj, name, field_info, value)
 
     @field_validator("*", mode="before", check_fields=False)
     @classmethod
@@ -179,6 +190,32 @@ class BaseContainer[TomlkitT: Mapping](BaseModel, BaseTomlElement[TomlkitT]):
                 fields[name] = tomlkit_obj[name]
 
         return cls(**fields)
+
+    def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
+        # propagate all fields
+        for name, field_info in type(self).model_fields.items():
+            value = getattr(self, name, None)
+            if value is None:
+                continue
+            self._propagate_field(tomlkit_obj, name, field_info, value)
+
+    def _propagate_field(
+        self, tomlkit_obj: TomlkitT, name: str, field_info: FieldInfo, value: Any
+    ):
+        """
+        Propagate field to this container's tomlkit obj.
+        """
+        field_name = field_info.alias or name
+        field_tomlkit_obj = (
+            value.tomlkit_obj if isinstance(value, BaseTomlElement) else value
+        )
+
+        # TODO: handle None: delete corresponding field?
+        tomlkit_obj[field_name] = field_tomlkit_obj
+
+        if not isinstance(value, BaseTomlElement):
+            # refresh this model's value as it may have been converted by tomlkit
+            object.__setattr__(self, name, tomlkit_obj[field_name])
 
 
 class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
@@ -271,29 +308,40 @@ class BaseArray[TomlkitT: list, ItemT](
 
     def __setitem__(self, index: int | slice, value: ItemT | Iterable[ItemT]) -> None:
         if isinstance(index, int):
-            self._tomlkit_obj[index] = self._normalize_item(cast(ItemT, value))
-            self.__list[index] = (
-                value
-                if isinstance(value, BaseTomlElement)
-                else self._tomlkit_obj[index]
-            )
+            if self._tomlkit_obj:
+                self._tomlkit_obj[index] = self._normalize_item(cast(ItemT, value))
+
+            if isinstance(value, BaseTomlElement):
+                value_refresh = value
+            else:
+                value_refresh = self._tomlkit_obj[index] if self._tomlkit_obj else value
+
+            self.__list[index] = cast(ItemT, value_refresh)
         else:
             assert isinstance(index, slice)
             assert isinstance(value, Iterable)
             value_ = list(value)  # in case value is a generator
-            self._tomlkit_obj[index] = self._normalize_items(value_)
-            self.__list[index] = (
-                value_
-                if any(isinstance(v, BaseTomlElement) for v in value_)
-                else self._tomlkit_obj[index]
-            )
+
+            if self._tomlkit_obj:
+                self._tomlkit_obj[index] = self._normalize_items(value_)
+
+            # TODO: validate that either all are BaseTomlElement or none are
+            if any(isinstance(v, BaseTomlElement) for v in value_):
+                value_refresh = value_
+            else:
+                value_refresh = (
+                    self._tomlkit_obj[index] if self._tomlkit_obj else value_
+                )
+
+            self.__list[index] = value_refresh
 
     def __delitem__(self, index: int | slice) -> None:
         del self.__list[index]
-        del self._tomlkit_obj[index]
+        if self._tomlkit_obj:
+            del self._tomlkit_obj[index]
 
     def __len__(self) -> int:
-        return len(self._tomlkit_obj)
+        return len(self.__list)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({list(self)})"
@@ -303,7 +351,10 @@ class BaseArray[TomlkitT: list, ItemT](
 
     def insert(self, index: int, value: ItemT) -> None:
         self.__list.insert(index, value)
-        self._tomlkit_obj.insert(index, self._normalize_item(value))
+        if self._tomlkit_obj:
+            self._tomlkit_obj.insert(index, self._normalize_item(value))
+            if not isinstance(value, BaseTomlElement):
+                self.__list[index] = self._tomlkit_obj[index]
 
     @staticmethod
     @abstractmethod
@@ -324,9 +375,6 @@ class BaseArray[TomlkitT: list, ItemT](
         # get raw values
         item_values = cls._get_item_values(tomlkit_obj)
 
-        # create new array
-        obj = cls()
-
         # populate new array with values
         if issubclass(item_cls, BaseTomlElement):
             items = [
@@ -335,8 +383,16 @@ class BaseArray[TomlkitT: list, ItemT](
         else:
             items = item_values
 
-        obj._setup_items(items)
-        return obj
+        return cls(items)
+
+    def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
+        assert len(tomlkit_obj) == 0
+        tomlkit_obj += self._normalize_items(self.__list)
+
+        # also refresh own items if applicable
+        for i, item in enumerate(self.__list):
+            if not isinstance(item, BaseTomlElement):
+                self.__list[i] = tomlkit_obj[i]
 
     @classmethod
     def _get_item_cls(cls, annotation: type[Any]) -> tuple[type[ItemT], type[Any]]:
@@ -359,7 +415,7 @@ class BaseArray[TomlkitT: list, ItemT](
         """
         Normalize input to tomlkit object.
         """
-        return item._tomlkit_obj if isinstance(item, BaseTomlElement) else item
+        return item.tomlkit_obj if isinstance(item, BaseTomlElement) else item
 
     def _normalize_items(self, items: Iterable[ItemT]) -> list[Any]:
         """
@@ -367,12 +423,8 @@ class BaseArray[TomlkitT: list, ItemT](
         """
         return [self._normalize_item(i) for i in items]
 
-    def _setup_items(self, items: list[ItemT]):
-        """
-        Add initial items directly.
-        """
-        assert len(self.__list) == 0
-        self.__list += items
+    # TODO: refresh item at index, if applicable
+    def _refresh_item(self, index: int, value: ItemT, tomlkit_obj: TomlkitT): ...
 
 
 class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):

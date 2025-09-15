@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomlkit
 from tomlkit.items import Integer, String
 
 from packagekit.modeling.toml import (
@@ -90,11 +91,23 @@ def test_document():
     assert document.array_test == [10, 2, 3]
 
     new_inner_array = Array([10])
+    # hasn't been converted to tomlkit obj yet
+    assert isinstance(new_inner_array[0], int)
     document.nested_array_test[0] = new_inner_array
     new_inner_array.append(20)
+    # since assigned to a parent, values have been converted to tomlkit objects
+    assert isinstance(new_inner_array[0], Integer)
+    assert isinstance(new_inner_array[1], Integer)
     assert document.nested_array_test[0] == [10, 20]
 
     document.inline_table_array_test.append(
         InlineTableTest(inline_table_string_test="jkl", inline_table_int_test=3)
     )
     assert len(document.inline_table_array_test) == 3
+
+    document.table_test = TableTest(
+        table_string_test=tomlkit.string("table test string 2")
+    )
+    assert document.table_test.table_string_test == "table test string 2"
+    assert document._tomlkit_obj["table_test"]["table_string_test"] == "table test string 2"  # type: ignore
+    assert isinstance(document.table_test.table_string_test, String)
