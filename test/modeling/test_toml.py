@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tomlkit
+from tomlkit.items import Integer, String
+
 from packagekit.modeling.toml import (
     Array,
     BaseDocument,
@@ -10,12 +13,12 @@ from packagekit.modeling.toml import (
 
 
 class DocumentTest(BaseDocument):
-    string_test: str
-    int_test: int
+    string_test: String
+    int_test: Integer
     inline_table_test: InlineTableTest
 
-    array_test: Array[int]
-    nested_array_test: Array[Array[int]]
+    array_test: Array[Integer]
+    nested_array_test: Array[Array[Integer]]
     # TODO: array of inline tables
 
     table_test: TableTest
@@ -23,12 +26,12 @@ class DocumentTest(BaseDocument):
 
 
 class TableTest(BaseTable):
-    table_string_test: str
+    table_string_test: String
 
 
 class InlineTableTest(BaseInlineTable):
-    inline_table_string_test: str
-    inline_table_int_test: int
+    inline_table_string_test: String
+    inline_table_int_test: Integer
 
 
 DOCUMENT_STR = """
@@ -69,3 +72,13 @@ def test_document():
     for i, table in enumerate(document.table_array_test):
         assert isinstance(table, TableTest)
         assert table.table_string_test == f"table array test string {i+1}"
+
+    # modify and read back
+
+    document.array_test[0] = tomlkit.integer(10)
+    assert document.array_test == [10, 2, 3]
+
+    new_inner_array = Array()
+    document.nested_array_test[0] = new_inner_array
+    new_inner_array.append(10)
+    assert document.nested_array_test[0][0] == 10
