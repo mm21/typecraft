@@ -92,12 +92,13 @@ def test_document():
     assert document.array_test == [10, 2, 3]
 
     new_inner_array = Array([10])
+    assert isinstance(new_inner_array.tomlkit_obj, tomlkit.items.Array)
 
-    # hasn't been converted to tomlkit obj yet
+    # has already been converted to tomlkit obj
     assert isinstance(new_inner_array[0], Integer)
-    document.nested_array_test[0] = new_inner_array
     new_inner_array.append(20)
     assert isinstance(new_inner_array[1], Integer)
+    document.nested_array_test[0] = new_inner_array
     assert document.nested_array_test[0] == [10, 20]
 
     new_inline_table = InlineTableTest(
