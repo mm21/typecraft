@@ -301,41 +301,30 @@ class BaseArray[TomlkitT: list, ItemT](
         return self.__list[index]
 
     @overload
-    def __setitem__(self, index: int, value: ItemT) -> None: ...
+    def __setitem__(self, index: int, value: ItemT): ...
 
     @overload
-    def __setitem__(self, index: slice, value: Iterable[ItemT]) -> None: ...
+    def __setitem__(self, index: slice, value: Iterable[ItemT]): ...
 
-    def __setitem__(self, index: int | slice, value: ItemT | Iterable[ItemT]) -> None:
+    def __setitem__(self, index: int | slice, value: ItemT | Iterable[ItemT]):
         if isinstance(index, int):
+            value_ = cast(ItemT, value)
+            self.__list[index] = value_
             if self._tomlkit_obj:
-                self._tomlkit_obj[index] = self._normalize_item(cast(ItemT, value))
-
-            if isinstance(value, BaseTomlElement):
-                value_refresh = value
-            else:
-                value_refresh = self._tomlkit_obj[index] if self._tomlkit_obj else value
-
-            self.__list[index] = cast(ItemT, value_refresh)
+                self._tomlkit_obj[index] = self._normalize_item(value_)
+                self._refresh_item(index)
         else:
             assert isinstance(index, slice)
             assert isinstance(value, Iterable)
             value_ = list(value)  # in case value is a generator
-
+            self.__list[index] = value_
             if self._tomlkit_obj:
                 self._tomlkit_obj[index] = self._normalize_items(value_)
+                start, stop, stride = index.indices(len(self.__list))
+                for i in range(start, stop, stride):
+                    self._refresh_item(i)
 
-            # TODO: validate that either all are BaseTomlElement or none are
-            if any(isinstance(v, BaseTomlElement) for v in value_):
-                value_refresh = value_
-            else:
-                value_refresh = (
-                    self._tomlkit_obj[index] if self._tomlkit_obj else value_
-                )
-
-            self.__list[index] = value_refresh
-
-    def __delitem__(self, index: int | slice) -> None:
+    def __delitem__(self, index: int | slice):
         del self.__list[index]
         if self._tomlkit_obj:
             del self._tomlkit_obj[index]
@@ -349,12 +338,11 @@ class BaseArray[TomlkitT: list, ItemT](
     def __eq__(self, other: Any) -> bool:
         return list(self) == other
 
-    def insert(self, index: int, value: ItemT) -> None:
+    def insert(self, index: int, value: ItemT):
         self.__list.insert(index, value)
         if self._tomlkit_obj:
             self._tomlkit_obj.insert(index, self._normalize_item(value))
-            if not isinstance(value, BaseTomlElement):
-                self.__list[index] = self._tomlkit_obj[index]
+            self._refresh_item(index)
 
     @staticmethod
     @abstractmethod
@@ -423,8 +411,16 @@ class BaseArray[TomlkitT: list, ItemT](
         """
         return [self._normalize_item(i) for i in items]
 
-    # TODO: refresh item at index, if applicable
-    def _refresh_item(self, index: int, value: ItemT, tomlkit_obj: TomlkitT): ...
+    def _refresh_item(self, index: int):
+        """
+        Refresh item at index if applicable; it may have been converted from a
+        primitive to an item by tomlkit.
+        """
+        assert self.tomlkit_obj
+        value = self.__list[index]
+        if isinstance(value, BaseTomlElement):
+            return
+        self.__list[index] = cast(ItemT, self.tomlkit_obj[index])
 
 
 class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):
