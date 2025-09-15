@@ -35,6 +35,15 @@ type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInl
 Types which can be used as fields of array items.
 """
 
+type TomlkitItemType = tomlkit.items.Item | tomlkit.items.Array | tomlkit.items.AbstractTable
+type ValueType = BaseTomlElement | TomlkitItemType
+
+TOMLKIT_ITEM_TYPES = (
+    tomlkit.items.Item,
+    tomlkit.items.Array,
+    tomlkit.items.AbstractTable,
+)
+
 __all__ = [
     "BaseDocument",
     "BaseTable",
@@ -145,9 +154,10 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](
         """
         Set attribute on model and additionally write through to tomlkit object.
         """
-        super().__setattr__(name, value)
+        value_norm = _normalize_value(value)
+        super().__setattr__(name, value_norm)
         if self._tomlkit_obj and (field_info := type(self).model_fields.get(name)):
-            self._propagate_field(self._tomlkit_obj, name, field_info, value)
+            self._propagate_field(self._tomlkit_obj, name, field_info, value_norm)
 
     @field_validator("*", mode="before", check_fields=False)
     @classmethod
@@ -161,6 +171,17 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](
             return field_cls._from_tomlkit_obj(value, annotation=annotation)
 
         return value
+
+    def model_post_init(self, context: Any) -> None:
+        super().model_post_init(context)
+
+        for name in type(self).model_fields:
+            value = getattr(self, name, None)
+            if value is None:
+                continue
+
+            if not isinstance(value, BaseTomlElement):
+                object.__setattr__(self, name, _normalize_value(value))
 
     @classmethod
     def _get_field_type(cls, field_name: str) -> tuple[type[Any], type[Any]]:
@@ -206,16 +227,10 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](
         Propagate field to this container's tomlkit obj.
         """
         field_name = field_info.alias or name
-        field_tomlkit_obj = (
-            value.tomlkit_obj if isinstance(value, BaseTomlElement) else value
-        )
+        assert isinstance(value, (BaseTomlElement, *TOMLKIT_ITEM_TYPES))
 
         # TODO: handle None: delete corresponding field?
-        tomlkit_obj[field_name] = field_tomlkit_obj
-
-        if not isinstance(value, BaseTomlElement):
-            # refresh this model's value as it may have been converted by tomlkit
-            object.__setattr__(self, name, tomlkit_obj[field_name])
+        tomlkit_obj[field_name] = _normalize_item(value)
 
 
 class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
@@ -308,21 +323,17 @@ class BaseArray[TomlkitT: list, ItemT](
 
     def __setitem__(self, index: int | slice, value: ItemT | Iterable[ItemT]):
         if isinstance(index, int):
-            value_ = cast(ItemT, value)
-            self.__list[index] = value_
+            value_ = _normalize_value(value)
+            self.__list[index] = cast(ItemT, value_)
             if self._tomlkit_obj:
-                self._tomlkit_obj[index] = self._normalize_item(value_)
-                self._refresh_item(index)
+                self._tomlkit_obj[index] = _normalize_item(value_)
         else:
             assert isinstance(index, slice)
             assert isinstance(value, Iterable)
-            value_ = list(value)  # in case value is a generator
-            self.__list[index] = value_
+            value_ = _normalize_values(value)
+            self.__list[index] = cast(list[ItemT], value_)
             if self._tomlkit_obj:
-                self._tomlkit_obj[index] = self._normalize_items(value_)
-                start, stop, stride = index.indices(len(self.__list))
-                for i in range(start, stop, stride):
-                    self._refresh_item(i)
+                self._tomlkit_obj[index] = _normalize_items(value_)
 
     def __delitem__(self, index: int | slice):
         del self.__list[index]
@@ -339,10 +350,10 @@ class BaseArray[TomlkitT: list, ItemT](
         return list(self) == other
 
     def insert(self, index: int, value: ItemT):
-        self.__list.insert(index, value)
+        value_ = _normalize_value(value)
+        self.__list.insert(index, cast(ItemT, value_))
         if self._tomlkit_obj:
-            self._tomlkit_obj.insert(index, self._normalize_item(value))
-            self._refresh_item(index)
+            self._tomlkit_obj.insert(index, _normalize_item(value_))
 
     @staticmethod
     @abstractmethod
@@ -375,12 +386,7 @@ class BaseArray[TomlkitT: list, ItemT](
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         assert len(tomlkit_obj) == 0
-        tomlkit_obj += self._normalize_items(self.__list)
-
-        # also refresh own items if applicable
-        for i, item in enumerate(self.__list):
-            if not isinstance(item, BaseTomlElement):
-                self.__list[i] = tomlkit_obj[i]
+        tomlkit_obj += _normalize_items(self.__list)
 
     @classmethod
     def _get_item_cls(cls, annotation: type[Any]) -> tuple[type[ItemT], type[Any]]:
@@ -398,29 +404,6 @@ class BaseArray[TomlkitT: list, ItemT](
         item_cls = cast(type[ItemT], get_origin(item_type) or item_type)
 
         return item_cls, item_type
-
-    def _normalize_item(self, item: ItemT) -> Any:
-        """
-        Normalize input to tomlkit object.
-        """
-        return item.tomlkit_obj if isinstance(item, BaseTomlElement) else item
-
-    def _normalize_items(self, items: Iterable[ItemT]) -> list[Any]:
-        """
-        Normalize inputs to tomlkit object.
-        """
-        return [self._normalize_item(i) for i in items]
-
-    def _refresh_item(self, index: int):
-        """
-        Refresh item at index if applicable; it may have been converted from a
-        primitive to an item by tomlkit.
-        """
-        assert self.tomlkit_obj
-        value = self.__list[index]
-        if isinstance(value, BaseTomlElement):
-            return
-        self.__list[index] = cast(ItemT, self.tomlkit_obj[index])
 
 
 class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):
@@ -447,3 +430,40 @@ class TableArray[TableT: BaseTable](BaseArray[tomlkit.items.AoT, TableT]):
     @staticmethod
     def _get_item_values(tomlkit_obj: tomlkit.items.AoT) -> list[Any]:
         return tomlkit_obj.body
+
+
+def _normalize_value(value: Any) -> ValueType:
+    """
+    Normalize value to `BaseTomlElement` or tomlkit item.
+    """
+    if isinstance(value, BaseTomlElement):
+        return value
+    elif isinstance(value, TOMLKIT_ITEM_TYPES):
+        return value
+    else:
+        return tomlkit.item(value)
+
+
+def _normalize_values(values: Iterable[Any]) -> list[ValueType]:
+    """
+    Normalize values to `BaseTomlElement`s or items.
+    """
+    return [_normalize_value(v) for v in values]
+
+
+def _normalize_item(obj: ValueType) -> TomlkitItemType:
+    """
+    Normalize object to tomlkit item.
+    """
+    if isinstance(obj, BaseTomlElement):
+        return obj.tomlkit_obj
+    else:
+        assert isinstance(obj, TOMLKIT_ITEM_TYPES)
+        return obj
+
+
+def _normalize_items(objs: Iterable[Any]) -> list[Any]:
+    """
+    Normalize objects to tomlkit items.
+    """
+    return [_normalize_item(o) for o in objs]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomlkit
+import tomlkit.items
 from tomlkit.items import Integer, String
 
 from packagekit.modeling.toml import (
@@ -91,23 +92,32 @@ def test_document():
     assert document.array_test == [10, 2, 3]
 
     new_inner_array = Array([10])
+
     # hasn't been converted to tomlkit obj yet
-    assert isinstance(new_inner_array[0], int)
+    assert isinstance(new_inner_array[0], Integer)
     document.nested_array_test[0] = new_inner_array
     new_inner_array.append(20)
-    # since assigned to a parent, values have been converted to tomlkit objects
-    assert isinstance(new_inner_array[0], Integer)
     assert isinstance(new_inner_array[1], Integer)
     assert document.nested_array_test[0] == [10, 20]
 
-    document.inline_table_array_test.append(
-        InlineTableTest(inline_table_string_test="jkl", inline_table_int_test=3)
+    new_inline_table = InlineTableTest(
+        inline_table_string_test="jkl", inline_table_int_test=3
     )
+    assert isinstance(new_inline_table.inline_table_string_test, String)
+    assert isinstance(new_inline_table.inline_table_int_test, Integer)
+    document.inline_table_array_test.append(new_inline_table)
     assert len(document.inline_table_array_test) == 3
+    inline_table_array_test = document.tomlkit_obj["inline_table_array_test"]
+    assert isinstance(inline_table_array_test, tomlkit.items.Array)
+    assert len(inline_table_array_test) == 3
+    assert all(
+        isinstance(i, tomlkit.items.InlineTable) for i in inline_table_array_test
+    )
 
     document.table_test = TableTest(
         table_string_test=tomlkit.string("table test string 2")
     )
     assert document.table_test.table_string_test == "table test string 2"
-    assert document._tomlkit_obj["table_test"]["table_string_test"] == "table test string 2"  # type: ignore
     assert isinstance(document.table_test.table_string_test, String)
+    assert document.tomlkit_obj["table_test"]["table_string_test"] == "table test string 2"  # type: ignore
+    assert document.table_test.table_string_test is document.tomlkit_obj["table_test"]["table_string_test"]  # type: ignore
