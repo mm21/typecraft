@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import tomlkit
 import tomlkit.items
 from tomlkit.items import Integer, String
@@ -13,6 +15,7 @@ from packagekit.modeling.toml import (
 )
 
 
+@dataclass
 class DocumentTest(BaseDocument):
     string_test: String
     int_test: Integer
@@ -26,10 +29,12 @@ class DocumentTest(BaseDocument):
     table_array_test: TableArray[TableTest]
 
 
+@dataclass
 class TableTest(BaseTable):
     table_string_test: String
 
 
+@dataclass
 class InlineTableTest(BaseInlineTable):
     inline_table_string_test: str
     inline_table_int_test: int

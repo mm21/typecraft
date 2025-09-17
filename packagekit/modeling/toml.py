@@ -1,10 +1,11 @@
 """
-Layer to map TOML files (via `tomlkit`) to/from Pydantic models.
+Layer to map TOML files (via `tomlkit`) to/from dataclasses.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import Field, fields
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
@@ -19,13 +20,12 @@ from typing import (
     cast,
     get_args,
     get_origin,
+    get_type_hints,
     overload,
 )
 
 import tomlkit
 import tomlkit.items
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
-from pydantic.fields import FieldInfo
 from tomlkit.items import Trivia
 
 from ..typing.generics import get_type_param
@@ -136,9 +136,7 @@ class BaseTomlElement[TomlkitT](ABC):
             self._propagate_tomlkit_obj(tomlkit_obj)
 
 
-class BaseContainer[TomlkitT: MutableMapping[str, Any]](
-    BaseModel, BaseTomlElement[TomlkitT]
-):
+class BaseContainer[TomlkitT: MutableMapping[str, Any]](BaseTomlElement[TomlkitT]):
     """
     Container for items in a document or table. Upon reading a TOML file via
     `tomlkit`, coerces values from `tomlkit` types to the corresponding class
@@ -148,7 +146,26 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](
     and `BaseTomlElement` subclasses are allowed as fields.
     """
 
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+    def __post_init__(self):
+        """
+        Post-initialization to validate and normalize field values.
+        """
+        # validate and normalize all fields
+        for field_info in _get_fields(self):
+            name = field_info.name
+            value = getattr(self, name, None)
+
+            if value is None:
+                continue
+
+            # if value is a tomlkit item, validate and coerce it
+            if isinstance(value, TOMLKIT_ITEM_TYPES):
+                field_cls, annotation = self._get_field_type(field_info)
+                if issubclass(field_cls, BaseTomlElement):
+                    element = field_cls._from_tomlkit_obj(value, annotation=annotation)
+                    object.__setattr__(self, name, element)
+            elif not isinstance(value, BaseTomlElement):
+                object.__setattr__(self, name, _normalize_value(value))
 
     def __setattr__(self, name: str, value: Any):
         """
@@ -156,45 +173,22 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](
         """
         value_norm = _normalize_value(value)
         super().__setattr__(name, value_norm)
-        if self._tomlkit_obj and (field_info := type(self).model_fields.get(name)):
+        if self._tomlkit_obj and (field_info := self._get_field_info(name)):
             self._propagate_field(self._tomlkit_obj, name, field_info, value_norm)
 
-    @field_validator("*", mode="before", check_fields=False)
     @classmethod
-    def validate_field(cls, value: Any, info: ValidationInfo) -> Any:
-        assert info.field_name
-
-        field_cls, annotation = cls._get_field_type(info.field_name)
-
-        # coerce value if type is element
-        if issubclass(field_cls, BaseTomlElement):
-            return field_cls._from_tomlkit_obj(value, annotation=annotation)
-
-        return value
-
-    def model_post_init(self, context: Any) -> None:
-        super().model_post_init(context)
-
-        for name in type(self).model_fields:
-            value = getattr(self, name, None)
-            if value is None:
-                continue
-
-            if not isinstance(value, BaseTomlElement):
-                object.__setattr__(self, name, _normalize_value(value))
-
-    @classmethod
-    def _get_field_type(cls, field_name: str) -> tuple[type[Any], type[Any]]:
+    def _get_field_type(cls, field_info: Field) -> tuple[type[Any], type[Any]]:
         """
         Get the field type as (concrete class, annotation).
         """
-        field_info = cls.model_fields.get(field_name)
-        assert field_info
+        assert field_info.type, f"Field {field_info.name} does not have annotation"
+        type_hints = get_type_hints(cls)
 
-        annotation = field_info.annotation
-        assert annotation
+        assert field_info.name in type_hints
+        annotation = type_hints[field_info.name]
 
-        return (get_origin(annotation) or annotation, annotation)
+        origin = get_origin(annotation)
+        return cast(tuple[type[Any], type[Any]], (origin or annotation, annotation))
 
     @classmethod
     def _coerce(
@@ -204,33 +198,39 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](
         Extract model fields from container and return instance of this model with
         the original container stored.
         """
-        fields: dict[str, Any] = {}
+        field_values: dict[str, Any] = {}
 
-        for name in cls.model_fields.keys():
-            if name in tomlkit_obj:
-                fields[name] = tomlkit_obj[name]
+        for field_info in _get_fields(cls):
+            if field_info.name in tomlkit_obj:
+                field_values[field_info.name] = tomlkit_obj[field_info.name]
 
-        return cls(**fields)
+        return cls(**field_values)
+
+    @cached_property
+    def _fields(self) -> dict[str, Field]:
+        return {f.name: f for f in _get_fields(self)}
+
+    def _get_field_info(self, field_name: str) -> Field | None:
+        return self._fields.get(field_name, None)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         # propagate all fields
-        for name, field_info in type(self).model_fields.items():
-            value = getattr(self, name, None)
+        for field_info in _get_fields(self):
+            value = getattr(self, field_info.name, None)
             if value is None:
                 continue
-            self._propagate_field(tomlkit_obj, name, field_info, value)
+            self._propagate_field(tomlkit_obj, field_info.name, field_info, value)
 
     def _propagate_field(
-        self, tomlkit_obj: TomlkitT, name: str, field_info: FieldInfo, value: Any
+        self, tomlkit_obj: TomlkitT, name: str, field_info: Field, value: Any
     ):
         """
         Propagate field to this container's tomlkit obj.
         """
-        field_name = field_info.alias or name
+        # TODO: user-defined get_aliases(): map field name to key
+        # use field name directly (no alias support in dataclasses)
         assert isinstance(value, (BaseTomlElement, *TOMLKIT_ITEM_TYPES))
-
-        # TODO: handle None: delete corresponding field?
-        tomlkit_obj[field_name] = _normalize_item(value)
+        tomlkit_obj[name] = _normalize_item(value)
 
 
 class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
@@ -254,12 +254,10 @@ class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
         return cls._from_tomlkit_obj(tomlkit.loads(string))
 
     def dump(self, file: Path, /):
-        # TODO
-        ...
+        file.write_text(self.dumps())
 
     def dumps(self) -> str:
-        # TODO
-        ...
+        return tomlkit.dumps(self.tomlkit_obj)
 
     def _create_tomlkit_obj(self) -> tomlkit.TOMLDocument:
         return tomlkit.TOMLDocument()
@@ -467,3 +465,10 @@ def _normalize_items(objs: Iterable[Any]) -> list[Any]:
     Normalize objects to tomlkit items.
     """
     return [_normalize_item(o) for o in objs]
+
+
+def _get_fields(class_or_instance: Any) -> tuple[Field[Any], ...]:
+    """
+    Wrapper since base classes are not themselves dataclasses.
+    """
+    return fields(class_or_instance)

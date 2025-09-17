@@ -33,7 +33,6 @@ requires = ["poetry-core>=1.0.0"]
 packages = [{include = "packagekit"}]
 
 [tool.poetry.dependencies]
-pydantic = {version = "^2.11.7", optional = true}
 tomlkit = {version = "^0.13.3", optional = true}
 
 [tool.poetry.group.dev.dependencies]
@@ -45,12 +44,10 @@ pytest = "^8.4.2"
 toml-sort = "^0.24.2"
 
 [tool.poetry.group.toml.dependencies]
-pydantic = "*"
 tomlkit = "*"
 
 [tool.poetry.extras]
 toml = [
-  "pydantic",
   "tomlkit"
 ]
 
