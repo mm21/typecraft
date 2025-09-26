@@ -25,38 +25,39 @@ from typing import (
 )
 
 import tomlkit
-import tomlkit.items
-from tomlkit.items import Trivia
+from tomlkit import TOMLDocument
+from tomlkit.items import AbstractTable, AoT, Array, InlineTable, Item, Table, Trivia
 
 from ..typing.generics import get_type_param
 
-type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInlineTable | Array
+type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInlineTableWrapper | ArrayWrapper
 """
 Types which can be used as fields of array items.
 """
 
-type TomlkitItemType = tomlkit.items.Item | tomlkit.items.Array | tomlkit.items.AbstractTable
-type ValueType = BaseTomlElement | TomlkitItemType
+type TomlkitItemType = Item | Array | AbstractTable
+type ValueType = BaseTomlWrapper | TomlkitItemType
 
 TOMLKIT_ITEM_TYPES = (
-    tomlkit.items.Item,
-    tomlkit.items.Array,
-    tomlkit.items.AbstractTable,
+    Item,
+    Array,
+    AbstractTable,
 )
 
 __all__ = [
-    "BaseDocument",
-    "BaseTable",
-    "BaseInlineTable",
-    "Array",
-    "TableArray",
+    "BaseDocumentWrapper",
+    "BaseTableWrapper",
+    "BaseInlineTableWrapper",
+    "ArrayWrapper",
+    "TableArrayWrapper",
     "ArrayItemType",
 ]
 
 
-class BaseTomlElement[TomlkitT](ABC):
+class BaseTomlWrapper[TomlkitT](ABC):
     """
-    Abstracts a TOML element corresponding to a type from `tomlkit`.
+    Base wrapper for a class from `tomlkit`, providing additional features like mapping
+    to/from dataclasses.
     """
 
     _tomlkit_obj: TomlkitT | None = None
@@ -116,7 +117,7 @@ class BaseTomlElement[TomlkitT](ABC):
         """
         Get corresponding tomlkit class.
         """
-        tomlkit_cls = get_type_param(cls, BaseTomlElement)
+        tomlkit_cls = get_type_param(cls, BaseTomlWrapper)
         assert tomlkit_cls, f"Could not get type param for {cls}"
         return tomlkit_cls
 
@@ -136,14 +137,16 @@ class BaseTomlElement[TomlkitT](ABC):
             self._propagate_tomlkit_obj(tomlkit_obj)
 
 
-class BaseContainer[TomlkitT: MutableMapping[str, Any]](BaseTomlElement[TomlkitT]):
+class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
+    BaseTomlWrapper[TomlkitT]
+):
     """
-    Container for items in a document or table. Upon reading a TOML file via
-    `tomlkit`, coerces values from `tomlkit` types to the corresponding class
+    Base container for items in a document or table. Upon reading a TOML file via
+    `tomlkit`, coerces values from `tomlkit` types to the corresponding type
     in this package.
 
     Only primitives (`str`, `int`, `float`, `bool`, `date`, `time`, `datetime`)
-    and `BaseTomlElement` subclasses are allowed as fields.
+    and `BaseTomlWrapper` subclasses are allowed as fields.
     """
 
     def __post_init__(self):
@@ -161,10 +164,10 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](BaseTomlElement[TomlkitT
             # if value is a tomlkit item, validate and coerce it
             if isinstance(value, TOMLKIT_ITEM_TYPES):
                 field_cls, annotation = self._get_field_type(field_info)
-                if issubclass(field_cls, BaseTomlElement):
+                if issubclass(field_cls, BaseTomlWrapper):
                     element = field_cls._from_tomlkit_obj(value, annotation=annotation)
                     object.__setattr__(self, name, element)
-            elif not isinstance(value, BaseTomlElement):
+            elif not isinstance(value, BaseTomlWrapper):
                 object.__setattr__(self, name, _normalize_value(value))
 
     def __setattr__(self, name: str, value: Any):
@@ -229,15 +232,15 @@ class BaseContainer[TomlkitT: MutableMapping[str, Any]](BaseTomlElement[TomlkitT
         """
         # TODO: user-defined get_aliases(): map field name to key
         # use field name directly (no alias support in dataclasses)
-        assert isinstance(value, (BaseTomlElement, *TOMLKIT_ITEM_TYPES))
+        assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_ITEM_TYPES))
         tomlkit_obj[name] = _normalize_item(value)
 
 
-class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
+class BaseDocumentWrapper(BaseContainerWrapper[TOMLDocument]):
     """
     Abstracts a TOML document.
 
-    Saves the parsed `tomlkit.TOMLDocument` upon loading so it can be
+    Saves the parsed `TOMLDocument` upon loading so it can be
     updated upon storing, preserving item attributes like whether arrays are multiline.
     """
 
@@ -259,30 +262,30 @@ class BaseDocument(BaseContainer[tomlkit.TOMLDocument]):
     def dumps(self) -> str:
         return tomlkit.dumps(self.tomlkit_obj)
 
-    def _create_tomlkit_obj(self) -> tomlkit.TOMLDocument:
-        return tomlkit.TOMLDocument()
+    def _create_tomlkit_obj(self) -> TOMLDocument:
+        return TOMLDocument()
 
 
-class BaseTable(BaseContainer[tomlkit.items.Table]):
+class BaseTableWrapper(BaseContainerWrapper[Table]):
     """
     Abstracts a table with nested primitive types or other tables.
     """
 
-    def _create_tomlkit_obj(self) -> tomlkit.items.Table:
+    def _create_tomlkit_obj(self) -> Table:
         return tomlkit.table()
 
 
-class BaseInlineTable(BaseContainer[tomlkit.items.InlineTable]):
+class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
     """
     Abstracts an inline table with nested primitive types.
     """
 
-    def _create_tomlkit_obj(self) -> tomlkit.items.InlineTable:
+    def _create_tomlkit_obj(self) -> InlineTable:
         return tomlkit.inline_table()
 
 
-class BaseArray[TomlkitT: list, ItemT](
-    MutableSequence[ItemT], BaseTomlElement[TomlkitT]
+class BaseArrayWrapper[TomlkitT: list, ItemT](
+    MutableSequence[ItemT], BaseTomlWrapper[TomlkitT]
 ):
     """
     Base array of either primitive types or tables.
@@ -373,7 +376,7 @@ class BaseArray[TomlkitT: list, ItemT](
         item_values = cls._get_item_values(tomlkit_obj)
 
         # populate new array with values
-        if issubclass(item_cls, BaseTomlElement):
+        if issubclass(item_cls, BaseTomlWrapper):
             items = [
                 item_cls._from_tomlkit_obj(i, annotation=item_type) for i in item_values
             ]
@@ -404,37 +407,37 @@ class BaseArray[TomlkitT: list, ItemT](
         return item_cls, item_type
 
 
-class Array[ItemT: ArrayItemType](BaseArray[tomlkit.items.Array, ItemT]):
+class ArrayWrapper[ItemT: ArrayItemType](BaseArrayWrapper[Array, ItemT]):
     """
     Array of primitive types.
     """
 
-    def _create_tomlkit_obj(self) -> tomlkit.items.Array:
-        return tomlkit.items.Array([], Trivia())
+    def _create_tomlkit_obj(self) -> Array:
+        return Array([], Trivia())
 
     @staticmethod
-    def _get_item_values(tomlkit_obj: tomlkit.items.Array) -> list[Any]:
+    def _get_item_values(tomlkit_obj: Array) -> list[Any]:
         return tomlkit_obj.value
 
 
-class TableArray[TableT: BaseTable](BaseArray[tomlkit.items.AoT, TableT]):
+class TableArrayWrapper[TableT: BaseTableWrapper](BaseArrayWrapper[AoT, TableT]):
     """
     Array of tables.
     """
 
-    def _create_tomlkit_obj(self) -> tomlkit.items.AoT:
-        return tomlkit.items.AoT([])
+    def _create_tomlkit_obj(self) -> AoT:
+        return AoT([])
 
     @staticmethod
-    def _get_item_values(tomlkit_obj: tomlkit.items.AoT) -> list[Any]:
+    def _get_item_values(tomlkit_obj: AoT) -> list[Any]:
         return tomlkit_obj.body
 
 
 def _normalize_value(value: Any) -> ValueType:
     """
-    Normalize value to `BaseTomlElement` or tomlkit item.
+    Normalize value to `BaseTomlWrapper` or tomlkit item.
     """
-    if isinstance(value, BaseTomlElement):
+    if isinstance(value, BaseTomlWrapper):
         return value
     elif isinstance(value, TOMLKIT_ITEM_TYPES):
         return value
@@ -444,7 +447,7 @@ def _normalize_value(value: Any) -> ValueType:
 
 def _normalize_values(values: Iterable[Any]) -> list[ValueType]:
     """
-    Normalize values to `BaseTomlElement`s or items.
+    Normalize values to `BaseTomlWrapper`s or items.
     """
     return [_normalize_value(v) for v in values]
 
@@ -453,7 +456,7 @@ def _normalize_item(obj: ValueType) -> TomlkitItemType:
     """
     Normalize object to tomlkit item.
     """
-    if isinstance(obj, BaseTomlElement):
+    if isinstance(obj, BaseTomlWrapper):
         return obj.tomlkit_obj
     else:
         assert isinstance(obj, TOMLKIT_ITEM_TYPES)

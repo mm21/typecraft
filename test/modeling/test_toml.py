@@ -7,35 +7,35 @@ import tomlkit.items
 from tomlkit.items import Integer, String
 
 from packagekit.modeling.toml import (
-    Array,
-    BaseDocument,
-    BaseInlineTable,
-    BaseTable,
-    TableArray,
+    ArrayWrapper,
+    BaseDocumentWrapper,
+    BaseInlineTableWrapper,
+    BaseTableWrapper,
+    TableArrayWrapper,
 )
 
 
 @dataclass
-class DocumentTest(BaseDocument):
+class DocumentTest(BaseDocumentWrapper):
     string_test: String
     int_test: Integer
     inline_table_test: InlineTableTest
 
-    array_test: Array[int]
-    nested_array_test: Array[Array[int]]
-    inline_table_array_test: Array[InlineTableTest]
+    array_test: ArrayWrapper[int]
+    nested_array_test: ArrayWrapper[ArrayWrapper[int]]
+    inline_table_array_test: ArrayWrapper[InlineTableTest]
 
     table_test: TableTest
-    table_array_test: TableArray[TableTest]
+    table_array_test: TableArrayWrapper[TableTest]
 
 
 @dataclass
-class TableTest(BaseTable):
+class TableTest(BaseTableWrapper):
     table_string_test: String
 
 
 @dataclass
-class InlineTableTest(BaseInlineTable):
+class InlineTableTest(BaseInlineTableWrapper):
     inline_table_string_test: str
     inline_table_int_test: int
 
@@ -96,7 +96,7 @@ def test_document():
     assert isinstance(document.array_test[0], Integer)
     assert document.array_test == [10, 2, 3]
 
-    new_inner_array = Array([10])
+    new_inner_array = ArrayWrapper([10])
     assert isinstance(new_inner_array.tomlkit_obj, tomlkit.items.Array)
 
     # has already been converted to tomlkit obj
