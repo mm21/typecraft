@@ -129,6 +129,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
     def _coerce(
         cls,
         tomlkit_obj: TomlkitT,
+        *,
         annotation: type[Any] | None = None,
     ) -> Self:
         """
@@ -150,6 +151,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
     def _from_tomlkit_obj(
         cls,
         tomlkit_obj: TomlkitT,
+        *,
         annotation: type[Any] | None = None,
     ) -> Self:
         tomlkit_cls = cls._get_tomlkit_cls()
@@ -157,7 +159,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
             tomlkit_obj, tomlkit_cls
         ), f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
 
-        obj = cls._coerce(tomlkit_obj, annotation)
+        obj = cls._coerce(tomlkit_obj, annotation=annotation)
         obj._set_tomlkit_obj(tomlkit_obj, bypass_propagate=True)
         return obj
 
@@ -260,9 +262,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         return cast(tuple[type[Any], type[Any]], (origin or annotation, annotation))
 
     @classmethod
-    def _coerce(
-        cls, tomlkit_obj: TomlkitT, annotation: type[Any] | None = None
-    ) -> Self:
+    def _coerce(cls, tomlkit_obj: TomlkitT, **_) -> Self:
         """
         Extract model fields from container and return instance of this model with
         the original container stored.
@@ -434,11 +434,11 @@ class BaseArrayWrapper[TomlkitT: list, ItemT](
 
     @classmethod
     def _coerce(
-        cls, tomlkit_obj: TomlkitT, annotation: type[Any] | None = None
+        cls, tomlkit_obj: TomlkitT, *, annotation: type[Any] | None = None
     ) -> Self:
         # get type with which this array is parameterized
         assert annotation, "No annotation"
-        item_cls, item_type = cls._get_item_cls(annotation)
+        item_cls, item_annotation = cls._get_item_cls(annotation)
 
         # get raw values
         item_values = cls._get_item_values(tomlkit_obj)
@@ -446,7 +446,8 @@ class BaseArrayWrapper[TomlkitT: list, ItemT](
         # populate new array with values
         if issubclass(item_cls, BaseTomlWrapper):
             items = [
-                item_cls._from_tomlkit_obj(i, annotation=item_type) for i in item_values
+                item_cls._from_tomlkit_obj(i, annotation=item_annotation)
+                for i in item_values
             ]
         else:
             items = item_values
