@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 import tomlkit
 from tomlkit.items import Array, InlineTable, Integer, String
@@ -24,7 +25,7 @@ class DocumentTest(BaseDocumentWrapper):
     nested_array_test: ArrayWrapper[ArrayWrapper[int]]
     inline_table_array_test: ArrayWrapper[InlineTableTest]
 
-    table_test: TableTest
+    table_test: Annotated[TableTest, "table-test"]
     table_array_test: TableArrayWrapper[TableTest]
 
 
@@ -50,7 +51,7 @@ inline_table_array_test = [
     {inline_table_string_test = "ghi", inline_table_int_test = 2},
 ]
 
-[table_test]
+[table-test]
 table_string_test = "table test string"
 
 [[table_array_test]]
@@ -122,5 +123,5 @@ def test_document():
     )
     assert document.table_test.table_string_test == "table test string 2"
     assert isinstance(document.table_test.table_string_test, String)
-    assert document.tomlkit_obj["table_test"]["table_string_test"] == "table test string 2"  # type: ignore
-    assert document.table_test.table_string_test is document.tomlkit_obj["table_test"]["table_string_test"]  # type: ignore
+    assert document.tomlkit_obj["table-test"]["table_string_test"] == "table test string 2"  # type: ignore
+    assert document.table_test.table_string_test is document.tomlkit_obj["table-test"]["table_string_test"]  # type: ignore

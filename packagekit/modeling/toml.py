@@ -14,6 +14,7 @@ from datetime import time as Time
 from functools import cached_property
 from pathlib import Path
 from typing import (
+    Annotated,
     Any,
     Iterable,
     MutableMapping,
@@ -204,11 +205,11 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         """
         Ensure all fields are of expected type.
         """
-        for field_info in _get_fields(self):
-            field_cls, _ = type(self)._get_field_type(field_info)
+        for field in _get_fields(self):
+            field_cls, _ = type(self)._get_field_type(field)
             if not issubclass(field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)):
                 raise TypeError(
-                    f"Field {field_info.name} ({field_cls}) is not of allowed type ({(BaseTomlWrapper, *CONTAINER_TYPES)})"
+                    f"Field {field.name} ({field_cls}) is not of allowed type ({(BaseTomlWrapper, *CONTAINER_TYPES)})"
                 )
 
     def __setattr__(self, name: str, value: Any):
@@ -216,14 +217,15 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         Normalize value, set attribute on container, and propagate to wrapped
         `tomlkit` object.
         """
+        field = self._fields.get(name)
 
         # if this is a field, normalize value
-        if field_info := self._fields.get(name):
-
+        if field:
             # lookup type param for this field
-            field_cls, annotation = self._get_field_type(field_info)
+            field_cls, annotation = type(self)._get_field_type(field)
             assert issubclass(field_cls, (BaseTomlWrapper, *CONTAINER_TYPES))
 
+            # normalize value
             if issubclass(field_cls, BaseTomlWrapper):
                 if isinstance(value, BaseTomlWrapper):
                     value_norm = value
@@ -244,20 +246,15 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         super().__setattr__(name, value_norm)
 
         # if applicable, propagate to wrapped tomlkit object
-        if self._tomlkit_obj and name in self._fields:
-            self._propagate_field(self._tomlkit_obj, name, value_norm)
+        if self._tomlkit_obj and field:
+            self._propagate_field(self._tomlkit_obj, field, value_norm)
 
     @classmethod
-    def _get_field_type(cls, field_info: Field) -> tuple[type[Any], type[Any]]:
+    def _get_field_type(cls, field: Field) -> tuple[type[Any], type[Any]]:
         """
         Get the field type as (concrete class, annotation).
         """
-        assert field_info.type, f"Field {field_info.name} does not have annotation"
-        type_hints = get_type_hints(cls)
-
-        assert field_info.name in type_hints
-        annotation = type_hints[field_info.name]
-
+        annotation = cls._get_annotation(field)[0]
         origin = get_origin(annotation)
         return cast(tuple[type[Any], type[Any]], (origin or annotation, annotation))
 
@@ -267,39 +264,65 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         Extract model fields from container and return instance of this model with
         the original container stored.
         """
-        field_values: dict[str, Any] = {}
+        values: dict[str, Any] = {}
 
-        for field_info in _get_fields(cls):
-            if field_info.name in tomlkit_obj:
-                field_values[field_info.name] = tomlkit_obj[field_info.name]
+        for field in _get_fields(cls):
+            field_name = cls._get_field_name(field)
+            if value := tomlkit_obj.get(field_name):
+                values[field.name] = value
 
-        # TODO: use get_aliases() - reverse mapping (toml name to field name)
+        return cls(**values)
 
-        return cls(**field_values)
+    @classmethod
+    def _get_annotation(cls, field: Field) -> tuple[Any, str | None]:
+        """
+        Get annotation for this field as (annotation, alias).
+        """
+        assert field.type, f"Field '{field.name}' does not have an annotation"
+        type_hints = get_type_hints(cls, include_extras=True)
+
+        assert field.name in type_hints
+        annotation = type_hints[field.name]
+
+        if get_origin(annotation) is Annotated:
+            args = get_args(annotation)
+            assert (
+                len(args) == 2
+            ), f"Field '{field.name}': Annotated[] must have exactly 2 params (type, alias)"
+            annotation_norm, alias = args
+            assert isinstance(alias, str)
+        else:
+            annotation_norm = annotation
+            alias = None
+
+        return (annotation_norm, alias)
+
+    @classmethod
+    def _get_field_name(cls, field: Field) -> str:
+        """
+        Get name of field, handling alias if applicable.
+        """
+        return cls._get_annotation(field)[1] or field.name
 
     @cached_property
     def _fields(self) -> dict[str, Field]:
         return {f.name: f for f in _get_fields(self)}
 
-    def _get_field_info(self, field_name: str) -> Field | None:
-        return self._fields.get(field_name, None)
-
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         # propagate all fields
-        for field_info in _get_fields(self):
-            value = getattr(self, field_info.name, None)
+        for field in _get_fields(self):
+            value = getattr(self, field.name, None)
             if value is None:
                 continue
-            self._propagate_field(tomlkit_obj, field_info.name, value)
+            self._propagate_field(tomlkit_obj, field, value)
 
-    def _propagate_field(self, tomlkit_obj: TomlkitT, name: str, value: Any):
+    def _propagate_field(self, tomlkit_obj: TomlkitT, field: Field, value: Any):
         """
         Propagate field to this container's tomlkit obj.
         """
-        # TODO: user-defined get_aliases(): map field name to key
-        # use field name directly (no alias support in dataclasses)
         assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_TYPES))
-        tomlkit_obj[name] = (
+        field_name = type(self)._get_field_name(field)
+        tomlkit_obj[field_name] = (
             value.tomlkit_obj if isinstance(value, BaseTomlWrapper) else value
         )
 
