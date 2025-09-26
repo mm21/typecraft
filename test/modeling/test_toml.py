@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import tomlkit
-import tomlkit.items
-from tomlkit.items import Integer, String
+from tomlkit.items import Array, InlineTable, Integer, String
 
 from packagekit.modeling.toml import (
     ArrayWrapper,
@@ -97,7 +96,7 @@ def test_document():
     assert document.array_test == [10, 2, 3]
 
     new_inner_array = ArrayWrapper([10])
-    assert isinstance(new_inner_array.tomlkit_obj, tomlkit.items.Array)
+    assert isinstance(new_inner_array.tomlkit_obj, Array)
 
     # has already been converted to tomlkit obj
     assert isinstance(new_inner_array[0], Integer)
@@ -114,11 +113,9 @@ def test_document():
     document.inline_table_array_test.append(new_inline_table)
     assert len(document.inline_table_array_test) == 3
     inline_table_array_test = document.tomlkit_obj["inline_table_array_test"]
-    assert isinstance(inline_table_array_test, tomlkit.items.Array)
+    assert isinstance(inline_table_array_test, Array)
     assert len(inline_table_array_test) == 3
-    assert all(
-        isinstance(i, tomlkit.items.InlineTable) for i in inline_table_array_test
-    )
+    assert all(isinstance(i, InlineTable) for i in inline_table_array_test)
 
     document.table_test = TableTest(
         table_string_test=tomlkit.string("table test string 2")

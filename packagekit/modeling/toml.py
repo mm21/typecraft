@@ -4,8 +4,10 @@ Layer to map TOML files (via `tomlkit`) to/from dataclasses.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 from abc import ABC, abstractmethod
-from dataclasses import Field, fields
+from dataclasses import Field
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
@@ -26,23 +28,70 @@ from typing import (
 
 import tomlkit
 from tomlkit import TOMLDocument
-from tomlkit.items import AbstractTable, AoT, Array, InlineTable, Item, Table, Trivia
+from tomlkit.items import (
+    AbstractTable,
+    AoT,
+    Array,
+    Bool,
+    Date,
+    DateTime,
+    Float,
+    InlineTable,
+    Integer,
+    Item,
+    String,
+    Table,
+    Time,
+    Trivia,
+)
 
 from ..typing.generics import get_type_param
 
-type ArrayItemType = str | int | float | bool | Date | Time | DateTime | BaseInlineTableWrapper | ArrayWrapper
+type BuiltinType = str | int | float | bool | datetime.date | datetime.time | datetime.datetime
+type TomlkitType = String | Integer | Float | Bool | Date | Time | DateTime | Item | Array | AbstractTable
+
+type ValueType = BaseTomlWrapper | TomlkitType
+"""
+Type after normalization.
+"""
+
+type ArrayItemType = BuiltinType | TomlkitType | BaseInlineTableWrapper | ArrayWrapper
 """
 Types which can be used as fields of array items.
 """
 
-type TomlkitItemType = Item | Array | AbstractTable
-type ValueType = BaseTomlWrapper | TomlkitItemType
+# keep in sync with BuiltinType
+BUILTIN_TYPES = (
+    str,
+    int,
+    float,
+    bool,
+    datetime.date,
+    datetime.time,
+    datetime.datetime,
+)
 
-TOMLKIT_ITEM_TYPES = (
+# keep in sync with TomlkitType
+TOMLKIT_TYPES = (
+    String,
+    Integer,
+    Float,
+    Bool,
+    Date,
+    Time,
+    DateTime,
     Item,
     Array,
     AbstractTable,
 )
+
+CONTAINER_TYPES = (
+    *BUILTIN_TYPES,
+    *TOMLKIT_TYPES,
+)
+"""
+Types which can be used as fields of containers (in addition to wrapper types).
+"""
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -145,39 +194,56 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     `tomlkit`, coerces values from `tomlkit` types to the corresponding type
     in this package.
 
-    Only primitives (`str`, `int`, `float`, `bool`, `date`, `time`, `datetime`)
-    and `BaseTomlWrapper` subclasses are allowed as fields.
+    Only primitives (`str`, `int`, `float`, `bool`, `date`, `time`, `datetime`),
+    `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.
     """
 
     def __post_init__(self):
         """
-        Post-initialization to validate and normalize field values.
+        Ensure all fields are of expected type.
         """
-        # validate and normalize all fields
         for field_info in _get_fields(self):
-            name = field_info.name
-            value = getattr(self, name, None)
-
-            if value is None:
-                continue
-
-            # if value is a tomlkit item, validate and coerce it
-            if isinstance(value, TOMLKIT_ITEM_TYPES):
-                field_cls, annotation = self._get_field_type(field_info)
-                if issubclass(field_cls, BaseTomlWrapper):
-                    element = field_cls._from_tomlkit_obj(value, annotation=annotation)
-                    object.__setattr__(self, name, element)
-            elif not isinstance(value, BaseTomlWrapper):
-                object.__setattr__(self, name, _normalize_value(value))
+            field_cls, _ = type(self)._get_field_type(field_info)
+            if not issubclass(field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)):
+                raise TypeError(
+                    f"Field {field_info.name} ({field_cls}) is not of allowed type ({(BaseTomlWrapper, *CONTAINER_TYPES)})"
+                )
 
     def __setattr__(self, name: str, value: Any):
         """
-        Set attribute on model and additionally write through to tomlkit object.
+        Normalize value, set attribute on container, and propagate to wrapped
+        `tomlkit` object.
         """
-        value_norm = _normalize_value(value)
+
+        # if this is a field, normalize value
+        if field_info := self._fields.get(name):
+
+            # lookup type param for this field
+            field_cls, annotation = self._get_field_type(field_info)
+            assert issubclass(field_cls, (BaseTomlWrapper, *CONTAINER_TYPES))
+
+            if issubclass(field_cls, BaseTomlWrapper):
+                if isinstance(value, BaseTomlWrapper):
+                    value_norm = value
+                else:
+                    assert isinstance(value, CONTAINER_TYPES)
+                    value_norm = field_cls._from_tomlkit_obj(
+                        value, annotation=annotation
+                    )
+            else:
+                value_norm = _normalize_value(value)
+
+            # validate normalized value
+            assert isinstance(value_norm, field_cls)
+        else:
+            value_norm = value
+
+        # set attribute
         super().__setattr__(name, value_norm)
-        if self._tomlkit_obj and (field_info := self._get_field_info(name)):
-            self._propagate_field(self._tomlkit_obj, name, field_info, value_norm)
+
+        # if applicable, propagate to wrapped tomlkit object
+        if self._tomlkit_obj and name in self._fields:
+            self._propagate_field(self._tomlkit_obj, name, value_norm)
 
     @classmethod
     def _get_field_type(cls, field_info: Field) -> tuple[type[Any], type[Any]]:
@@ -207,6 +273,8 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
             if field_info.name in tomlkit_obj:
                 field_values[field_info.name] = tomlkit_obj[field_info.name]
 
+        # TODO: use get_aliases() - reverse mapping (toml name to field name)
+
         return cls(**field_values)
 
     @cached_property
@@ -222,18 +290,18 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
             value = getattr(self, field_info.name, None)
             if value is None:
                 continue
-            self._propagate_field(tomlkit_obj, field_info.name, field_info, value)
+            self._propagate_field(tomlkit_obj, field_info.name, value)
 
-    def _propagate_field(
-        self, tomlkit_obj: TomlkitT, name: str, field_info: Field, value: Any
-    ):
+    def _propagate_field(self, tomlkit_obj: TomlkitT, name: str, value: Any):
         """
         Propagate field to this container's tomlkit obj.
         """
         # TODO: user-defined get_aliases(): map field name to key
         # use field name directly (no alias support in dataclasses)
-        assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_ITEM_TYPES))
-        tomlkit_obj[name] = _normalize_item(value)
+        assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_TYPES))
+        tomlkit_obj[name] = (
+            value.tomlkit_obj if isinstance(value, BaseTomlWrapper) else value
+        )
 
 
 class BaseDocumentWrapper(BaseContainerWrapper[TOMLDocument]):
@@ -433,13 +501,20 @@ class TableArrayWrapper[TableT: BaseTableWrapper](BaseArrayWrapper[AoT, TableT])
         return tomlkit_obj.body
 
 
+def _get_fields(class_or_instance: Any) -> tuple[Field[Any], ...]:
+    """
+    Wrapper since base classes are not themselves dataclasses.
+    """
+    return dataclasses.fields(class_or_instance)
+
+
 def _normalize_value(value: Any) -> ValueType:
     """
     Normalize value to `BaseTomlWrapper` or tomlkit item.
     """
     if isinstance(value, BaseTomlWrapper):
         return value
-    elif isinstance(value, TOMLKIT_ITEM_TYPES):
+    elif isinstance(value, TOMLKIT_TYPES):
         return value
     else:
         return tomlkit.item(value)
@@ -452,14 +527,14 @@ def _normalize_values(values: Iterable[Any]) -> list[ValueType]:
     return [_normalize_value(v) for v in values]
 
 
-def _normalize_item(obj: ValueType) -> TomlkitItemType:
+def _normalize_item(obj: ValueType) -> TomlkitType:
     """
     Normalize object to tomlkit item.
     """
     if isinstance(obj, BaseTomlWrapper):
         return obj.tomlkit_obj
     else:
-        assert isinstance(obj, TOMLKIT_ITEM_TYPES)
+        assert isinstance(obj, TOMLKIT_TYPES)
         return obj
 
 
@@ -468,10 +543,3 @@ def _normalize_items(objs: Iterable[Any]) -> list[Any]:
     Normalize objects to tomlkit items.
     """
     return [_normalize_item(o) for o in objs]
-
-
-def _get_fields(class_or_instance: Any) -> tuple[Field[Any], ...]:
-    """
-    Wrapper since base classes are not themselves dataclasses.
-    """
-    return fields(class_or_instance)
