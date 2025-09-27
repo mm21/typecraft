@@ -7,12 +7,13 @@ from __future__ import annotations
 import dataclasses
 import datetime
 from abc import ABC, abstractmethod
-from dataclasses import Field
+from dataclasses import Field, dataclass
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
 from functools import cached_property
 from pathlib import Path
+from types import NoneType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -47,6 +48,15 @@ from tomlkit.items import (
 )
 
 from ..typing.generics import get_type_param
+
+__all__ = [
+    "BaseDocumentWrapper",
+    "BaseTableWrapper",
+    "BaseInlineTableWrapper",
+    "ArrayWrapper",
+    "TableArrayWrapper",
+    "ArrayItemType",
+]
 
 type BuiltinType = str | int | float | bool | datetime.date | datetime.time | datetime.datetime
 type TomlkitType = String | Integer | Float | Bool | Date | Time | DateTime | Item | Array | AbstractTable
@@ -94,14 +104,13 @@ CONTAINER_TYPES = (
 Types which can be used as fields of containers (in addition to wrapper types).
 """
 
-__all__ = [
-    "BaseDocumentWrapper",
-    "BaseTableWrapper",
-    "BaseInlineTableWrapper",
-    "ArrayWrapper",
-    "TableArrayWrapper",
-    "ArrayItemType",
-]
+
+@dataclass(kw_only=True)
+class AnnotationInfo:
+    field_cls: type[Any]
+    annotation: Any
+    alias: str | None
+    allow_none: bool
 
 
 class BaseTomlWrapper[TomlkitT](ABC):
@@ -206,10 +215,12 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         Ensure all fields are of expected type.
         """
         for field in _get_fields(self):
-            field_cls, _ = type(self)._get_field_type(field)
-            if not issubclass(field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)):
+            annotation_info = type(self)._get_annotation_info(field)
+            if not issubclass(
+                annotation_info.field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)
+            ):
                 raise TypeError(
-                    f"Field {field.name} ({field_cls}) is not of allowed type ({(BaseTomlWrapper, *CONTAINER_TYPES)})"
+                    f"Field {field.name} ({annotation_info.field_cls}) is not of allowed type ({(BaseTomlWrapper, *CONTAINER_TYPES)})"
                 )
 
     def __setattr__(self, name: str, value: Any):
@@ -222,23 +233,34 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         # if this is a field, normalize value
         if field:
             # lookup type param for this field
-            field_cls, annotation = type(self)._get_field_type(field)
-            assert issubclass(field_cls, (BaseTomlWrapper, *CONTAINER_TYPES))
+            annotation_info = type(self)._get_annotation_info(field)
+            assert issubclass(
+                annotation_info.field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)
+            )
 
             # normalize value
-            if issubclass(field_cls, BaseTomlWrapper):
+            if value is None:
+                if not annotation_info.allow_none:
+                    raise ValueError(f"Field '{name}': 'None' not allowed")
+                value_norm = value
+            elif issubclass(annotation_info.field_cls, BaseTomlWrapper):
                 if isinstance(value, BaseTomlWrapper):
                     value_norm = value
                 else:
                     assert isinstance(value, CONTAINER_TYPES)
-                    value_norm = field_cls._from_tomlkit_obj(
-                        value, annotation=annotation
+                    value_norm = annotation_info.field_cls._from_tomlkit_obj(
+                        value, annotation=annotation_info.annotation
                     )
             else:
                 value_norm = _normalize_value(value)
 
             # validate normalized value
-            assert isinstance(value_norm, field_cls)
+            if value is not None and not isinstance(
+                value_norm, annotation_info.field_cls
+            ):
+                raise ValueError(
+                    f"Field '{name}': Type {type(value_norm)} not allowed, expected {annotation_info.field_cls}"
+                )
         else:
             value_norm = value
 
@@ -248,15 +270,6 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         # if applicable, propagate to wrapped tomlkit object
         if self._tomlkit_obj and field:
             self._propagate_field(self._tomlkit_obj, field, value_norm)
-
-    @classmethod
-    def _get_field_type(cls, field: Field) -> tuple[type[Any], type[Any]]:
-        """
-        Get the field type as (concrete class, annotation).
-        """
-        annotation = cls._get_annotation(field)[0]
-        origin = get_origin(annotation)
-        return cast(tuple[type[Any], type[Any]], (origin or annotation, annotation))
 
     @classmethod
     def _coerce(cls, tomlkit_obj: TomlkitT, **_) -> Self:
@@ -274,9 +287,9 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         return cls(**values)
 
     @classmethod
-    def _get_annotation(cls, field: Field) -> tuple[Any, str | None]:
+    def _get_annotation_info(cls, field: Field) -> AnnotationInfo:
         """
-        Get annotation for this field as (annotation, alias).
+        Get annotation info for this field.
         """
         assert field.type, f"Field '{field.name}' does not have an annotation"
         type_hints = get_type_hints(cls, include_extras=True)
@@ -289,20 +302,41 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
             assert (
                 len(args) == 2
             ), f"Field '{field.name}': Annotated[] must have exactly 2 params (type, alias)"
-            annotation_norm, alias = args
+            annotation, alias = args
             assert isinstance(alias, str)
         else:
-            annotation_norm = annotation
             alias = None
 
-        return (annotation_norm, alias)
+        if type(annotation) is UnionType:
+            args = get_args(annotation)
+            assert (
+                len(args) == 2
+            ), f"Field '{field.name}': Union must have exactly 2 type params, got {args}"
+
+            annotation, none = args
+            assert (
+                none is NoneType
+            ), f"Field '{field.name}': Second type of union must be None"
+            allow_none = True
+        else:
+            allow_none = False
+
+        origin = get_origin(annotation)
+        field_cls = cast(type[Any], origin or annotation)
+
+        return AnnotationInfo(
+            field_cls=field_cls,
+            annotation=annotation,
+            alias=alias,
+            allow_none=allow_none,
+        )
 
     @classmethod
     def _get_field_name(cls, field: Field) -> str:
         """
         Get name of field, handling alias if applicable.
         """
-        return cls._get_annotation(field)[1] or field.name
+        return cls._get_annotation_info(field).alias or field.name
 
     @cached_property
     def _fields(self) -> dict[str, Field]:
@@ -320,11 +354,15 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         """
         Propagate field to this container's tomlkit obj.
         """
-        assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_TYPES))
         field_name = type(self)._get_field_name(field)
-        tomlkit_obj[field_name] = (
-            value.tomlkit_obj if isinstance(value, BaseTomlWrapper) else value
-        )
+        if value is None:
+            if field_name in tomlkit_obj:
+                del tomlkit_obj[field_name]
+        else:
+            assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_TYPES))
+            tomlkit_obj[field_name] = (
+                value.tomlkit_obj if isinstance(value, BaseTomlWrapper) else value
+            )
 
 
 class BaseDocumentWrapper(BaseContainerWrapper[TOMLDocument]):

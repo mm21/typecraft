@@ -15,10 +15,12 @@ from packagekit.modeling.toml import (
 )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class DocumentTest(BaseDocumentWrapper):
     string_test: String
     int_test: Integer
+    optional_int_test: int | None = None
+    optional_int_test_2: Annotated[int | None, "optional-int-test-2"] = None
     inline_table_test: InlineTableTest
 
     array_test: ArrayWrapper[int]
@@ -43,6 +45,8 @@ class InlineTableTest(BaseInlineTableWrapper):
 DOCUMENT_STR = """
 string_test = "test string"
 int_test = 123
+optional_int_test = 456
+optional-int-test-2 = 789
 inline_table_test = {inline_table_string_test = "abc", inline_table_int_test = 123}
 array_test = [1, 2, 3]
 nested_array_test = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
@@ -68,6 +72,16 @@ def test_document():
     assert document.string_test == "test string"
 
     assert document.int_test == 123
+
+    assert document.optional_int_test == 456
+    assert "optional_int_test" in document.tomlkit_obj
+    document.optional_int_test = None
+    assert "optional_int_test" not in document.tomlkit_obj
+
+    assert document.optional_int_test_2 == 789
+    assert "optional-int-test-2" in document.tomlkit_obj
+    document.optional_int_test_2 = None
+    assert "optional-int-test-2" not in document.tomlkit_obj
 
     assert document.inline_table_test.inline_table_string_test == "abc"
     assert document.inline_table_test.inline_table_int_test == 123
