@@ -140,7 +140,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
         cls,
         tomlkit_obj: TomlkitT,
         *,
-        annotation: type[Any] | None = None,
+        annotation: Any | None = None,
     ) -> Self:
         """
         Create an instance of this class from the corresponding tomlkit object.
@@ -162,7 +162,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
         cls,
         tomlkit_obj: TomlkitT,
         *,
-        annotation: type[Any] | None = None,
+        annotation: Any | None = None,
     ) -> Self:
         tomlkit_cls = cls._get_tomlkit_cls()
         assert isinstance(
@@ -494,9 +494,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT](
         ...
 
     @classmethod
-    def _coerce(
-        cls, tomlkit_obj: TomlkitT, *, annotation: type[Any] | None = None
-    ) -> Self:
+    def _coerce(cls, tomlkit_obj: TomlkitT, *, annotation: Any | None = None) -> Self:
         # get type with which this array is parameterized
         assert annotation, "No annotation"
         item_cls, item_annotation = cls._get_item_cls(annotation)
@@ -520,7 +518,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT](
         tomlkit_obj += _normalize_items(self.__list)
 
     @classmethod
-    def _get_item_cls(cls, annotation: type[Any]) -> tuple[type[ItemT], type[Any]]:
+    def _get_item_cls(cls, annotation: Any) -> tuple[type[ItemT], Any]:
         """
         Get type with which this array is parameterized as (concrete type, full type).
         """
