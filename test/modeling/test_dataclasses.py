@@ -2,13 +2,22 @@ from typing import Any
 
 from pytest import raises
 
-from packagekit.data.normalizer import Converter
+from packagekit.data.normalizing import Converter
 from packagekit.modeling.dataclasses import BaseValidatedDataclass
 
 
 class BasicTest(BaseValidatedDataclass):
     a: int = 123
     b: str = "abc"
+
+
+class ValidationTest(BaseValidatedDataclass):
+    a: int = 123
+    b: str = "abc"
+
+    @classmethod
+    def dataclass_valid_types(cls) -> tuple[Any, ...]:
+        return (int, bool)
 
 
 class ConversionTest(BaseValidatedDataclass):
@@ -36,14 +45,7 @@ def test_basic():
 
 def test_validation():
     with raises(TypeError):
-
-        class _(BaseValidatedDataclass):
-            a: int = 123
-            b: str = "abc"
-
-            @classmethod
-            def dataclass_valid_types(cls) -> tuple[Any, ...]:
-                return (int, bool)
+        ValidationTest()
 
 
 def test_conversion():
