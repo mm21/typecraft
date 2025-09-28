@@ -215,7 +215,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
                     or field_info.concrete_annotations[1] is not NoneType
                 ):
                     raise TypeError(
-                        f"Class {cls}: Field '{name}': Unions must consist of (type) | None"
+                        f"Class {cls}: Field '{name}': Unions must consist of (type) | None, got {field_info.annotation}"
                     )
         return super().__new__(cls, *args, **kwargs)
 
@@ -231,7 +231,8 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     @classmethod
     def dataclass_valid_types(cls) -> tuple[Any, ...]:
         return (
-            BaseContainerWrapper,
+            BaseTableWrapper,
+            BaseInlineTableWrapper,
             ArrayWrapper,
             TableArrayWrapper,
             *CONTAINER_TYPES,
@@ -242,16 +243,14 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         annotation = field_info.annotations[0]
         concrete_annotation = field_info.concrete_annotations[0]
 
-        if issubclass(concrete_annotation, BaseTomlWrapper) and not isinstance(
+        if value is None:
+            return None
+        elif issubclass(concrete_annotation, BaseTomlWrapper) and not isinstance(
             value, concrete_annotation
         ):
-            value_norm = concrete_annotation._from_tomlkit_obj(
-                value, annotation=annotation
-            )
+            return concrete_annotation._from_tomlkit_obj(value, annotation=annotation)
         else:
-            value_norm = _normalize_value(value)
-
-        return value_norm
+            return _normalize_value(value)
 
     @classmethod
     def _wrap_tomlkit_obj(cls, tomlkit_obj: TomlkitT, **_) -> Self:
@@ -508,7 +507,7 @@ def _normalize_value(value: Any) -> ValueType:
     """
     if isinstance(value, BaseTomlWrapper):
         return value
-    elif isinstance(value, TOMLKIT_TYPES) or value is None:
+    elif isinstance(value, TOMLKIT_TYPES):
         return value
     else:
         return tomlkit.item(value)

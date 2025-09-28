@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import tomlkit
+from pytest import raises
 from tomlkit.items import Array, InlineTable, Integer, String
 
 from packagekit.modeling.toml import (
@@ -19,7 +20,9 @@ class DocumentTest(BaseDocumentWrapper):
     int_test: Integer
     optional_int_test: int | None = None
     optional_int_test_2: Annotated[int | None, "optional-int-test-2"] = None
+    optional_int_test_3: int | None = None
     inline_table_test: InlineTableTest
+    optional_inline_table_test: InlineTableTest | None = None
 
     array_test: ArrayWrapper[int]
     nested_array_test: ArrayWrapper[ArrayWrapper[int]]
@@ -36,6 +39,10 @@ class TableTest(BaseTableWrapper):
 class InlineTableTest(BaseInlineTableWrapper):
     inline_table_string_test: str
     inline_table_int_test: int
+
+
+class InvalidTableTest(BaseTableWrapper):
+    invalid_union: int | str = 0
 
 
 DOCUMENT_STR = """
@@ -82,8 +89,12 @@ def test_document():
     document.optional_int_test_2 = None
     assert "optional-int-test-2" not in document.tomlkit_obj
 
+    assert document.optional_int_test_3 is None
+
     assert document.inline_table_test.inline_table_string_test == "abc"
     assert document.inline_table_test.inline_table_int_test == 123
+
+    assert document.optional_inline_table_test is None
 
     assert document.array_test == [1, 2, 3]
 
@@ -138,3 +149,8 @@ def test_document():
     assert isinstance(document.table_test.table_string_test, String)
     assert document.tomlkit_obj["table-test"]["table_string_test"] == "table test string 2"  # type: ignore
     assert document.table_test.table_string_test is document.tomlkit_obj["table-test"]["table_string_test"]  # type: ignore
+
+
+def test_invalid():
+    with raises(TypeError):
+        InvalidTableTest()
