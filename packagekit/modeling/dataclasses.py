@@ -130,9 +130,9 @@ class BaseValidatedDataclass:
             value_norm = self.__normalize_value(field_info, value)
             if not isinstance(value_norm, field_info.concrete_annotations):
                 raise ValueError(
-                    f"Field '{field_info.field.name}' of object {self}: Value '{value_norm}' "
-                    f"({type(value_norm)}) not allowed, expected one of "
-                    f"{field_info.concrete_annotations}"
+                    f"Field '{field_info.field.name}' of object {self}: Value '{value}' "
+                    f"({type(value)}) not allowed and could not be converted, expected "
+                    f"one of {field_info.concrete_annotations}"
                 )
         else:
             value_norm = value
