@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Annotated
 
 import tomlkit
@@ -15,7 +14,6 @@ from packagekit.modeling.toml import (
 )
 
 
-@dataclass(kw_only=True)
 class DocumentTest(BaseDocumentWrapper):
     string_test: String
     int_test: Integer
@@ -31,12 +29,10 @@ class DocumentTest(BaseDocumentWrapper):
     table_array_test: TableArrayWrapper[TableTest]
 
 
-@dataclass
 class TableTest(BaseTableWrapper):
     table_string_test: String
 
 
-@dataclass
 class InlineTableTest(BaseInlineTableWrapper):
     inline_table_string_test: str
     inline_table_int_test: int
@@ -77,6 +73,9 @@ def test_document():
     assert "optional_int_test" in document.tomlkit_obj
     document.optional_int_test = None
     assert "optional_int_test" not in document.tomlkit_obj
+
+    document.optional_int_test = 457
+    assert document.tomlkit_obj["optional_int_test"] == 457
 
     assert document.optional_int_test_2 == 789
     assert "optional-int-test-2" in document.tomlkit_obj

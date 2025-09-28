@@ -4,18 +4,15 @@ Layer to map TOML files (via `tomlkit`) to/from dataclasses.
 
 from __future__ import annotations
 
-import dataclasses
 import datetime
 from abc import ABC, abstractmethod
-from dataclasses import Field, dataclass
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
 from functools import cached_property
 from pathlib import Path
-from types import NoneType, UnionType
+from types import NoneType
 from typing import (
-    Annotated,
     Any,
     Iterable,
     MutableMapping,
@@ -24,7 +21,6 @@ from typing import (
     cast,
     get_args,
     get_origin,
-    get_type_hints,
     overload,
 )
 
@@ -48,6 +44,7 @@ from tomlkit.items import (
 )
 
 from ..typing.generics import get_type_param
+from .dataclasses import BaseValidatedDataclass, FieldInfo
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -105,14 +102,6 @@ Types which can be used as fields of containers (in addition to wrapper types).
 """
 
 
-@dataclass(kw_only=True)
-class AnnotationInfo:
-    field_cls: type[Any]
-    annotation: Any
-    alias: str | None
-    allow_none: bool
-
-
 class BaseTomlWrapper[TomlkitT](ABC):
     """
     Base wrapper for a class from `tomlkit`, providing additional features like mapping
@@ -136,7 +125,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
 
     @classmethod
     @abstractmethod
-    def _coerce(
+    def _wrap_tomlkit_obj(
         cls,
         tomlkit_obj: TomlkitT,
         *,
@@ -164,12 +153,17 @@ class BaseTomlWrapper[TomlkitT](ABC):
         *,
         annotation: Any | None = None,
     ) -> Self:
+        """
+        Instantiate this wrapper object to wrap a `tomlkit` object.
+        """
         tomlkit_cls = cls._get_tomlkit_cls()
-        assert isinstance(
-            tomlkit_obj, tomlkit_cls
-        ), f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
 
-        obj = cls._coerce(tomlkit_obj, annotation=annotation)
+        if not isinstance(tomlkit_obj, tomlkit_cls):
+            raise ValueError(
+                f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
+            )
+
+        obj = cls._wrap_tomlkit_obj(tomlkit_obj, annotation=annotation)
         obj._set_tomlkit_obj(tomlkit_obj, bypass_propagate=True)
         return obj
 
@@ -199,7 +193,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
 
 
 class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
-    BaseTomlWrapper[TomlkitT]
+    BaseValidatedDataclass, BaseTomlWrapper[TomlkitT]
 ):
     """
     Base container for items in a document or table. Upon reading a TOML file via
@@ -210,156 +204,101 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.
     """
 
-    def __post_init__(self):
-        """
-        Ensure all fields are of expected type.
-        """
-        for field in _get_fields(self):
-            annotation_info = type(self)._get_annotation_info(field)
-            if not issubclass(
-                annotation_info.field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)
-            ):
-                raise TypeError(
-                    f"Field {field.name} ({annotation_info.field_cls}) is not of allowed type ({(BaseTomlWrapper, *CONTAINER_TYPES)})"
-                )
+    def __new__(cls, *args, **kwargs) -> Self:
+        # validate unions before proceeding with object creation
+        for name, field_info in cls.dataclass_fields().items():
+            assert len(field_info.annotations) == len(field_info.concrete_annotations)
+            if len(field_info.concrete_annotations) > 1:
+                if (
+                    len(field_info.concrete_annotations) != 2
+                    or field_info.concrete_annotations[0] is NoneType
+                    or field_info.concrete_annotations[1] is not NoneType
+                ):
+                    raise TypeError(
+                        f"Class {cls}: Field '{name}': Unions must consist of (type) | None"
+                    )
+        return super().__new__(cls, *args, **kwargs)
 
     def __setattr__(self, name: str, value: Any):
-        """
-        Normalize value, set attribute on container, and propagate to wrapped
-        `tomlkit` object.
-        """
-        field = self._fields.get(name)
-
-        # if this is a field, normalize value
-        if field:
-            # lookup type param for this field
-            annotation_info = type(self)._get_annotation_info(field)
-            assert issubclass(
-                annotation_info.field_cls, (BaseTomlWrapper, *CONTAINER_TYPES)
-            )
-
-            # normalize value
-            if value is None:
-                if not annotation_info.allow_none:
-                    raise ValueError(f"Field '{name}': 'None' not allowed")
-                value_norm = value
-            elif issubclass(annotation_info.field_cls, BaseTomlWrapper):
-                if isinstance(value, BaseTomlWrapper):
-                    value_norm = value
-                else:
-                    assert isinstance(value, CONTAINER_TYPES)
-                    value_norm = annotation_info.field_cls._from_tomlkit_obj(
-                        value, annotation=annotation_info.annotation
-                    )
-            else:
-                value_norm = _normalize_value(value)
-
-            # validate normalized value
-            if value is not None and not isinstance(
-                value_norm, annotation_info.field_cls
-            ):
-                raise ValueError(
-                    f"Field '{name}': Type {type(value_norm)} not allowed, expected {annotation_info.field_cls}"
-                )
-        else:
-            value_norm = value
-
-        # set attribute
-        super().__setattr__(name, value_norm)
+        super().__setattr__(name, value)
 
         # if applicable, propagate to wrapped tomlkit object
-        if self._tomlkit_obj and field:
-            self._propagate_field(self._tomlkit_obj, field, value_norm)
+        if self._tomlkit_obj and (
+            field_info := type(self).dataclass_fields().get(name)
+        ):
+            self._propagate_field(self._tomlkit_obj, field_info, getattr(self, name))
 
     @classmethod
-    def _coerce(cls, tomlkit_obj: TomlkitT, **_) -> Self:
+    def dataclass_valid_types(cls) -> tuple[Any, ...]:
+        return (
+            BaseContainerWrapper,
+            ArrayWrapper,
+            TableArrayWrapper,
+            *CONTAINER_TYPES,
+            NoneType,
+        )
+
+    def dataclass_normalize(self, field_info: FieldInfo, value: Any) -> Any:
+        annotation = field_info.annotations[0]
+        concrete_annotation = field_info.concrete_annotations[0]
+
+        if issubclass(concrete_annotation, BaseTomlWrapper) and not isinstance(
+            value, concrete_annotation
+        ):
+            value_norm = concrete_annotation._from_tomlkit_obj(
+                value, annotation=annotation
+            )
+        else:
+            value_norm = _normalize_value(value)
+
+        return value_norm
+
+    @classmethod
+    def _wrap_tomlkit_obj(cls, tomlkit_obj: TomlkitT, **_) -> Self:
         """
         Extract model fields from container and return instance of this model with
         the original container stored.
         """
         values: dict[str, Any] = {}
 
-        for field in _get_fields(cls):
-            field_name = cls._get_field_name(field)
+        for name, field_info in cls.dataclass_fields().items():
+            field_name = cls._get_field_name(field_info)
             if value := tomlkit_obj.get(field_name):
-                values[field.name] = value
+                values[name] = value
 
         return cls(**values)
 
     @classmethod
-    def _get_annotation_info(cls, field: Field) -> AnnotationInfo:
-        """
-        Get annotation info for this field.
-        """
-        assert field.type, f"Field '{field.name}' does not have an annotation"
-        type_hints = get_type_hints(cls, include_extras=True)
-
-        assert field.name in type_hints
-        annotation = type_hints[field.name]
-
-        if get_origin(annotation) is Annotated:
-            args = get_args(annotation)
-            assert (
-                len(args) == 2
-            ), f"Field '{field.name}': Annotated[] must have exactly 2 params (type, alias)"
-            annotation, alias = args
-            assert isinstance(alias, str)
-        else:
-            alias = None
-
-        if type(annotation) is UnionType:
-            args = get_args(annotation)
-            assert (
-                len(args) == 2
-            ), f"Field '{field.name}': Union must have exactly 2 type params, got {args}"
-
-            annotation, none = args
-            assert (
-                none is NoneType
-            ), f"Field '{field.name}': Second type of union must be None"
-            allow_none = True
-        else:
-            allow_none = False
-
-        origin = get_origin(annotation)
-        field_cls = cast(type[Any], origin or annotation)
-
-        return AnnotationInfo(
-            field_cls=field_cls,
-            annotation=annotation,
-            alias=alias,
-            allow_none=allow_none,
-        )
-
-    @classmethod
-    def _get_field_name(cls, field: Field) -> str:
+    def _get_field_name(cls, field_info: FieldInfo) -> str:
         """
         Get name of field, handling alias if applicable.
         """
-        return cls._get_annotation_info(field).alias or field.name
+        if len(field_info.extras):
+            assert len(field_info.extras) == 1
+            alias = field_info.extras[0]
+            assert isinstance(alias, str)
+            return alias
 
-    @cached_property
-    def _fields(self) -> dict[str, Field]:
-        return {f.name: f for f in _get_fields(self)}
+        return field_info.field.name
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
-        # propagate all fields
-        for field in _get_fields(self):
-            value = getattr(self, field.name, None)
+        for name, field_info in type(self).dataclass_fields().items():
+            value = getattr(self, name, None)
             if value is None:
                 continue
-            self._propagate_field(tomlkit_obj, field, value)
+            self._propagate_field(tomlkit_obj, field_info, value)
 
-    def _propagate_field(self, tomlkit_obj: TomlkitT, field: Field, value: Any):
+    def _propagate_field(
+        self, tomlkit_obj: TomlkitT, field_info: FieldInfo, value: Any
+    ):
         """
         Propagate field to this container's tomlkit obj.
         """
-        field_name = type(self)._get_field_name(field)
+        field_name = type(self)._get_field_name(field_info)
         if value is None:
             if field_name in tomlkit_obj:
                 del tomlkit_obj[field_name]
         else:
-            assert isinstance(value, (BaseTomlWrapper, *TOMLKIT_TYPES))
             tomlkit_obj[field_name] = (
                 value.tomlkit_obj if isinstance(value, BaseTomlWrapper) else value
             )
@@ -494,7 +433,9 @@ class BaseArrayWrapper[TomlkitT: list, ItemT](
         ...
 
     @classmethod
-    def _coerce(cls, tomlkit_obj: TomlkitT, *, annotation: Any | None = None) -> Self:
+    def _wrap_tomlkit_obj(
+        cls, tomlkit_obj: TomlkitT, *, annotation: Any | None = None
+    ) -> Self:
         # get type with which this array is parameterized
         assert annotation, "No annotation"
         item_cls, item_annotation = cls._get_item_cls(annotation)
@@ -561,20 +502,13 @@ class TableArrayWrapper[TableT: BaseTableWrapper](BaseArrayWrapper[AoT, TableT])
         return tomlkit_obj.body
 
 
-def _get_fields(class_or_instance: Any) -> tuple[Field[Any], ...]:
-    """
-    Wrapper since base classes are not themselves dataclasses.
-    """
-    return dataclasses.fields(class_or_instance)
-
-
 def _normalize_value(value: Any) -> ValueType:
     """
     Normalize value to `BaseTomlWrapper` or tomlkit item.
     """
     if isinstance(value, BaseTomlWrapper):
         return value
-    elif isinstance(value, TOMLKIT_TYPES):
+    elif isinstance(value, TOMLKIT_TYPES) or value is None:
         return value
     else:
         return tomlkit.item(value)
