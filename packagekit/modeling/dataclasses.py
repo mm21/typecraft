@@ -4,7 +4,14 @@ import dataclasses
 from dataclasses import Field, dataclass
 from functools import cached_property
 from types import UnionType
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    dataclass_transform,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from ..data.normalizer import Converter, normalize_obj
 
@@ -41,12 +48,14 @@ class FieldInfo:
     """
 
     @classmethod
-    def _from_field(cls, obj: BaseValidatedDataclass, field: Field) -> FieldInfo:
+    def _from_field(
+        cls, obj_cls: type[BaseValidatedDataclass], field: Field
+    ) -> FieldInfo:
         """
         Get field info from field.
         """
         assert field.type, f"Field '{field.name}' does not have an annotation"
-        type_hints = get_type_hints(obj, include_extras=True)
+        type_hints = get_type_hints(obj_cls, include_extras=True)
 
         assert field.name in type_hints
         annotation = type_hints[field.name]
@@ -77,10 +86,29 @@ class FieldInfo:
         )
 
 
+@dataclass_transform()
 class BaseValidatedDataclass:
     """
     Base class to provide field and data validation.
     """
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls = dataclass(cls)
+
+        valid_types = cls.dataclass_valid_types()
+        if not valid_types:
+            return
+
+        # validate fields
+        for field in _get_fields(cls):
+            field_info = FieldInfo._from_field(cls, field)
+
+            for field_type in field_info.concrete_annotations:
+                if not issubclass(field_type, valid_types):
+                    raise TypeError(
+                        f"Class {cls}: Field '{field.name}': Type ({field_type}) not one of {valid_types}"
+                    )
 
     def __setattr__(self, name: str, value: Any):
         field_info = self.dataclass_fields.get(name)
@@ -104,16 +132,16 @@ class BaseValidatedDataclass:
         """
         Fields of dataclass with annotations resolved and processed.
         """
-        return {f.name: FieldInfo._from_field(self, f) for f in _get_fields(self)}
+        return {f.name: FieldInfo._from_field(type(self), f) for f in _get_fields(self)}
 
     @classmethod
-    def dataclass_valid_types(cls) -> tuple[Any] | None:
+    def dataclass_valid_types(cls) -> tuple[Any, ...]:
         """
-        Override to restrict allowed field types; allow any types if `None`.
+        Override to restrict allowed field types; allow any types if empty.
         """
-        return None
+        return tuple()
 
-    def dataclass_converters(self) -> tuple[Converter[Any]]:
+    def dataclass_converters(self) -> tuple[Converter[Any], ...]:
         """
         Override to provide converters for values.
         """
@@ -136,8 +164,6 @@ class BaseValidatedDataclass:
 
 def _get_fields(class_or_instance: Any) -> tuple[Field[Any], ...]:
     """
-    Wrapper since base classes are not themselves dataclasses.
+    Wrapper for type checking.
     """
-    if not hasattr(class_or_instance, "__dataclass_fields__"):
-        raise TypeError(f"Not a dataclass: {class_or_instance}")
     return dataclasses.fields(class_or_instance)
