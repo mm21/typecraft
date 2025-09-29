@@ -18,6 +18,7 @@ from typing import (
     MutableMapping,
     MutableSequence,
     Self,
+    TypedDict,
     cast,
     get_args,
     get_origin,
@@ -50,6 +51,7 @@ __all__ = [
     "BaseDocumentWrapper",
     "BaseTableWrapper",
     "BaseInlineTableWrapper",
+    "FieldMetadata",
     "ArrayWrapper",
     "TableArrayWrapper",
     "ArrayItemType",
@@ -272,13 +274,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         """
         Get name of field, handling alias if applicable.
         """
-        if len(field_info.extras):
-            assert len(field_info.extras) == 1
-            alias = field_info.extras[0]
-            assert isinstance(alias, str)
-            return alias
-
-        return field_info.field.name
+        return field_info.field.metadata.get("alias", field_info.field.name)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         for name, field_info in type(self).dataclass_fields().items():
@@ -349,6 +345,17 @@ class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
 
     def _create_tomlkit_obj(self) -> InlineTable:
         return tomlkit.inline_table()
+
+
+class FieldMetadata(TypedDict):
+    """
+    Encapsulates metadata for a field definition in a document, table, or inline table.
+    """
+
+    alias: str
+    """
+    Field name to use when accessing the toml document.
+    """
 
 
 class BaseArrayWrapper[TomlkitT: list, ItemT](
