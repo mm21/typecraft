@@ -111,7 +111,7 @@ def normalize_obj[T](
 
 
 def normalize_objs[T](
-    obj_or_objs: Any | Iterable[Any],
+    obj_or_objs: Any,
     target_type: type[T],
     /,
     *converters: Converter[T],
