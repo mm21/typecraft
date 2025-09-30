@@ -1,4 +1,96 @@
-from typing import Any, TypeVar, cast, get_args, get_origin, overload
+from types import UnionType
+from typing import Annotated, Any, TypeVar, Union, cast, get_args, get_origin, overload
+
+__all__ = [
+    "AnnotationInfo",
+    "normalize_annotation",
+    "flatten_annotation",
+    "extract_type",
+    "get_type_param",
+]
+
+
+class AnnotationInfo:
+    """
+    Performs normalizations on annotation and encapsulates useful info.
+    """
+
+    annotation: Any
+    """
+    Original annotation after stripping `Annotated[]` if applicable.
+    """
+
+    extras: tuple[Any, ...]
+    """
+    Extra annotations, if `Annotated[]` was used.
+    """
+
+    annotations: tuple[Any, ...]
+    """
+    Annotation(s) with unions flattened if applicable.
+    """
+
+    types: tuple[type[Any], ...]
+    """
+    Concrete (non-generic) annotation(s) with unions flattened if applicable.
+    """
+
+    def __init__(self, raw_annotation: Any, /):
+        # get extras if applicable
+        annotation, extras = normalize_annotation(raw_annotation)
+
+        # get constituent annotations from union if applicable
+        annotations = flatten_annotation(annotation)
+
+        # get non-parameterized types
+        types = tuple(extract_type(normalize_annotation(a)[0]) for a in annotations)
+
+        self.annotation = annotation
+        self.extras = extras
+        self.annotations = annotations
+        self.types = types
+
+
+def normalize_annotation(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
+    """
+    Split Annotated[x, ...] (if present) into annotation and extras.
+    """
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
+        assert len(args)
+
+        annotation_ = args[0]
+        extras = tuple(args[1:])
+    else:
+        annotation_ = annotation
+        extras = ()
+
+    return annotation_, extras
+
+
+def flatten_annotation(annotation: Any, /) -> tuple[Any, ...]:
+    """
+    Flatten union (if present) into its constituent types.
+    """
+    annotation_ = normalize_annotation(annotation)[0]
+    return (
+        get_args(annotation_)
+        if type(annotation_) is UnionType or get_origin(annotation_) is Union
+        else (annotation_,)
+    )
+
+
+def extract_type(annotation: Any, /) -> type[Any]:
+    """
+    Get concrete type of parameterized annotation if applicable.
+    """
+    annotation_ = normalize_annotation(annotation)[0]
+    type_ = get_origin(annotation_) or annotation_
+    if not isinstance(type_, type):
+        raise ValueError(
+            f"Could not extract type from annotation '{annotation_}', got '{type_}'"
+        )
+    return type_
 
 
 @overload

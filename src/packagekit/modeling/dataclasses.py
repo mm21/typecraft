@@ -2,19 +2,16 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import Field, dataclass
-from functools import cache
-from types import UnionType
+from functools import cache, cached_property
 from typing import (
-    Annotated,
     Any,
     Self,
     dataclass_transform,
-    get_args,
-    get_origin,
     get_type_hints,
 )
 
-from ..data.normalizing import Converter, normalize_obj
+from ..typing.generics import AnnotationInfo
+from .normalizing import Converter, normalize_obj
 
 __all__ = [
     "FieldInfo",
@@ -34,28 +31,13 @@ class FieldInfo:
     Dataclass field.
     """
 
-    annotation: Any
+    annotation_info: AnnotationInfo
     """
-    Original annotation after stripping `Annotated[]` if applicable.
-    """
-
-    extras: tuple[Any, ...]
-    """
-    Extra annotations, if `Annotated[]` was used.
-    """
-
-    annotations: tuple[Any, ...]
-    """
-    Annotation(s) with unions flattened if applicable.
-    """
-
-    concrete_annotations: tuple[type[Any], ...]
-    """
-    Concrete (non-generic) annotation(s) with unions flattened if applicable.
+    Annotation info.
     """
 
     @classmethod
-    def _from_field(
+    def from_field(
         cls, obj_cls: type[BaseValidatedDataclass], field: Field
     ) -> FieldInfo:
         """
@@ -66,31 +48,9 @@ class FieldInfo:
 
         assert field.name in type_hints
         annotation = type_hints[field.name]
+        annotation_info = AnnotationInfo(annotation)
 
-        # get extras if applicable
-        if get_origin(annotation) is Annotated:
-            args = get_args(annotation)
-            assert len(args)
-
-            annotation = args[0]
-            extras = tuple(args[1:])
-        else:
-            extras = ()
-
-        if type(annotation) is UnionType:
-            annotations = get_args(annotation)
-        else:
-            annotations = (annotation,)
-
-        concrete_annotations = tuple(get_origin(a) or a for a in annotations)
-
-        return FieldInfo(
-            field=field,
-            annotation=annotation,
-            extras=extras,
-            annotations=annotations,
-            concrete_annotations=concrete_annotations,
-        )
+        return FieldInfo(field=field, annotation_info=annotation_info)
 
 
 @dataclass_transform(kw_only_default=True)
@@ -113,9 +73,9 @@ class BaseValidatedDataclass:
     def __new__(cls, *args, **kwargs) -> Self:
         _, _ = (args, kwargs)
         # validate fields before proceeding with object creation
-        if valid_types := cls.dataclass_valid_types():
-            for name, field_info in cls.dataclass_fields().items():
-                for field_type in field_info.concrete_annotations:
+        if valid_types := cls.dataclass_get_valid_types():
+            for name, field_info in cls.dataclass_get_fields().items():
+                for field_type in field_info.annotation_info.types:
                     if not issubclass(field_type, valid_types):
                         raise TypeError(
                             f"Class {cls}: Field '{name}': Type ({field_type}) not one of {valid_types}"
@@ -123,37 +83,44 @@ class BaseValidatedDataclass:
         return super().__new__(cls)
 
     def __setattr__(self, name: str, value: Any):
-        field_info = type(self).dataclass_fields().get(name)
+        field_info = self.dataclass_fields.get(name)
 
         # if this is a field, normalize and validate value
         if field_info:
             value_norm = self.__normalize_value(field_info, value)
-            if not isinstance(value_norm, field_info.concrete_annotations):
+            if not isinstance(value_norm, field_info.annotation_info.types):
                 raise ValueError(
                     f"Field '{field_info.field.name}' of object {self}: Value '{value}' "
                     f"({type(value)}) not allowed and could not be converted, expected "
-                    f"one of {field_info.concrete_annotations}"
+                    f"one of {field_info.annotation_info.types}"
                 )
         else:
             value_norm = value
 
         super().__setattr__(name, value_norm)
 
-    @classmethod
-    def dataclass_fields(cls) -> dict[str, FieldInfo]:
+    @cached_property
+    def dataclass_fields(self) -> dict[str, FieldInfo]:
         """
-        Fields of dataclass with annotations resolved and processed.
+        Dataclass fields with annotations resolved and processed.
+        """
+        return type(self).dataclass_get_fields()
+
+    @classmethod
+    def dataclass_get_fields(cls) -> dict[str, FieldInfo]:
+        """
+        Get dataclass fields from class.
         """
         return cls.__dataclass_fields()
 
     @classmethod
-    def dataclass_valid_types(cls) -> tuple[Any, ...]:
+    def dataclass_get_valid_types(cls) -> tuple[Any, ...]:
         """
         Override to restrict allowed field types; allow any types if empty.
         """
         return tuple()
 
-    def dataclass_converters(self) -> tuple[Converter[Any], ...]:
+    def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
         """
         Override to provide converters for values.
         """
@@ -166,6 +133,10 @@ class BaseValidatedDataclass:
         _ = field_info
         return value
 
+    @cached_property
+    def _converters(self) -> tuple[Converter[Any], ...]:
+        return self.dataclass_get_converters()
+
     @classmethod
     @cache
     def __dataclass_fields(cls) -> dict[str, FieldInfo]:
@@ -173,7 +144,7 @@ class BaseValidatedDataclass:
         Implementation of API to keep the `dataclass_fields` signature intact,
         overridden by `@cache`.
         """
-        return {f.name: FieldInfo._from_field(cls, f) for f in get_fields(cls)}
+        return {f.name: FieldInfo.from_field(cls, f) for f in get_fields(cls)}
 
     def __normalize_value(self, field_info: FieldInfo, value: Any) -> Any:
         """
@@ -182,13 +153,12 @@ class BaseValidatedDataclass:
         # invoke custom normalizer
         value_ = self.dataclass_normalize(field_info, value)
 
-        # if not a valid type, attempt to convert
-        if not isinstance(value_, field_info.concrete_annotations) and (
-            converters := self.dataclass_converters()
-        ):
-            for annotation in field_info.concrete_annotations:
-                if any(isinstance(value_, c.from_types) for c in converters):
-                    return normalize_obj(value_, annotation, *converters)
+        # if not an expected type, attempt to convert
+        if not isinstance(value_, field_info.annotation_info.types):
+            for annotation in field_info.annotation_info.types:
+                for converter in self._converters:
+                    if converter.can_convert(value_):
+                        return normalize_obj(value_, annotation, converter)
 
         return value_
 

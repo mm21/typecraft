@@ -2,8 +2,8 @@ from typing import Any
 
 from pytest import raises
 
-from packagekit.data.normalizing import Converter
 from packagekit.modeling.dataclasses import BaseValidatedDataclass
+from packagekit.modeling.normalizing import Converter
 
 
 class BasicTest(BaseValidatedDataclass):
@@ -16,7 +16,7 @@ class ValidationTest(BaseValidatedDataclass):
     b: str = "abc"
 
     @classmethod
-    def dataclass_valid_types(cls) -> tuple[Any, ...]:
+    def dataclass_get_valid_types(cls) -> tuple[Any, ...]:
         return (int, bool)
 
 
@@ -24,8 +24,8 @@ class ConversionTest(BaseValidatedDataclass):
     a: int = 123
     b: str = "abc"
 
-    def dataclass_converters(self) -> tuple[Converter[Any], ...]:
-        return (Converter(int, (str,)),)
+    def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
+        return (Converter(int),)
 
 
 class UnionTest(BaseValidatedDataclass):

@@ -208,16 +208,17 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     def __new__(cls, *args, **kwargs) -> Self:
         # validate unions before proceeding with object creation
-        for name, field_info in cls.dataclass_fields().items():
-            assert len(field_info.annotations) == len(field_info.concrete_annotations)
-            if len(field_info.concrete_annotations) > 1:
+        for name, field_info in cls.dataclass_get_fields().items():
+            ann = field_info.annotation_info
+            assert len(ann.annotations) == len(ann.types)
+            if len(ann.types) > 1:
                 if (
-                    len(field_info.concrete_annotations) != 2
-                    or field_info.concrete_annotations[0] is NoneType
-                    or field_info.concrete_annotations[1] is not NoneType
+                    len(ann.types) != 2
+                    or ann.types[0] is NoneType
+                    or ann.types[1] is not NoneType
                 ):
                     raise TypeError(
-                        f"Class {cls}: Field '{name}': Unions must consist of (type) | None, got {field_info.annotation}"
+                        f"Class {cls}: Field '{name}': Unions must consist of (type) | None, got {ann.annotation}"
                     )
         return super().__new__(cls, *args, **kwargs)
 
@@ -225,13 +226,11 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         super().__setattr__(name, value)
 
         # if applicable, propagate to wrapped tomlkit object
-        if self._tomlkit_obj and (
-            field_info := type(self).dataclass_fields().get(name)
-        ):
+        if self._tomlkit_obj and (field_info := self.dataclass_fields.get(name)):
             self._propagate_field(self._tomlkit_obj, field_info, getattr(self, name))
 
     @classmethod
-    def dataclass_valid_types(cls) -> tuple[Any, ...]:
+    def dataclass_get_valid_types(cls) -> tuple[Any, ...]:
         return (
             BaseTableWrapper,
             BaseInlineTableWrapper,
@@ -242,15 +241,13 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         )
 
     def dataclass_normalize(self, field_info: FieldInfo, value: Any) -> Any:
-        annotation = field_info.annotations[0]
-        concrete_annotation = field_info.concrete_annotations[0]
+        annotation = field_info.annotation_info.annotations[0]
+        type_ = field_info.annotation_info.types[0]
 
         if value is None:
             return None
-        elif issubclass(concrete_annotation, BaseTomlWrapper) and not isinstance(
-            value, concrete_annotation
-        ):
-            return concrete_annotation._from_tomlkit_obj(value, annotation=annotation)
+        elif issubclass(type_, BaseTomlWrapper) and not isinstance(value, type_):
+            return type_._from_tomlkit_obj(value, annotation=annotation)
         else:
             return _normalize_value(value)
 
@@ -262,7 +259,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         """
         values: dict[str, Any] = {}
 
-        for name, field_info in cls.dataclass_fields().items():
+        for name, field_info in cls.dataclass_get_fields().items():
             field_name = cls._get_field_name(field_info)
             if value := tomlkit_obj.get(field_name):
                 values[name] = value
@@ -277,7 +274,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         return field_info.field.metadata.get("alias", field_info.field.name)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
-        for name, field_info in type(self).dataclass_fields().items():
+        for name, field_info in self.dataclass_fields.items():
             value = getattr(self, name, None)
             if value is None:
                 continue
