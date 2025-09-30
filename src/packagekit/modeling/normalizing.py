@@ -134,69 +134,17 @@ def normalize_obj[T](
             f"Object {obj} could not be converted to any member of {target_type}"
         )
 
-    container_type = get_origin(info.annotation)
-    args = get_args(info.annotation)
+    # at this point we should have exactly 1 annotation and corresponding
+    # concrete type
+    assert len(info.annotations) == 1
+    assert len(info.types) == 1
+    annotation = info.annotations[0]
+    concrete_type = info.types[0]
 
-    # handle sequence types
-    if isinstance(container_type, type) and issubclass(container_type, (Sequence, Set)):
-        assert len(args)
-        assert isinstance(obj, (Sequence, Set))
-
-        # handle fixed-length tuples like tuple[int, str, float]
-        if issubclass(container_type, tuple) and args[-1] != ...:
-
-            # need container to support len()
-            if not isinstance(obj, Sized):
-                container = list(obj)
-            else:
-                container = obj
-
-            if len(container) != len(args):
-                raise ValueError(
-                    f"Tuple length mismatch: expected {len(args)}, got {len(container)}"
-                )
-            normalized_objs = [
-                normalize_obj(o, type_, *converters)
-                for o, type_ in zip(container, args)
-            ]
-        else:
-            # homogeneous containers
-            if issubclass(container_type, tuple):
-                assert len(args) == 2
-            else:
-                assert len(args) == 1
-            type_ = args[0]
-            normalized_objs = [normalize_obj(o, type_, *converters) for o in obj]
-
-        converter = _find_converter(normalized_objs, container_type, converters)
-        if converter:
-            return converter.convert(normalized_objs)
-        else:
-            # assume container type takes exactly 1 positional argument
-            return cast(T, container_type(normalized_objs))  # type: ignore
-
-    # handle mapping types
-    if isinstance(container_type, type) and issubclass(container_type, Mapping):
-        assert len(args) == 2
-        assert isinstance(obj, Mapping)
-        key_type, value_type = args
-
-        normalized_objs = {
-            normalize_obj(k, key_type, *converters): normalize_obj(
-                v, value_type, *converters
-            )
-            for k, v in obj.items()
-        }
-
-        converter = _find_converter(normalized_objs, container_type, converters)
-        if converter:
-            return converter.convert(normalized_objs)
-        else:
-            return cast(T, container_type(**normalized_objs))
+    if issubclass(concrete_type, (Sequence, Set, Mapping)) and get_origin(annotation):
+        return _normalize_container(obj, annotation, converters)
 
     # handle non-parameterized types
-    assert len(info.types) == 1
-    concrete_type = info.types[0]
     if isinstance(obj, concrete_type):
         return obj
 
@@ -207,7 +155,7 @@ def normalize_obj[T](
     # try direct construction if type is callable
     if callable(concrete_type):
         try:
-            return concrete_type(obj)
+            return cast(T, concrete_type(obj))  # type: ignore
         except (TypeError, ValueError):
             pass
 
@@ -228,10 +176,21 @@ def normalize_objs[T](
     Only built-in collection types and generators are expanded.
     Custom types (even if iterable) are treated as single objects.
     """
-    # normalize to an iterable of objects
-    if isinstance(obj_or_objs, (list, tuple, set, frozenset, range, GeneratorType)):
+    info = AnnotationInfo(target_type)
+
+    can_convert = False
+    for type_ in info.types:
+        if any(c.can_convert(obj_or_objs, type_) for c in converters):
+            can_convert = True
+            break
+
+    # normalize to a container of objects
+    if not can_convert and isinstance(
+        obj_or_objs, (Sequence, Set, range, GeneratorType)
+    ):
         objs = obj_or_objs
     else:
+        # can convert it, or it's not a container
         objs = [obj_or_objs]
 
     # normalize each object and place in a new list
@@ -248,3 +207,110 @@ def _find_converter(
         if converter.can_convert(obj, target_type):
             return converter
     return None
+
+
+def _normalize_container(
+    obj: Any, annotation: Any, converters: tuple[Converter, ...]
+) -> Any:
+    """
+    Normalize container of objects.
+    """
+    container_type = get_origin(annotation)
+    assert isinstance(container_type, type)
+    assert issubclass(container_type, (Sequence, Set, Mapping))
+
+    args = get_args(annotation)
+    assert len(args)
+
+    # invoke generator to ensure object is sized
+    if isinstance(obj, GeneratorType):
+        container = list(obj)
+    else:
+        assert isinstance(obj, Sized)
+        container = obj
+
+    # TODO: convert container first, pass target container to normalizers?
+
+    # TODO: check if object is valid as-is
+
+    if issubclass(container_type, Sequence):
+        assert isinstance(container, (Sequence, Set))
+        return _normalize_sequence(container, container_type, args, converters)
+    elif issubclass(container_type, Set):
+        assert isinstance(container, (Sequence, Set))
+        return _normalize_set(container, container_type, args, converters)
+    else:
+        assert isinstance(container, Mapping)
+        return _normalize_mapping(container, container_type, args, converters)
+
+
+def _normalize_sequence(
+    container: Sequence[Any] | Set[Any],
+    container_type: type[Sequence[Any]],
+    args: tuple[Any, ...],
+    converters: tuple[Converter, ...],
+) -> Any:
+
+    # handle fixed-length tuples like tuple[int, str, float]
+    if issubclass(container_type, tuple) and args[-1] != ...:
+        if len(container) != len(args):
+            raise ValueError(
+                f"Tuple length mismatch: expected {len(args)}, got {len(container)}"
+            )
+        normalized_objs = [
+            normalize_obj(o, type_, *converters) for o, type_ in zip(container, args)
+        ]
+    else:
+        # homogeneous containers
+        if issubclass(container_type, tuple):
+            assert len(args) == 2
+        else:
+            assert len(args) == 1
+        type_ = args[0]
+        normalized_objs = [normalize_obj(o, type_, *converters) for o in container]
+
+    converter = _find_converter(normalized_objs, container_type, converters)
+    if converter:
+        return converter.convert(normalized_objs)
+    else:
+        return container_type(normalized_objs)  # type: ignore
+
+
+def _normalize_set(
+    container: Sequence[Any] | Set[Any],
+    container_type: type[Set[Any]],
+    args: tuple[Any, ...],
+    converters: tuple[Converter, ...],
+) -> Any:
+    assert len(args) == 1
+    type_ = args[0]
+    normalized_objs = {normalize_obj(o, type_, *converters) for o in container}
+
+    converter = _find_converter(normalized_objs, container_type, converters)
+    if converter:
+        return converter.convert(normalized_objs)
+    else:
+        return container_type(normalized_objs)  # type: ignore
+
+
+def _normalize_mapping(
+    container: Mapping[Any, Any],
+    container_type: type[Mapping[Any, Any]],
+    args: tuple[Any, ...],
+    converters: tuple[Converter, ...],
+) -> Any:
+    assert len(args) == 2
+    key_type, value_type = args
+
+    normalized_objs = {
+        normalize_obj(k, key_type, *converters): normalize_obj(
+            v, value_type, *converters
+        )
+        for k, v in container.items()
+    }
+
+    converter = _find_converter(normalized_objs, container_type, converters)
+    if converter:
+        return converter.convert(normalized_objs)
+    else:
+        return container_type(**normalized_objs)
