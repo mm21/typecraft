@@ -16,7 +16,6 @@ from .normalizing import Converter, normalize_obj
 __all__ = [
     "FieldInfo",
     "BaseValidatedDataclass",
-    "get_fields",
 ]
 
 
@@ -64,7 +63,7 @@ class BaseValidatedDataclass:
         cls = dataclass(cls, kw_only=True)
 
         # validate fields
-        for field in get_fields(cls):
+        for field in _get_fields(cls):
             if not field.type:
                 raise TypeError(
                     f"Class {cls}: Field '{field.name}': No type annotation"
@@ -144,7 +143,7 @@ class BaseValidatedDataclass:
         Implementation of API to keep the `dataclass_fields` signature intact,
         overridden by `@cache`.
         """
-        return {f.name: FieldInfo.from_field(cls, f) for f in get_fields(cls)}
+        return {f.name: FieldInfo.from_field(cls, f) for f in _get_fields(cls)}
 
     def __normalize_value(self, field_info: FieldInfo, value: Any) -> Any:
         """
@@ -163,7 +162,7 @@ class BaseValidatedDataclass:
         return value_
 
 
-def get_fields(class_or_instance: Any) -> tuple[Field, ...]:
+def _get_fields(class_or_instance: Any) -> tuple[Field, ...]:
     """
     Wrapper for `dataclasses.fields()` to enable type checking in case type checkers
     aren't aware `class_or_instance` is actually a dataclass.

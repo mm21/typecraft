@@ -45,7 +45,7 @@ from tomlkit.items import (
 )
 
 from ..typing.generics import get_type_param
-from .dataclasses import BaseValidatedDataclass, FieldInfo
+from .dataclass import BaseValidatedDataclass, FieldInfo
 
 __all__ = [
     "BaseDocumentWrapper",

@@ -2,7 +2,7 @@ from typing import Any
 
 from pytest import raises
 
-from packagekit.modeling.dataclasses import BaseValidatedDataclass
+from packagekit.modeling.dataclass import BaseValidatedDataclass
 from packagekit.modeling.normalizing import Converter
 
 
