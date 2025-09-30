@@ -155,10 +155,10 @@ class BaseValidatedDataclass:
 
         # if not an expected type, attempt to convert
         if not isinstance(value_, field_info.annotation_info.types):
-            for annotation in field_info.annotation_info.types:
+            for type_ in field_info.annotation_info.types:
                 for converter in self._converters:
-                    if converter.can_convert(value_):
-                        return normalize_obj(value_, annotation, converter)
+                    if converter.can_convert(value_, type_):
+                        return normalize_obj(value_, type_, converter)
 
         return value_
 
