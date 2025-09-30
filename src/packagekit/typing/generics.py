@@ -50,6 +50,9 @@ class AnnotationInfo:
         self.annotations = annotations
         self.types = types
 
+    def __repr__(self) -> str:
+        return f"AnnotationInfo(annotation='{self.annotation}', extras='{self.extras}', annotations='{self.annotations}', types='{self.types}')"
+
 
 def normalize_annotation(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
     """
