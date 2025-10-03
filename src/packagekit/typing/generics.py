@@ -1,13 +1,31 @@
-from types import UnionType
-from typing import Annotated, Any, TypeVar, Union, cast, get_args, get_origin, overload
+from __future__ import annotations
+
+from functools import cached_property
+from types import EllipsisType, GenericAlias, UnionType
+from typing import (
+    Annotated,
+    Any,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    overload,
+)
 
 __all__ = [
+    "AnnotationType",
+    "RawAnnotationType",
     "AnnotationInfo",
-    "normalize_annotation",
-    "flatten_annotation",
-    "extract_type",
+    "split_annotated",
+    "is_union",
+    "flatten_union",
+    "get_concrete_type",
     "get_type_param",
 ]
+
+type AnnotationType = type[Any] | GenericAlias | UnionType | EllipsisType
+type RawAnnotationType = AnnotationType | Annotated
 
 
 class AnnotationInfo:
@@ -15,85 +33,111 @@ class AnnotationInfo:
     Performs normalizations on annotation and encapsulates useful info.
     """
 
-    annotation: Any
+    annotation: AnnotationType
     """
-    Original annotation after stripping `Annotated[]` if applicable.
+    Original annotation after stripping `Annotated[]` if applicable. May be a generic
+    type.
     """
 
     extras: tuple[Any, ...]
     """
-    Extra annotations, if `Annotated[]` was used.
+    Extra annotations, if `Annotated[]` was passed.
     """
 
-    annotations: tuple[Any, ...]
+    concrete_type: type
     """
-    Annotation(s) with unions flattened if applicable.
-    """
-
-    types: tuple[type[Any], ...]
-    """
-    Concrete (non-generic) annotation(s) with unions flattened if applicable.
+    Concrete (non-generic) type.
     """
 
-    def __init__(self, raw_annotation: Any, /):
-        # get extras if applicable
-        annotation, extras = normalize_annotation(raw_annotation)
-
-        # get constituent annotations from union if applicable
-        annotations = flatten_annotation(annotation)
-
-        # get non-parameterized types
-        types = tuple(extract_type(normalize_annotation(a)[0]) for a in annotations)
+    def __init__(self, raw_annotation: RawAnnotationType, /):
+        annotation, extras = split_annotated(raw_annotation)
+        concrete_type = get_concrete_type(annotation)
 
         self.annotation = annotation
         self.extras = extras
-        self.annotations = annotations
-        self.types = types
+        self.concrete_type = concrete_type
 
     def __repr__(self) -> str:
-        return f"AnnotationInfo(annotation='{self.annotation}', extras='{self.extras}', annotations='{self.annotations}', types='{self.types}')"
+        return f"AnnotationInfo(annotation='{self.annotation}', extras='{self.extras}', concrete_type='{self.concrete_type}')"
+
+    @cached_property
+    def args(self) -> tuple[AnnotationInfo, ...]:
+        """
+        Get type parameters, if any.
+        """
+        return tuple(AnnotationInfo(a) for a in get_args(self.annotation))
+
+    @cached_property
+    def is_union(self) -> bool:
+        return isinstance(self.annotation, UnionType)
+
+    @cached_property
+    def flattened_types(self) -> tuple[type, ...]:
+        """
+        Get concrete types with union flattened, if applicable.
+        """
+        if self.is_union:
+            return tuple(a.concrete_type for a in self.args)
+        else:
+            return (self.concrete_type,)
 
 
-def normalize_annotation(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
+def split_annotated(
+    raw_annotation: RawAnnotationType, /
+) -> tuple[AnnotationType, tuple[RawAnnotationType, ...]]:
     """
     Split Annotated[x, ...] (if present) into annotation and extras.
     """
-    if get_origin(annotation) is Annotated:
-        args = get_args(annotation)
+    if get_origin(raw_annotation) is Annotated:
+        args = get_args(raw_annotation)
         assert len(args)
 
-        annotation_ = args[0]
+        annotation = args[0]
         extras = tuple(args[1:])
     else:
-        annotation_ = annotation
+        annotation = raw_annotation
         extras = ()
 
-    return annotation_, extras
+    if not isinstance(annotation, (type, GenericAlias, UnionType, EllipsisType)):
+        raise ValueError(
+            f"Not a concrete, generic, union, or ellipsis type: {annotation} ({type(annotation)})"
+        )
+
+    return annotation, extras
 
 
-def flatten_annotation(annotation: Any, /) -> tuple[Any, ...]:
+def is_union(raw_annotation: RawAnnotationType, /) -> bool:
+    """
+    Check whether the annotation is a union.
+    """
+    annotation, _ = split_annotated(raw_annotation)
+    return isinstance(annotation, UnionType) or get_origin(annotation) is Union
+
+
+def flatten_union(
+    raw_annotation: RawAnnotationType, /
+) -> tuple[RawAnnotationType, ...]:
     """
     Flatten union (if present) into its constituent types.
     """
-    annotation_ = normalize_annotation(annotation)[0]
-    return (
-        get_args(annotation_)
-        if type(annotation_) is UnionType or get_origin(annotation_) is Union
-        else (annotation_,)
-    )
+    annotation, _ = split_annotated(raw_annotation)
+    return get_args(annotation) if is_union(annotation) else (annotation,)
 
 
-def extract_type(annotation: Any, /) -> type[Any]:
+def get_concrete_type(raw_annotation: RawAnnotationType, /) -> type:
     """
-    Get concrete type of parameterized annotation if applicable.
+    Get concrete type of parameterized annotation.
     """
-    annotation_ = normalize_annotation(annotation)[0]
-    type_ = get_origin(annotation_) or annotation_
-    if not isinstance(type_, type):
-        raise ValueError(
-            f"Could not extract type from annotation '{annotation_}', got '{type_}'"
-        )
-    return type_
+    annotation, _ = split_annotated(raw_annotation)
+    concrete_type = get_origin(annotation) or annotation
+
+    if concrete_type is Ellipsis:
+        concrete_type = EllipsisType
+
+    assert isinstance(
+        concrete_type, type
+    ), f"not a type: {concrete_type} ({type(concrete_type)})"
+    return concrete_type
 
 
 @overload
