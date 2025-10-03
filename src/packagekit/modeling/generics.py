@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import cached_property
 from types import EllipsisType, GenericAlias, UnionType
 from typing import (
     Annotated,
@@ -49,6 +48,11 @@ class AnnotationInfo:
     Concrete (non-generic) type.
     """
 
+    args: tuple[AnnotationInfo, ...]
+    """
+    Type parameters, if any.
+    """
+
     def __init__(self, raw_annotation: RawAnnotationType, /):
         annotation, extras = split_annotated(raw_annotation)
         concrete_type = get_concrete_type(annotation)
@@ -56,22 +60,16 @@ class AnnotationInfo:
         self.annotation = annotation
         self.extras = extras
         self.concrete_type = concrete_type
+        self.args = tuple(AnnotationInfo(a) for a in get_args(self.annotation))
 
     def __repr__(self) -> str:
-        return f"AnnotationInfo(annotation='{self.annotation}', extras='{self.extras}', concrete_type='{self.concrete_type}')"
+        return f"AnnotationInfo(annotation='{self.annotation}', extras='{self.extras}', concrete_type='{self.concrete_type}', args='{self.args}')"
 
-    @cached_property
-    def args(self) -> tuple[AnnotationInfo, ...]:
-        """
-        Get type parameters, if any.
-        """
-        return tuple(AnnotationInfo(a) for a in get_args(self.annotation))
-
-    @cached_property
+    @property
     def is_union(self) -> bool:
         return isinstance(self.annotation, UnionType)
 
-    @cached_property
+    @property
     def flattened_types(self) -> tuple[type, ...]:
         """
         Get concrete types with union flattened, if applicable.
