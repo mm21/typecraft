@@ -2,8 +2,8 @@ from typing import Any
 
 from pytest import raises
 
-from packagekit.modeling.dataclass import BaseValidatedDataclass
 from packagekit.modeling.normalizing import Converter
+from packagekit.modeling.validated_dataclass import BaseValidatedDataclass
 
 
 class BasicTest(BaseValidatedDataclass):

@@ -55,7 +55,8 @@ class FieldInfo:
 @dataclass_transform(kw_only_default=True)
 class BaseValidatedDataclass:
     """
-    Base class to transform subclass to dataclass and provide field and data validation.
+    Base class to transform subclass to dataclass and provide recursive field
+    validation.
     """
 
     def __init_subclass__(cls, **kwargs):
