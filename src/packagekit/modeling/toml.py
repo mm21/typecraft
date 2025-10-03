@@ -44,8 +44,8 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..typing.generics import get_type_param
 from .dataclass import BaseValidatedDataclass, FieldInfo
+from .generics import get_type_param
 
 __all__ = [
     "BaseDocumentWrapper",

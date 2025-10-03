@@ -10,7 +10,7 @@ from typing import (
     get_type_hints,
 )
 
-from ..typing.generics import AnnotationInfo
+from .generics import AnnotationInfo
 from .normalizing import Converter, normalize_obj
 
 __all__ = [

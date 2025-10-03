@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from types import GeneratorType, UnionType
 from typing import Any, Callable, cast, overload
 
-from ..typing.generics import AnnotationInfo, RawAnnotationType
+from .generics import AnnotationInfo, RawAnnotationType
 
 __all__ = [
     "Converter",
