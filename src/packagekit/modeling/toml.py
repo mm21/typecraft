@@ -210,12 +210,11 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         # validate unions before proceeding with object creation
         for name, field_info in cls.dataclass_get_fields().items():
             ann = field_info.annotation_info
-            assert len(ann.annotations) == len(ann.types)
-            if len(ann.types) > 1:
+            if ann.is_union:
                 if (
-                    len(ann.types) != 2
-                    or ann.types[0] is NoneType
-                    or ann.types[1] is not NoneType
+                    len(ann.args) != 2
+                    or ann.args[0].concrete_type is NoneType
+                    or ann.args[1].concrete_type is not NoneType
                 ):
                     raise TypeError(
                         f"Class {cls}: Field '{name}': Unions must consist of (type) | None, got {ann.annotation}"
@@ -241,13 +240,15 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         )
 
     def dataclass_normalize(self, field_info: FieldInfo, value: Any) -> Any:
-        annotation = field_info.annotation_info.annotations[0]
-        type_ = field_info.annotation_info.types[0]
+        annotation = field_info.annotation_info.annotation
+        concrete_type = field_info.annotation_info.concrete_type
 
         if value is None:
             return None
-        elif issubclass(type_, BaseTomlWrapper) and not isinstance(value, type_):
-            return type_._from_tomlkit_obj(value, annotation=annotation)
+        elif issubclass(concrete_type, BaseTomlWrapper) and not isinstance(
+            value, concrete_type
+        ):
+            return concrete_type._from_tomlkit_obj(value, annotation=annotation)
         else:
             return _normalize_value(value)
 
