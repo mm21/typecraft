@@ -13,7 +13,7 @@ from .generics import AnnotationInfo, RawAnnotationType
 __all__ = [
     "Converter",
     "normalize_obj",
-    "normalize_list",
+    "normalize_obj_list",
 ]
 
 
@@ -221,7 +221,7 @@ def _normalize_obj(
     return obj
 
 
-def normalize_list[T](
+def normalize_obj_list[T](
     obj_or_objs: Any,
     target_type: type[T],
     /,
@@ -235,7 +235,7 @@ def normalize_list[T](
     Custom types (even if iterable) are treated as single objects.
     """
     # normalize to a collection of objects
-    if isinstance(obj_or_objs, (list, tuple, set, range, GeneratorType)):
+    if isinstance(obj_or_objs, VALUE_COLLECTION_TYPES):
         objs = obj_or_objs
     else:
         objs = [obj_or_objs]
