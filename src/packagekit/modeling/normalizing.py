@@ -5,8 +5,8 @@ Utilities to convert and normalize objects with recursive type support.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import GeneratorType, UnionType
-from typing import Any, Callable, cast, overload
+from types import UnionType
+from typing import Any, Callable, Generator, cast, overload
 
 from .generics import AnnotationInfo, RawAnnotationType
 
@@ -18,8 +18,13 @@ __all__ = [
 
 
 type ConverterFuncType[T] = Callable[[Any, AnnotationInfo, ConversionContext], T]
+"""
+Function which converts the given object.
+"""
 
-type ValueCollectionType = list[Any] | tuple[Any] | set[Any] | frozenset[Any]
+type ValueCollectionType = list[Any] | tuple[Any] | set[Any] | frozenset[
+    Any
+] | range | Generator
 """
 Types convertible to lists, tuples, and sets; collections which contain values
 rather than key-value mappings.
@@ -36,7 +41,7 @@ VALUE_COLLECTION_TYPES = (
     set,
     frozenset,
     range,
-    GeneratorType,
+    Generator,
 )
 
 COLLECTION_TYPES = (*VALUE_COLLECTION_TYPES, Mapping)
@@ -245,7 +250,7 @@ def normalize_obj_list[T](
 
 
 def _normalize_collection(
-    obj: CollectionType | range | GeneratorType,
+    obj: CollectionType,
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> Any:
@@ -262,20 +267,15 @@ def _normalize_collection(
         assert isinstance(obj, Mapping)
         return _normalize_dict(obj, annotation_info, conversion_context)
 
-    # handle conversion from sequences
-    if isinstance(obj, (range, GeneratorType)):
-        obj_ = list(obj)
-    else:
-        assert isinstance(obj, (list, tuple, set))
-        obj_ = obj
-
+    # handle conversion from value collections
+    assert not isinstance(obj, Mapping)
     if issubclass(annotation_info.concrete_type, list):
-        return _normalize_list(obj_, annotation_info, conversion_context)
+        return _normalize_list(obj, annotation_info, conversion_context)
     elif issubclass(annotation_info.concrete_type, tuple):
-        return _normalize_tuple(obj_, annotation_info, conversion_context)
+        return _normalize_tuple(obj, annotation_info, conversion_context)
     else:
         assert issubclass(annotation_info.concrete_type, set)
-        return _normalize_set(obj_, annotation_info, conversion_context)
+        return _normalize_set(obj, annotation_info, conversion_context)
 
 
 def _normalize_list(
@@ -304,15 +304,18 @@ def _normalize_tuple(
     if annotation_info.args[-1].annotation is not ...:
         assert not isinstance(
             obj, set
-        ), f"Can't convert from set to fixed-length tuple: {obj} ({annotation_info})"
+        ), f"Can't convert from set to fixed-length tuple as items would be in random order: {obj} ({annotation_info})"
 
-        if len(obj) != len(annotation_info.args):
+        # ensure object is sized
+        sized_obj = list(obj) if isinstance(obj, (range, Generator)) else obj
+
+        if len(sized_obj) != len(annotation_info.args):
             raise ValueError(
-                f"Tuple length mismatch: expected {len(annotation_info.args)}, got {len(obj)}: {obj} ({annotation_info})"
+                f"Tuple length mismatch: expected {len(annotation_info.args)}, got {len(sized_obj)}: {sized_obj} ({annotation_info})"
             )
         normalized_objs = tuple(
             conversion_context.normalize_obj(o, arg)
-            for o, arg in zip(obj, annotation_info.args)
+            for o, arg in zip(sized_obj, annotation_info.args)
         )
     else:
         # homogeneous tuple like tuple[int, ...]
@@ -370,19 +373,21 @@ def _convert_obj(
     Convert object by invoking converters and built-in handling, raising `ValueError`
     if it could not be converted.
     """
-    # aggregate converters
-    converters = (
-        (*conversion_context.converters, *BUILTIN_CONVERTERS)
-        if conversion_context.lenient
-        else conversion_context.converters
-    )
-
-    # try converters
-    if converter := _find_converter(obj, annotation_info.concrete_type, converters):
+    # try user-provided converters
+    if converter := _find_converter(
+        obj, annotation_info.concrete_type, conversion_context.converters
+    ):
         return converter.convert(obj, annotation_info, conversion_context)
 
-    # if lenient, try direct construction
+    # if lenient, keep trying
     if conversion_context.lenient:
+        # built-in converters
+        if converter := _find_converter(
+            obj, annotation_info.concrete_type, BUILTIN_CONVERTERS
+        ):
+            return converter.convert(obj, annotation_info, conversion_context)
+
+        # direct object construction
         return annotation_info.concrete_type(obj)
 
     raise ValueError(

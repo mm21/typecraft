@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Generator
 
 from packagekit.modeling.normalizing import Converter, normalize_obj
 
@@ -55,3 +55,27 @@ def test_normalize():
             *converters,
             lenient=True,
         )
+        assert result == [1, 2, 3]
+
+        # range -> list[int]
+        obj = range(3)
+        result = normalize_obj(obj, list[int], *converters, lenient=True)
+        assert result == [0, 1, 2]
+
+        # generator -> list[int]
+        def gen() -> Generator[int, None, None]:
+            for i in range(3):
+                yield i
+
+        obj = gen()
+        result = normalize_obj(obj, list[int], *converters, lenient=True)
+        assert result == [0, 1, 2]
+
+        # generator -> tuple[int, int, int]
+        obj = gen()
+        result = normalize_obj(obj, tuple[int, int, int], *converters, lenient=True)
+        assert result == (0, 1, 2)
+
+        # None -> None
+        result = normalize_obj(None, int | None, *converters, lenient=True)
+        assert result is None
