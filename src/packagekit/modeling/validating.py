@@ -190,10 +190,10 @@ def validate_obj(
     lenient: bool = False,
 ) -> Any:
     """
-    Recursively normalize object to the target type, converting if applicable.
+    Recursively validate object, converting to the target type if applicable.
 
     Handles nested parameterized types like list[list[int]] by recursively
-    applying converters at each level.
+    applying validation and conversion at each level.
     """
     annotation_info = AnnotationInfo(target_type)
     conversion_context = ConversionContext(*converters, lenient=lenient)
@@ -219,7 +219,7 @@ def validate_objs[T](
     else:
         objs = [obj_or_objs]
 
-    # normalize each object and place in a new list
+    # validate each object and place in a new list
     return [validate_obj(o, target_type, *converters, lenient=lenient) for o in objs]
 
 
@@ -261,26 +261,28 @@ def _validate_collection(
     conversion_context: ConversionContext,
 ) -> Any:
     """
-    Normalize collection of objects.
+    Validate collection of objects.
     """
 
     assert len(
         annotation_info.args
     ), f"Collection has no type parameter: {obj} ({annotation_info})"
 
+    type_ = annotation_info.concrete_type
+
     # handle conversion from mappings
-    if issubclass(annotation_info.concrete_type, dict):
+    if issubclass(type_, dict):
         assert isinstance(obj, Mapping)
         return _validate_dict(obj, annotation_info, conversion_context)
 
     # handle conversion from value collections
     assert not isinstance(obj, Mapping)
-    if issubclass(annotation_info.concrete_type, list):
+    if issubclass(type_, list):
         return _validate_list(obj, annotation_info, conversion_context)
-    elif issubclass(annotation_info.concrete_type, tuple):
+    elif issubclass(type_, tuple):
         return _validate_tuple(obj, annotation_info, conversion_context)
     else:
-        assert issubclass(annotation_info.concrete_type, set)
+        assert issubclass(type_, set)
         return _validate_set(obj, annotation_info, conversion_context)
 
 
@@ -289,16 +291,18 @@ def _validate_list(
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> list[Any]:
-    assert issubclass(annotation_info.concrete_type, list)
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, list)
     assert len(annotation_info.args) == 1
 
     arg = annotation_info.args[0]
-    normalized_objs = [conversion_context.validate_obj(o, arg) for o in obj]
+    validated_objs = [conversion_context.validate_obj(o, arg) for o in obj]
 
-    if isinstance(obj, annotation_info.concrete_type) and obj == normalized_objs:
+    if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
-    else:
-        return normalized_objs
+    elif type_ is list:
+        return validated_objs
+    return type_(validated_objs)
 
 
 def _validate_tuple(
@@ -306,7 +310,8 @@ def _validate_tuple(
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> tuple[Any]:
-    assert issubclass(annotation_info.concrete_type, tuple)
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, tuple)
 
     # fixed-length tuple like tuple[int, str, float]
     if annotation_info.args[-1].annotation is not ...:
@@ -321,7 +326,7 @@ def _validate_tuple(
             raise ValueError(
                 f"Tuple length mismatch: expected {len(annotation_info.args)}, got {len(sized_obj)}: {sized_obj} ({annotation_info})"
             )
-        normalized_objs = tuple(
+        validated_objs = tuple(
             conversion_context.validate_obj(o, arg)
             for o, arg in zip(sized_obj, annotation_info.args)
         )
@@ -329,12 +334,13 @@ def _validate_tuple(
         # homogeneous tuple like tuple[int, ...]
         assert len(annotation_info.args) == 2
         arg = annotation_info.args[0]
-        normalized_objs = tuple(conversion_context.validate_obj(o, arg) for o in obj)
+        validated_objs = tuple(conversion_context.validate_obj(o, arg) for o in obj)
 
-    if isinstance(obj, tuple) and obj == normalized_objs:
+    if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
-    else:
-        return normalized_objs
+    elif type_ is tuple:
+        return validated_objs
+    return type_(validated_objs)
 
 
 def _validate_set(
@@ -342,16 +348,20 @@ def _validate_set(
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> set[Any]:
-    assert issubclass(annotation_info.concrete_type, set)
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, set)
     assert len(annotation_info.args) == 1
 
     arg = annotation_info.args[0]
-    normalized_objs = {conversion_context.validate_obj(o, arg) for o in obj}
+    validated_objs = {conversion_context.validate_obj(o, arg) for o in obj}
 
-    if isinstance(obj, set) and obj == normalized_objs:
-        return obj
-    else:
-        return normalized_objs
+    if isinstance(obj, type_):
+        obj_ids = {id(o) for o in obj}
+        if all(id(n) in obj_ids for n in validated_objs):
+            return obj
+    if type_ is set:
+        return validated_objs
+    return type_(validated_objs)
 
 
 def _validate_dict(
@@ -359,21 +369,26 @@ def _validate_dict(
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> dict:
-    assert issubclass(annotation_info.concrete_type, dict)
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, dict)
     assert len(annotation_info.args) == 2
     key_type, value_type = annotation_info.args
 
-    normalized_objs = {
+    validated_objs = {
         conversion_context.validate_obj(k, key_type): conversion_context.validate_obj(
             v, value_type
         )
         for k, v in obj.items()
     }
 
-    if isinstance(obj, dict) and obj == normalized_objs:
+    if isinstance(obj, type_) and all(
+        k_o is k_n and obj[k_o] is validated_objs[k_n]
+        for k_o, k_n in zip(obj, validated_objs)
+    ):
         return obj
-    else:
-        return normalized_objs
+    elif type_ is dict:
+        return validated_objs
+    return type_(**validated_objs)
 
 
 def _convert_obj(

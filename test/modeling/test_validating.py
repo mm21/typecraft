@@ -3,7 +3,7 @@ from typing import Annotated, Generator
 from packagekit.modeling.validating import Converter, validate_obj
 
 
-def test_normalize():
+def test_conversion():
 
     # test with and without explicit converters
     for converters in [(Converter(int, (str,)),), ()]:
@@ -79,3 +79,31 @@ def test_normalize():
         # None -> None
         result = validate_obj(None, int | None, *converters, lenient=True)
         assert result is None
+
+
+def test_valid():
+    """
+    Test with no conversions: the validated type should be the same object as the
+    input type.
+    """
+
+    # builtin list type
+    test_list = [0, 1, 2]
+    validated_list = validate_obj(test_list, list[int])
+    assert test_list is validated_list
+    assert test_list == validated_list
+
+    class MyList[T](list[T]):
+        pass
+
+    # custom list type
+    test_list = MyList([0, 1, 2])
+    validated_list = validate_obj(test_list, MyList[int])
+    assert test_list is validated_list
+    assert test_list == validated_list
+
+    # custom list type -> builtin list type, still satisfies type without conversion
+    test_list = MyList([0, 1, 2])
+    validated_list = validate_obj(test_list, list[int])
+    assert test_list is validated_list
+    assert test_list == validated_list
