@@ -10,8 +10,8 @@ from typing import (
     get_type_hints,
 )
 
-from .generics import AnnotationInfo
-from .normalizing import Converter, normalize_obj
+from .typing_utils import AnnotationInfo
+from .validating import Converter, validate_obj
 
 __all__ = [
     "FieldInfo",
@@ -158,7 +158,7 @@ class BaseValidatedDataclass:
             for type_ in field_info.annotation_info.flattened_types:
                 for converter in self._converters:
                     if converter.can_convert(value_, type_):
-                        return normalize_obj(value_, type_, converter)
+                        return validate_obj(value_, type_, converter)
 
         return value_
 

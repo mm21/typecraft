@@ -1,5 +1,5 @@
 """
-Utilities to convert and normalize objects with recursive type support.
+Utilities to validate and convert objects recursively.
 """
 
 from __future__ import annotations
@@ -8,12 +8,14 @@ from collections.abc import Mapping
 from types import UnionType
 from typing import Any, Callable, Generator, cast, overload
 
-from .generics import AnnotationInfo, RawAnnotationType
+from .typing_utils import AnnotationInfo, RawAnnotationType
 
 __all__ = [
+    "ConverterFuncType",
+    "ConversionContext",
     "Converter",
-    "normalize_obj",
-    "normalize_obj_list",
+    "validate_obj",
+    "validate_objs",
 ]
 
 
@@ -48,6 +50,10 @@ COLLECTION_TYPES = (*VALUE_COLLECTION_TYPES, Mapping)
 
 
 class ConversionContext:
+    """
+    Encapsulates conversion parameters, propagated throughout the conversion process.
+    """
+
     __converters: tuple[Converter, ...]
     __lenient: bool = False
 
@@ -58,8 +64,8 @@ class ConversionContext:
     def __repr__(self) -> str:
         return f"ConversionContext(converters={self.__converters}, lenient={self.__lenient})"
 
-    def normalize_obj(self, obj: Any, annotation_info: AnnotationInfo) -> Any:
-        return _normalize_obj(obj, annotation_info, self)
+    def validate_obj(self, obj: Any, annotation_info: AnnotationInfo) -> Any:
+        return _validate_obj(obj, annotation_info, self)
 
     @property
     def converters(self) -> tuple[Converter, ...]:
@@ -72,7 +78,7 @@ class ConversionContext:
 
 class Converter[T]:
     """
-    Encapsulates type conversion info.
+    Encapsulates type conversion parameters from one or more types to a target type.
     """
 
     __target_type: type[T]
@@ -157,7 +163,7 @@ class Converter[T]:
 
 
 @overload
-def normalize_obj[T](
+def validate_obj[T](
     obj: Any,
     target_type: type[T],
     /,
@@ -167,7 +173,7 @@ def normalize_obj[T](
 
 
 @overload
-def normalize_obj(
+def validate_obj(
     obj: Any,
     target_type: RawAnnotationType,
     /,
@@ -176,7 +182,7 @@ def normalize_obj(
 ) -> Any: ...
 
 
-def normalize_obj(
+def validate_obj(
     obj: Any,
     target_type: RawAnnotationType,
     /,
@@ -191,42 +197,10 @@ def normalize_obj(
     """
     annotation_info = AnnotationInfo(target_type)
     conversion_context = ConversionContext(*converters, lenient=lenient)
-    return _normalize_obj(obj, annotation_info, conversion_context)
+    return _validate_obj(obj, annotation_info, conversion_context)
 
 
-def _normalize_obj(
-    obj: Any,
-    annotation_info: AnnotationInfo,
-    conversion_context: ConversionContext,
-) -> Any:
-
-    # handle union types by trying each constituent type
-    if isinstance(annotation_info.annotation, UnionType):
-        for arg in annotation_info.args:
-            try:
-                return _normalize_obj(obj, arg, conversion_context)
-            except (ValueError, TypeError):
-                continue
-        raise ValueError(
-            f"Object {obj} ({type(obj)}) could not be converted to any member of {annotation_info}"
-        )
-
-    # if we don't have the expected type, attempt conversion
-    # - converters (custom and lenient conversions) are assumed to always recurse if
-    # applicable
-    if not isinstance(obj, annotation_info.concrete_type):
-        return _convert_obj(obj, annotation_info, conversion_context)
-
-    # if type is a builtin collection, recurse
-    if issubclass(annotation_info.concrete_type, (list, tuple, set, dict)):
-        assert isinstance(obj, COLLECTION_TYPES)
-        return _normalize_collection(obj, annotation_info, conversion_context)
-
-    # have the expected type and it's not a collection
-    return obj
-
-
-def normalize_obj_list[T](
+def validate_objs[T](
     obj_or_objs: Any,
     target_type: type[T],
     /,
@@ -234,7 +208,7 @@ def normalize_obj_list[T](
     lenient: bool = False,
 ) -> list[T]:
     """
-    Normalize object(s) to a list of the target type, converting if applicable.
+    Validate object(s) and normalize to a list of the target type.
 
     Only built-in collection types and generators are expanded.
     Custom types (even if iterable) are treated as single objects.
@@ -246,10 +220,42 @@ def normalize_obj_list[T](
         objs = [obj_or_objs]
 
     # normalize each object and place in a new list
-    return [normalize_obj(o, target_type, *converters, lenient=lenient) for o in objs]
+    return [validate_obj(o, target_type, *converters, lenient=lenient) for o in objs]
 
 
-def _normalize_collection(
+def _validate_obj(
+    obj: Any,
+    annotation_info: AnnotationInfo,
+    conversion_context: ConversionContext,
+) -> Any:
+
+    # handle union types by trying each constituent type
+    if isinstance(annotation_info.annotation, UnionType):
+        for arg in annotation_info.args:
+            try:
+                return _validate_obj(obj, arg, conversion_context)
+            except (ValueError, TypeError):
+                continue
+        raise ValueError(
+            f"Object {obj} ({type(obj)}) could not be converted to any member of union {annotation_info}"
+        )
+
+    # if we don't have the expected type, attempt conversion
+    # - converters (custom and lenient conversions) are assumed to always recurse if
+    # applicable
+    if not isinstance(obj, annotation_info.concrete_type):
+        return _convert_obj(obj, annotation_info, conversion_context)
+
+    # if type is a builtin collection, recurse
+    if issubclass(annotation_info.concrete_type, (list, tuple, set, dict)):
+        assert isinstance(obj, COLLECTION_TYPES)
+        return _validate_collection(obj, annotation_info, conversion_context)
+
+    # have the expected type and it's not a collection
+    return obj
+
+
+def _validate_collection(
     obj: CollectionType,
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
@@ -265,40 +271,42 @@ def _normalize_collection(
     # handle conversion from mappings
     if issubclass(annotation_info.concrete_type, dict):
         assert isinstance(obj, Mapping)
-        return _normalize_dict(obj, annotation_info, conversion_context)
+        return _validate_dict(obj, annotation_info, conversion_context)
 
     # handle conversion from value collections
     assert not isinstance(obj, Mapping)
     if issubclass(annotation_info.concrete_type, list):
-        return _normalize_list(obj, annotation_info, conversion_context)
+        return _validate_list(obj, annotation_info, conversion_context)
     elif issubclass(annotation_info.concrete_type, tuple):
-        return _normalize_tuple(obj, annotation_info, conversion_context)
+        return _validate_tuple(obj, annotation_info, conversion_context)
     else:
         assert issubclass(annotation_info.concrete_type, set)
-        return _normalize_set(obj, annotation_info, conversion_context)
+        return _validate_set(obj, annotation_info, conversion_context)
 
 
-def _normalize_list(
+def _validate_list(
     obj: ValueCollectionType,
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> list[Any]:
+    assert issubclass(annotation_info.concrete_type, list)
     assert len(annotation_info.args) == 1
 
     arg = annotation_info.args[0]
-    normalized_objs = [conversion_context.normalize_obj(o, arg) for o in obj]
+    normalized_objs = [conversion_context.validate_obj(o, arg) for o in obj]
 
-    if isinstance(obj, list) and obj == normalized_objs:
+    if isinstance(obj, annotation_info.concrete_type) and obj == normalized_objs:
         return obj
     else:
         return normalized_objs
 
 
-def _normalize_tuple(
+def _validate_tuple(
     obj: ValueCollectionType,
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> tuple[Any]:
+    assert issubclass(annotation_info.concrete_type, tuple)
 
     # fixed-length tuple like tuple[int, str, float]
     if annotation_info.args[-1].annotation is not ...:
@@ -314,14 +322,14 @@ def _normalize_tuple(
                 f"Tuple length mismatch: expected {len(annotation_info.args)}, got {len(sized_obj)}: {sized_obj} ({annotation_info})"
             )
         normalized_objs = tuple(
-            conversion_context.normalize_obj(o, arg)
+            conversion_context.validate_obj(o, arg)
             for o, arg in zip(sized_obj, annotation_info.args)
         )
     else:
         # homogeneous tuple like tuple[int, ...]
         assert len(annotation_info.args) == 2
         arg = annotation_info.args[0]
-        normalized_objs = tuple(conversion_context.normalize_obj(o, arg) for o in obj)
+        normalized_objs = tuple(conversion_context.validate_obj(o, arg) for o in obj)
 
     if isinstance(obj, tuple) and obj == normalized_objs:
         return obj
@@ -329,15 +337,16 @@ def _normalize_tuple(
         return normalized_objs
 
 
-def _normalize_set(
+def _validate_set(
     obj: ValueCollectionType,
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> set[Any]:
+    assert issubclass(annotation_info.concrete_type, set)
     assert len(annotation_info.args) == 1
 
     arg = annotation_info.args[0]
-    normalized_objs = {conversion_context.normalize_obj(o, arg) for o in obj}
+    normalized_objs = {conversion_context.validate_obj(o, arg) for o in obj}
 
     if isinstance(obj, set) and obj == normalized_objs:
         return obj
@@ -345,16 +354,17 @@ def _normalize_set(
         return normalized_objs
 
 
-def _normalize_dict(
+def _validate_dict(
     obj: Mapping,
     annotation_info: AnnotationInfo,
     conversion_context: ConversionContext,
 ) -> dict:
+    assert issubclass(annotation_info.concrete_type, dict)
     assert len(annotation_info.args) == 2
     key_type, value_type = annotation_info.args
 
     normalized_objs = {
-        conversion_context.normalize_obj(k, key_type): conversion_context.normalize_obj(
+        conversion_context.validate_obj(k, key_type): conversion_context.validate_obj(
             v, value_type
         )
         for k, v in obj.items()
@@ -408,8 +418,8 @@ def _find_converter(
 
 
 BUILTIN_CONVERTERS = (
-    Converter(list, VALUE_COLLECTION_TYPES, _normalize_list),
-    Converter(tuple, VALUE_COLLECTION_TYPES, _normalize_tuple),
-    Converter(set, VALUE_COLLECTION_TYPES, _normalize_set),
-    Converter(dict, (Mapping,), _normalize_dict),
+    Converter(list, VALUE_COLLECTION_TYPES, _validate_list),
+    Converter(tuple, VALUE_COLLECTION_TYPES, _validate_tuple),
+    Converter(set, VALUE_COLLECTION_TYPES, _validate_set),
+    Converter(dict, (Mapping,), _validate_dict),
 )

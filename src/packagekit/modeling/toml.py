@@ -44,7 +44,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from .generics import get_type_param
+from .typing_utils import get_type_param
 from .validated_dataclass import BaseValidatedDataclass, FieldInfo
 
 __all__ = [
