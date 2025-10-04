@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import EllipsisType, GenericAlias, UnionType
+from types import EllipsisType, GenericAlias, NoneType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -45,12 +45,18 @@ class AnnotationInfo:
 
     concrete_type: type
     """
-    Concrete (non-generic) type.
+    Concrete (non-generic) type; origin or annotation, depending on whether annotation
+    is a generic type.
+    """
+
+    origin: type | None
+    """
+    Origin type, if annotation is a generic type.
     """
 
     args: tuple[AnnotationInfo, ...]
     """
-    Type parameters, if any.
+    Type parameters, if annotation is a generic type.
     """
 
     def __init__(self, raw_annotation: RawAnnotationType, /):
@@ -60,6 +66,7 @@ class AnnotationInfo:
         self.annotation = annotation
         self.extras = extras
         self.concrete_type = concrete_type
+        self.origin = get_origin(annotation)
         self.args = tuple(AnnotationInfo(a) for a in get_args(self.annotation))
 
     def __repr__(self) -> str:
@@ -129,8 +136,9 @@ def get_concrete_type(raw_annotation: RawAnnotationType, /) -> type:
     annotation, _ = split_annotated(raw_annotation)
     concrete_type = get_origin(annotation) or annotation
 
-    if concrete_type is Ellipsis:
-        concrete_type = EllipsisType
+    # change singletons to respective type so isinstance() works as expected
+    singleton_map = {None: NoneType, Ellipsis: EllipsisType}
+    concrete_type = singleton_map.get(concrete_type, concrete_type)
 
     assert isinstance(
         concrete_type, type
