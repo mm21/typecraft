@@ -1,4 +1,7 @@
-from typing import Annotated, Generator
+from types import NoneType
+from typing import Annotated, Generator, Literal
+
+from pytest import raises
 
 from packagekit.modeling.validating import Converter, validate_obj
 
@@ -76,10 +79,6 @@ def test_conversion():
         result = validate_obj(obj, tuple[int, int, int], *converters, lenient=True)
         assert result == (0, 1, 2)
 
-        # None -> None
-        result = validate_obj(None, int | None, *converters, lenient=True)
-        assert result is None
-
 
 def test_valid():
     """
@@ -87,23 +86,43 @@ def test_valid():
     input type.
     """
 
+    # literal values
+    assert validate_obj(True, Literal[True]) is True
+    assert validate_obj(True, str | Literal[True]) is True
+    assert validate_obj(None, None) is None
+    assert validate_obj(None, NoneType) is None
+    assert validate_obj(None, int | None) is None
+    assert validate_obj("def", Literal["abc", "def", "ghi"]) == "def"
+
     # builtin list type
-    test_list = [0, 1, 2]
-    validated_list = validate_obj(test_list, list[int])
-    assert test_list is validated_list
-    assert test_list == validated_list
+    obj = [0, 1, 2]
+    result = validate_obj(obj, list[int])
+    assert obj is result
+    assert obj == result
 
     class MyList[T](list[T]):
         pass
 
     # custom list type
-    test_list = MyList([0, 1, 2])
-    validated_list = validate_obj(test_list, MyList[int])
-    assert test_list is validated_list
-    assert test_list == validated_list
+    obj = MyList([0, 1, 2])
+    result = validate_obj(obj, MyList[int])
+    assert obj is result
+    assert obj == result
 
     # custom list type -> builtin list type, still satisfies type without conversion
-    test_list = MyList([0, 1, 2])
-    validated_list = validate_obj(test_list, list[int])
-    assert test_list is validated_list
-    assert test_list == validated_list
+    obj = MyList([0, 1, 2])
+    result = validate_obj(obj, list[int])
+    assert obj is result
+    assert obj == result
+
+
+def test_invalid():
+    """
+    Test with no conversions: validation should raise an error.
+    """
+
+    with raises(ValueError):
+        _ = validate_obj("abc", Literal["def", "ghi"])
+
+    with raises(ValueError):
+        _ = validate_obj(0, str | bool)

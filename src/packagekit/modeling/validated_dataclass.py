@@ -75,7 +75,7 @@ class BaseValidatedDataclass:
         # validate fields before proceeding with object creation
         if valid_types := cls.dataclass_get_valid_types():
             for name, field_info in cls.dataclass_get_fields().items():
-                for field_type in field_info.annotation_info.flattened_types:
+                for field_type in field_info.annotation_info.union_types:
                     if not issubclass(field_type, valid_types):
                         raise TypeError(
                             f"Class {cls}: Field '{name}': Type ({field_type}) not one of {valid_types}"
@@ -88,11 +88,11 @@ class BaseValidatedDataclass:
         # if this is a field, normalize and validate value
         if field_info:
             value_norm = self.__normalize_value(field_info, value)
-            if not isinstance(value_norm, field_info.annotation_info.flattened_types):
+            if not isinstance(value_norm, field_info.annotation_info.union_types):
                 raise ValueError(
                     f"Field '{field_info.field.name}' of object {self}: Value '{value}' "
                     f"({type(value)}) not allowed and could not be converted, expected "
-                    f"{field_info.annotation_info.flattened_types}"
+                    f"{field_info.annotation_info.union_types}"
                 )
         else:
             value_norm = value
@@ -154,8 +154,8 @@ class BaseValidatedDataclass:
         value_ = self.dataclass_normalize(field_info, value)
 
         # if not an expected type, attempt to convert
-        if not isinstance(value_, field_info.annotation_info.flattened_types):
-            for type_ in field_info.annotation_info.flattened_types:
+        if not isinstance(value_, field_info.annotation_info.union_types):
+            for type_ in field_info.annotation_info.union_types:
                 for converter in self._converters:
                     if converter.can_convert(value_, type_):
                         return validate_obj(value_, type_, converter)

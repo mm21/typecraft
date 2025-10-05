@@ -5,7 +5,6 @@ Utilities to validate and convert objects recursively.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import UnionType
 from typing import Any, Callable, Generator, cast, overload
 
 from .typing_utils import AnnotationInfo, RawAnnotationType
@@ -229,21 +228,14 @@ def _validate_obj(
     conversion_context: ConversionContext,
 ) -> Any:
 
-    # handle union types by trying each constituent type
-    if isinstance(annotation_info.annotation, UnionType):
-        for arg in annotation_info.args:
-            try:
-                return _validate_obj(obj, arg, conversion_context)
-            except (ValueError, TypeError):
-                continue
-        raise ValueError(
-            f"Object {obj} ({type(obj)}) could not be converted to any member of union {annotation_info}"
-        )
+    # handle union type
+    if annotation_info.is_union:
+        return _validate_union(obj, annotation_info, conversion_context)
 
-    # if we don't have the expected type, attempt conversion
+    # if object does not satisfy annotation, attempt conversion
     # - converters (custom and lenient conversions) are assumed to always recurse if
     # applicable
-    if not isinstance(obj, annotation_info.concrete_type):
+    if not _check_obj(obj, annotation_info):
         return _convert_obj(obj, annotation_info, conversion_context)
 
     # if type is a builtin collection, recurse
@@ -253,6 +245,32 @@ def _validate_obj(
 
     # have the expected type and it's not a collection
     return obj
+
+
+def _check_obj(obj: Any, annotation_info: AnnotationInfo) -> bool:
+    """
+    Check if object satisfies the annotation.
+    """
+    if annotation_info.is_literal:
+        return obj in annotation_info.literal_values
+    else:
+        return isinstance(obj, annotation_info.concrete_type)
+
+
+def _validate_union(
+    obj: Any, annotation_info: AnnotationInfo, conversion_context: ConversionContext
+) -> Any:
+    """
+    Validate constituent types of union.
+    """
+    for arg in annotation_info.args:
+        try:
+            return _validate_obj(obj, arg, conversion_context)
+        except (ValueError, TypeError):
+            continue
+    raise ValueError(
+        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {annotation_info}"
+    )
 
 
 def _validate_collection(
@@ -416,7 +434,7 @@ def _convert_obj(
         return annotation_info.concrete_type(obj)
 
     raise ValueError(
-        f"Object '{obj}' ({type(obj)}) could not be converted to {annotation_info.concrete_type} ({annotation_info})"
+        f"Object '{obj}' ({type(obj)}) could not be converted to {annotation_info}"
     )
 
 
