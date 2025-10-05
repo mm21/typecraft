@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from dataclasses import Field, dataclass
 from functools import cache, cached_property
 from typing import (
     Any,
-    Self,
     dataclass_transform,
     get_type_hints,
 )
 
 from .typing_utils import AnnotationInfo
-from .validating import Converter, validate_obj
+from .validating import Converter, ValidationContext, validate_obj
 
 __all__ = [
     "FieldInfo",
+    "DataclassConfig",
     "BaseValidatedDataclass",
 ]
 
@@ -52,11 +53,38 @@ class FieldInfo:
         return FieldInfo(field=field, annotation_info=annotation_info)
 
 
+@dataclass(kw_only=True)
+class DataclassConfig:
+    """
+    Configures dataclass.
+    """
+
+    lenient: bool = False
+    """
+    Coerce values to expected type if possible.
+    """
+
+    validate_on_assignment: bool = False
+    """
+    Validate when attributes are set, not just when the class is created.
+    """
+
+
 @dataclass_transform(kw_only_default=True)
 class BaseValidatedDataclass:
     """
     Base class to transform subclass to dataclass and provide recursive field
     validation.
+    """
+
+    dataclass_config: DataclassConfig = DataclassConfig()
+    """
+    Set on subclass to configure this dataclass.
+    """
+
+    __init_done: bool = False
+    """
+    Whether initialization has completed.
     """
 
     def __init_subclass__(cls, **kwargs):
@@ -70,34 +98,26 @@ class BaseValidatedDataclass:
                     f"Class {cls}: Field '{field.name}': No type annotation"
                 )
 
-    def __new__(cls, *args, **kwargs) -> Self:
-        _, _ = (args, kwargs)
-        # validate fields before proceeding with object creation
-        if valid_types := cls.dataclass_get_valid_types():
-            for name, field_info in cls.dataclass_get_fields().items():
-                for field_type in field_info.annotation_info.union_types:
-                    if not issubclass(field_type, valid_types):
-                        raise TypeError(
-                            f"Class {cls}: Field '{name}': Type ({field_type}) not one of {valid_types}"
-                        )
-        return super().__new__(cls)
+    def __post_init__(self):
+        self.__init_done = True
 
     def __setattr__(self, name: str, value: Any):
         field_info = self.dataclass_fields.get(name)
 
-        # if this is a field, normalize and validate value
-        if field_info:
-            value_norm = self.__normalize_value(field_info, value)
-            if not isinstance(value_norm, field_info.annotation_info.union_types):
-                raise ValueError(
-                    f"Field '{field_info.field.name}' of object {self}: Value '{value}' "
-                    f"({type(value)}) not allowed and could not be converted, expected "
-                    f"{field_info.annotation_info.union_types}"
-                )
+        # validate value if applicable
+        if field_info and (
+            not self.__init_done or self.dataclass_config.validate_on_assignment
+        ):
+            value_ = validate_obj(
+                value,
+                field_info.annotation_info.annotation,
+                *self.__converters,
+                lenient=self.dataclass_config.lenient,
+            )
         else:
-            value_norm = value
+            value_ = value
 
-        super().__setattr__(name, value_norm)
+        super().__setattr__(name, value_)
 
     @cached_property
     def dataclass_fields(self) -> dict[str, FieldInfo]:
@@ -113,29 +133,17 @@ class BaseValidatedDataclass:
         """
         return cls.__dataclass_fields()
 
-    @classmethod
-    def dataclass_get_valid_types(cls) -> tuple[Any, ...]:
-        """
-        Override to restrict allowed field types; allow any types if empty.
-        """
-        return tuple()
-
     def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
         """
         Override to provide converters for values.
         """
         return tuple()
 
-    def dataclass_normalize(self, field_info: FieldInfo, value: Any) -> Any:
-        """
-        Override to handle custom field normalization.
-        """
-        _ = field_info
-        return value
-
     @cached_property
-    def _converters(self) -> tuple[Converter[Any], ...]:
-        return self.dataclass_get_converters()
+    def __converters(self) -> tuple[Converter[Any], ...]:
+        # add converter for nested dataclasses at end in case user passes a
+        # converter for a subclass
+        return (*self.dataclass_get_converters(), NESTED_DATACLASS_CONVERTER)
 
     @classmethod
     @cache
@@ -146,21 +154,22 @@ class BaseValidatedDataclass:
         """
         return {f.name: FieldInfo.from_field(cls, f) for f in _get_fields(cls)}
 
-    def __normalize_value(self, field_info: FieldInfo, value: Any) -> Any:
-        """
-        Normalize value to the type expected by this field.
-        """
-        # invoke custom normalizer
-        value_ = self.dataclass_normalize(field_info, value)
 
-        # if not an expected type, attempt to convert
-        if not isinstance(value_, field_info.annotation_info.union_types):
-            for type_ in field_info.annotation_info.union_types:
-                for converter in self._converters:
-                    if converter.can_convert(value_, type_):
-                        return validate_obj(value_, type_, converter)
+def convert_dataclass(
+    obj: Any, annotation_info: AnnotationInfo, _: ValidationContext
+) -> BaseValidatedDataclass:
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, BaseValidatedDataclass)
+    assert isinstance(obj, Mapping)
+    return type_(**obj)
 
-        return value_
+
+NESTED_DATACLASS_CONVERTER = Converter(
+    BaseValidatedDataclass, (Mapping,), func=convert_dataclass
+)
+"""
+Converts a mapping (e.g. dict) to a validated dataclass.
+"""
 
 
 def _get_fields(class_or_instance: Any) -> tuple[Field, ...]:
