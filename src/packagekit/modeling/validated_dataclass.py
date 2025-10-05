@@ -108,23 +108,18 @@ class BaseValidatedDataclass:
         if field_info and (
             not self.__init_done or self.dataclass_config.validate_on_assignment
         ):
+            value_ = self.dataclass_pre_validate(field_info, value)
             value_ = validate_obj(
-                value,
+                value_,
                 field_info.annotation_info.annotation,
                 *self.__converters,
                 lenient=self.dataclass_config.lenient,
             )
+            value_ = self.dataclass_post_validate(field_info, value_)
         else:
             value_ = value
 
         super().__setattr__(name, value_)
-
-    @cached_property
-    def dataclass_fields(self) -> dict[str, FieldInfo]:
-        """
-        Dataclass fields with annotations resolved and processed.
-        """
-        return type(self).dataclass_get_fields()
 
     @classmethod
     def dataclass_get_fields(cls) -> dict[str, FieldInfo]:
@@ -133,11 +128,33 @@ class BaseValidatedDataclass:
         """
         return cls.__dataclass_fields()
 
+    @cached_property
+    def dataclass_fields(self) -> dict[str, FieldInfo]:
+        """
+        Dataclass fields with annotations resolved and processed.
+        """
+        return type(self).dataclass_get_fields()
+
     def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
         """
-        Override to provide converters for values.
+        Override to provide converters for values by type, including inner values like
+        elements of lists.
         """
         return tuple()
+
+    def dataclass_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
+        """
+        Override to perform validation on value before built-in validation.
+        """
+        _ = field_info
+        return value
+
+    def dataclass_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
+        """
+        Override to perform validation on value after built-in validation.
+        """
+        _ = field_info
+        return value
 
     @cached_property
     def __converters(self) -> tuple[Converter[Any], ...]:
