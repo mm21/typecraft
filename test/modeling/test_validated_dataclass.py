@@ -1,3 +1,4 @@
+from dataclasses import field
 from typing import Any
 
 from pytest import raises
@@ -6,6 +7,7 @@ from packagekit.modeling.validated_dataclass import (
     BaseValidatedDataclass,
     DataclassConfig,
     FieldInfo,
+    FieldMetadata,
 )
 
 
@@ -51,6 +53,10 @@ class PrePostValidateTest(BaseValidatedDataclass):
         assert isinstance(value, int)
         assert value > 0
         return value
+
+
+class LoadDumpTest(BaseValidatedDataclass):
+    test_field: int = field(metadata=FieldMetadata(alias="test-field"))
 
 
 def test_basic():
@@ -104,9 +110,24 @@ def test_nested():
     assert dc.union.a == 321
 
 
-def pre_post_validate():
+def test_pre_post_validate():
     dc = PrePostValidateTest(a="123")  # type: ignore
     assert dc.a == 123
 
     with raises(AssertionError):
         _ = PrePostValidateTest(a=0)
+
+
+def test_load_dump():
+
+    # without alias
+    dc = LoadDumpTest.dataclass_load({"test_field": 123})
+    assert dc.test_field == 123
+    dump = dc.dataclass_dump()
+    assert dump["test_field"] == 123
+
+    # with alias
+    dc = LoadDumpTest.dataclass_load({"test-field": 123}, by_alias=True)
+    assert dc.test_field == 123
+    dump = dc.dataclass_dump(by_alias=True)
+    assert dump["test-field"] == 123

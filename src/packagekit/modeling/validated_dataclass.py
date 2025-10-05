@@ -6,6 +6,8 @@ from dataclasses import Field, dataclass
 from functools import cache, cached_property
 from typing import (
     Any,
+    Self,
+    TypedDict,
     dataclass_transform,
     get_type_hints,
 )
@@ -18,6 +20,18 @@ __all__ = [
     "DataclassConfig",
     "BaseValidatedDataclass",
 ]
+
+
+class FieldMetadata(TypedDict):
+    """
+    Encapsulates metadata for a field definition. Pass into dataclass's `field` via
+    `metadata` argument.
+    """
+
+    alias: str
+    """
+    Field name to use when loading a dumping from/to dict.
+    """
 
 
 @dataclass(kw_only=True)
@@ -36,8 +50,18 @@ class FieldInfo:
     Annotation info.
     """
 
+    def get_name(self, *, by_alias: bool = False) -> str:
+        """
+        Get this field's name, optionally using its alias.
+        """
+        return (
+            self.field.metadata.get("alias", self.field.name)
+            if by_alias
+            else self.field.name
+        )
+
     @classmethod
-    def from_field(
+    def _from_field(
         cls, obj_cls: type[BaseValidatedDataclass], field: Field
     ) -> FieldInfo:
         """
@@ -122,6 +146,21 @@ class BaseValidatedDataclass:
         super().__setattr__(name, value_)
 
     @classmethod
+    def dataclass_load(cls, obj: Mapping, /, *, by_alias: bool = False) -> Self:
+        """
+        Create instance of dataclass from mapping, substituting aliases if
+        `by_alias` is `True`.
+        """
+        values: dict[str, Any] = {}
+
+        for name, field_info in cls.dataclass_get_fields().items():
+            mapping_name = field_info.get_name(by_alias=by_alias)
+            if mapping_name in obj:
+                values[name] = obj[mapping_name]
+
+        return cls(**values)
+
+    @classmethod
     def dataclass_get_fields(cls) -> dict[str, FieldInfo]:
         """
         Get dataclass fields from class.
@@ -131,9 +170,21 @@ class BaseValidatedDataclass:
     @cached_property
     def dataclass_fields(self) -> dict[str, FieldInfo]:
         """
-        Dataclass fields with annotations resolved and processed.
+        Get dataclass fields from instance.
         """
         return type(self).dataclass_get_fields()
+
+    def dataclass_dump(self, *, by_alias: bool = False) -> dict[str, Any]:
+        """
+        Dump dataclass to dictionary, substituting aliases if `by_alias` is `True`.
+        """
+        values: dict[str, Any] = {}
+
+        for name, field_info in self.dataclass_fields.items():
+            mapping_name = field_info.get_name(by_alias=by_alias)
+            values[mapping_name] = getattr(self, name)
+
+        return values
 
     def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
         """
@@ -156,12 +207,6 @@ class BaseValidatedDataclass:
         _ = field_info
         return value
 
-    @cached_property
-    def __converters(self) -> tuple[Converter[Any], ...]:
-        # add converter for nested dataclasses at end in case user passes a
-        # converter for a subclass
-        return (*self.dataclass_get_converters(), NESTED_DATACLASS_CONVERTER)
-
     @classmethod
     @cache
     def __dataclass_fields(cls) -> dict[str, FieldInfo]:
@@ -169,7 +214,16 @@ class BaseValidatedDataclass:
         Implementation of API to keep the `dataclass_fields` signature intact,
         overridden by `@cache`.
         """
-        return {f.name: FieldInfo.from_field(cls, f) for f in _get_fields(cls)}
+        return {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
+
+    @cached_property
+    def __converters(self) -> tuple[Converter[Any], ...]:
+        """
+        Converters to use for validation.
+        """
+        # add converter for nested dataclasses at end in case user passes a
+        # converter for a subclass
+        return (*self.dataclass_get_converters(), NESTED_DATACLASS_CONVERTER)
 
 
 def convert_dataclass(
