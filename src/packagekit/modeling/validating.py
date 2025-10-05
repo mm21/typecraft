@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Callable, Generator, cast, overload
 
-from .typing_utils import AnnotationInfo, RawAnnotationType
+from .typing_utils import AnnotationInfo
 
 __all__ = [
     "ConverterFuncType",
@@ -174,7 +174,7 @@ def validate_obj[T](
 @overload
 def validate_obj(
     obj: Any,
-    target_type: RawAnnotationType,
+    target_type: Any,
     /,
     *converters: Converter[Any],
     lenient: bool = False,
@@ -183,7 +183,7 @@ def validate_obj(
 
 def validate_obj(
     obj: Any,
-    target_type: RawAnnotationType,
+    target_type: Any,
     /,
     *converters: Converter[Any],
     lenient: bool = False,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import cached_property
-from types import EllipsisType, GenericAlias, NoneType, UnionType
+from types import EllipsisType, NoneType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -23,16 +23,13 @@ __all__ = [
     "get_type_param",
 ]
 
-type AnnotationType = type[Any] | GenericAlias | UnionType | EllipsisType
-type RawAnnotationType = AnnotationType | Annotated
-
 
 class AnnotationInfo:
     """
     Performs normalizations on annotation and encapsulates useful info.
     """
 
-    annotation: AnnotationType
+    annotation: Any
     """
     Original annotation after stripping `Annotated[]` if applicable. May be a generic
     type.
@@ -63,18 +60,18 @@ class AnnotationInfo:
     - Otherwise: annotation itself, ensuring it's a type
     """
 
-    def __init__(self, raw_annotation: RawAnnotationType, /):
-        annotation, extras = split_annotated(raw_annotation)
+    def __init__(self, annotation: Any, /):
+        annotation_, extras = split_annotated(annotation)
 
-        self.annotation = annotation
+        self.annotation = annotation_
         self.extras = extras
-        self.origin = get_origin(annotation)
+        self.origin = get_origin(annotation_)
         self.args = (
-            tuple(AnnotationInfo(a) for a in get_args(annotation))
+            tuple(AnnotationInfo(a) for a in get_args(annotation_))
             if self.origin is not Literal
             else ()
         )
-        self.concrete_type = get_concrete_type(annotation)
+        self.concrete_type = get_concrete_type(annotation_)
 
     def __repr__(self) -> str:
         annotation = f"annotation={self.annotation}"
@@ -118,50 +115,46 @@ class AnnotationInfo:
             return ()
 
 
-def split_annotated(
-    raw_annotation: RawAnnotationType, /
-) -> tuple[AnnotationType, tuple[RawAnnotationType, ...]]:
+def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
     """
     Split Annotated[x, ...] (if present) into annotation and extras.
     """
-    if get_origin(raw_annotation) is Annotated:
-        args = get_args(raw_annotation)
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
         assert len(args)
 
-        annotation = args[0]
+        annotation_ = args[0]
         extras = tuple(args[1:])
     else:
-        annotation = raw_annotation
+        annotation_ = annotation
         extras = ()
 
-    return annotation, extras
+    return annotation_, extras
 
 
-def is_union(raw_annotation: RawAnnotationType, /) -> bool:
+def is_union(annotation: Any, /) -> bool:
     """
     Check whether the annotation is a union.
     """
-    annotation, _ = split_annotated(raw_annotation)
-    return isinstance(annotation, UnionType) or get_origin(annotation) is Union
+    annotation_, _ = split_annotated(annotation)
+    return isinstance(annotation_, UnionType) or get_origin(annotation_) is Union
 
 
-def flatten_union(
-    raw_annotation: RawAnnotationType, /
-) -> tuple[RawAnnotationType, ...]:
+def flatten_union(annotation: Any, /) -> tuple[Any, ...]:
     """
     Flatten union (if present) into its constituent types.
     """
-    annotation, _ = split_annotated(raw_annotation)
-    return get_args(annotation) if is_union(annotation) else (annotation,)
+    annotation_, _ = split_annotated(annotation)
+    return get_args(annotation_) if is_union(annotation_) else (annotation_,)
 
 
-def get_concrete_type(raw_annotation: RawAnnotationType, /) -> type:
+def get_concrete_type(annotation: Any, /) -> type:
     """
     Get concrete type of parameterized annotation, or `object` if the annotation is
     a literal.
     """
-    annotation, _ = split_annotated(raw_annotation)
-    concrete_type = get_origin(annotation) or annotation
+    annotation_, _ = split_annotated(annotation)
+    concrete_type = get_origin(annotation_) or annotation_
 
     if concrete_type is Literal:
         return object
@@ -172,7 +165,7 @@ def get_concrete_type(raw_annotation: RawAnnotationType, /) -> type:
 
     assert isinstance(
         concrete_type, type
-    ), f"Not a type: '{concrete_type}' (from annotation '{annotation}')"
+    ), f"Not a type: '{concrete_type}' (from annotation '{annotation_}')"
 
     return concrete_type
 
