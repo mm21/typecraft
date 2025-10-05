@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import cached_property
 from types import EllipsisType, NoneType, UnionType
 from typing import (
     Annotated,
@@ -45,9 +44,14 @@ class AnnotationInfo:
     Origin, non-`None` if annotation is a generic type.
     """
 
-    args: tuple[AnnotationInfo, ...]
+    args: tuple[Any, ...]
     """
-    Type parameters, if annotation is a generic type and `origin` is not `Literal`.
+    Type parameters.
+    """
+
+    args_info: tuple[AnnotationInfo, ...]
+    """
+    Annotation info for type parameters, if not `is_literal`.
     """
 
     concrete_type: type
@@ -66,8 +70,9 @@ class AnnotationInfo:
         self.annotation = annotation_
         self.extras = extras
         self.origin = get_origin(annotation_)
-        self.args = (
-            tuple(AnnotationInfo(a) for a in get_args(annotation_))
+        self.args = get_args(annotation_)
+        self.args_info = (
+            tuple(AnnotationInfo(a) for a in self.args)
             if self.origin is not Literal
             else ()
         )
@@ -77,7 +82,7 @@ class AnnotationInfo:
         annotation = f"annotation={self.annotation}"
         extras = f"extras={self.extras}"
         origin = f"origin={self.origin}"
-        args = f"args={self.args}"
+        args = f"args={self.args_info}"
         concrete_type = f"concrete_type={self.concrete_type}"
         return (
             f"AnnotationInfo({annotation}, {extras}, {origin}, {args}, {concrete_type})"
@@ -90,29 +95,6 @@ class AnnotationInfo:
     @property
     def is_literal(self) -> bool:
         return self.origin is Literal
-
-    # TODO: delete
-    @property
-    def union_types(self) -> tuple[type, ...]:
-        """
-        Concrete types of union, if `is_union`.
-        """
-        if self.is_union:
-            return tuple(a.concrete_type for a in self.args)
-        else:
-            return (self.concrete_type,)
-
-    @cached_property
-    def literal_values(self) -> tuple[Any, ...]:
-        """
-        Value(s) of literal, if `is_literal`.
-        """
-        if self.is_literal:
-            values = get_args(self.annotation)
-            assert len(values)
-            return values
-        else:
-            return ()
 
 
 def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
