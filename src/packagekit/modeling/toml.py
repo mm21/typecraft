@@ -11,7 +11,6 @@ from datetime import datetime as DateTime
 from datetime import time as Time
 from functools import cached_property
 from pathlib import Path
-from types import NoneType
 from typing import (
     Any,
     Iterable,
@@ -20,8 +19,6 @@ from typing import (
     Self,
     TypedDict,
     cast,
-    get_args,
-    get_origin,
     overload,
 )
 
@@ -44,14 +41,15 @@ from tomlkit.items import (
     Trivia,
 )
 
-from .typing_utils import get_type_param
+from .typing_utils import AnnotationInfo, get_type_param
 from .validated_dataclass import BaseValidatedDataclass, FieldInfo
+from .validating import Converter, ValidationContext
 
 __all__ = [
+    "FieldMetadata",
     "BaseDocumentWrapper",
     "BaseTableWrapper",
     "BaseInlineTableWrapper",
-    "FieldMetadata",
     "ArrayWrapper",
     "TableArrayWrapper",
     "ArrayItemType",
@@ -104,6 +102,17 @@ Types which can be used as fields of containers (in addition to wrapper types).
 """
 
 
+class FieldMetadata(TypedDict):
+    """
+    Encapsulates metadata for a field definition in a document, table, or inline table.
+    """
+
+    alias: str
+    """
+    Field name to use when accessing the toml document.
+    """
+
+
 class BaseTomlWrapper[TomlkitT](ABC):
     """
     Base wrapper for a class from `tomlkit`, providing additional features like mapping
@@ -125,19 +134,6 @@ class BaseTomlWrapper[TomlkitT](ABC):
         assert self._tomlkit_obj
         return self._tomlkit_obj
 
-    @classmethod
-    @abstractmethod
-    def _wrap_tomlkit_obj(
-        cls,
-        tomlkit_obj: TomlkitT,
-        *,
-        annotation: Any | None = None,
-    ) -> Self:
-        """
-        Create an instance of this class from the corresponding tomlkit object.
-        """
-        ...
-
     @abstractmethod
     def _create_tomlkit_obj(self) -> TomlkitT:
         """
@@ -149,23 +145,12 @@ class BaseTomlWrapper[TomlkitT](ABC):
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT): ...
 
     @classmethod
-    def _from_tomlkit_obj(
+    def _finalize_obj(
         cls,
         tomlkit_obj: TomlkitT,
-        *,
-        annotation: Any | None = None,
+        obj: Self,
     ) -> Self:
-        """
-        Instantiate this wrapper object to wrap a `tomlkit` object.
-        """
-        tomlkit_cls = cls._get_tomlkit_cls()
-
-        if not isinstance(tomlkit_obj, tomlkit_cls):
-            raise ValueError(
-                f"Object has invalid type: expected {tomlkit_cls}, got {type(tomlkit_obj)} ({tomlkit_obj})"
-            )
-
-        obj = cls._wrap_tomlkit_obj(tomlkit_obj, annotation=annotation)
+        assert isinstance(tomlkit_obj, cls._get_tomlkit_cls())
         obj._set_tomlkit_obj(tomlkit_obj, bypass_propagate=True)
         return obj
 
@@ -206,21 +191,6 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.
     """
 
-    def __new__(cls, *args, **kwargs) -> Self:
-        # validate unions before proceeding with object creation
-        for name, field_info in cls.dataclass_get_fields().items():
-            ann = field_info.annotation_info
-            if ann.is_union:
-                if (
-                    len(ann.args) != 2
-                    or ann.args[0].concrete_type is NoneType
-                    or ann.args[1].concrete_type is not NoneType
-                ):
-                    raise TypeError(
-                        f"Class {cls}: Field '{name}': Unions must consist of (type) | None, got {ann.annotation}"
-                    )
-        return super().__new__(cls, *args, **kwargs)
-
     def __setattr__(self, name: str, value: Any):
         super().__setattr__(name, value)
 
@@ -228,36 +198,17 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         if self._tomlkit_obj and (field_info := self.dataclass_fields.get(name)):
             self._propagate_field(self._tomlkit_obj, field_info, getattr(self, name))
 
-    @classmethod
-    def dataclass_get_valid_types(cls) -> tuple[Any, ...]:
-        return (
-            BaseTableWrapper,
-            BaseInlineTableWrapper,
-            ArrayWrapper,
-            TableArrayWrapper,
-            *CONTAINER_TYPES,
-            NoneType,
-        )
+    def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
+        return CONVERTERS
 
-    def dataclass_normalize(self, field_info: FieldInfo, value: Any) -> Any:
-        annotation = field_info.annotation_info.annotation
-        concrete_type = field_info.annotation_info.concrete_type
-
-        if value is None:
-            return None
-        elif issubclass(concrete_type, BaseTomlWrapper) and not isinstance(
-            value, concrete_type
-        ):
-            return concrete_type._from_tomlkit_obj(value, annotation=annotation)
-        else:
-            return _normalize_value(value)
+    # TODO: validator hook for any field: dataclass_pre_validator(field_info, value)
+    # - call normalize_value
 
     @classmethod
-    def _wrap_tomlkit_obj(cls, tomlkit_obj: TomlkitT, **_) -> Self:
-        """
-        Extract model fields from container and return instance of this model with
-        the original container stored.
-        """
+    def _from_tomlkit_obj(
+        cls,
+        tomlkit_obj: TomlkitT,
+    ) -> Self:
         values: dict[str, Any] = {}
 
         for name, field_info in cls.dataclass_get_fields().items():
@@ -265,7 +216,8 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
             if value := tomlkit_obj.get(field_name):
                 values[name] = value
 
-        return cls(**values)
+        obj = cls(**values)
+        return cls._finalize_obj(tomlkit_obj, obj)
 
     @classmethod
     def _get_field_name(cls, field_info: FieldInfo) -> str:
@@ -343,17 +295,6 @@ class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
 
     def _create_tomlkit_obj(self) -> InlineTable:
         return tomlkit.inline_table()
-
-
-class FieldMetadata(TypedDict):
-    """
-    Encapsulates metadata for a field definition in a document, table, or inline table.
-    """
-
-    alias: str
-    """
-    Field name to use when accessing the toml document.
-    """
 
 
 class BaseArrayWrapper[TomlkitT: list, ItemT](
@@ -437,47 +378,25 @@ class BaseArrayWrapper[TomlkitT: list, ItemT](
         ...
 
     @classmethod
-    def _wrap_tomlkit_obj(
-        cls, tomlkit_obj: TomlkitT, *, annotation: Any | None = None
+    def _from_tomlkit_obj_with_annotation(
+        cls,
+        tomlkit_obj: TomlkitT,
+        annotation_info: AnnotationInfo,
+        context: ValidationContext,
     ) -> Self:
-        # get type with which this array is parameterized
-        assert annotation, "No annotation"
-        item_cls, item_annotation = cls._get_item_cls(annotation)
+        assert len(annotation_info.args_info) == 1
+        item_annotation = annotation_info.args_info[0]
 
-        # get raw values
-        item_values = cls._get_item_values(tomlkit_obj)
+        # get items and validate
+        items = cls._get_item_values(tomlkit_obj)
+        validated_items = [context.validate_obj(o, item_annotation) for o in items]
 
-        # populate new array with values
-        if issubclass(item_cls, BaseTomlWrapper):
-            items = [
-                item_cls._from_tomlkit_obj(i, annotation=item_annotation)
-                for i in item_values
-            ]
-        else:
-            items = item_values
-
-        return cls(items)
+        obj = cls(validated_items)
+        return cls._finalize_obj(tomlkit_obj, obj)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         assert len(tomlkit_obj) == 0
         tomlkit_obj += _normalize_items(self.__list)
-
-    @classmethod
-    def _get_item_cls(cls, annotation: Any) -> tuple[type[ItemT], Any]:
-        """
-        Get type with which this array is parameterized as (concrete type, full type).
-        """
-        # get full type with which this array is parameterized,
-        # e.g. Array[int] from Array[Array[int]]
-        args = get_args(annotation)
-        assert (
-            len(args) == 1
-        ), f"Array must be parameterized with exactly one type, got {args}"
-
-        item_type = args[0]  # e.g. Array[int]
-        item_cls = cast(type[ItemT], get_origin(item_type) or item_type)
-
-        return item_cls, item_type
 
 
 class ArrayWrapper[ItemT: ArrayItemType](BaseArrayWrapper[Array, ItemT]):
@@ -541,3 +460,27 @@ def _normalize_items(objs: Iterable[Any]) -> list[Any]:
     Normalize objects to tomlkit items.
     """
     return [_normalize_item(o) for o in objs]
+
+
+def convert_table(
+    obj: Any, annotation_info: AnnotationInfo, _: ValidationContext
+) -> BaseTableWrapper | BaseInlineTableWrapper:
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
+    return type_._from_tomlkit_obj(obj)
+
+
+def convert_array(
+    obj: Any, annotation_info: AnnotationInfo, context: ValidationContext
+) -> ArrayWrapper | TableArrayWrapper:
+    type_ = annotation_info.concrete_type
+    assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
+    return type_._from_tomlkit_obj_with_annotation(obj, annotation_info, context)
+
+
+CONVERTERS = (
+    Converter(BaseTableWrapper, (Table,), func=convert_table),
+    Converter(BaseInlineTableWrapper, (InlineTable,), func=convert_table),
+    Converter(ArrayWrapper, (Array,), func=convert_array),
+    Converter(TableArrayWrapper, (AoT,), func=convert_array),
+)

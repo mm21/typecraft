@@ -136,7 +136,9 @@ def test_document():
     new_inline_table = InlineTableTest(
         inline_table_string_test="jkl", inline_table_int_test=3
     )
-    assert isinstance(new_inline_table.inline_table_string_test, String)
+    assert isinstance(
+        new_inline_table.inline_table_string_test, String
+    ), f"got type: {type(new_inline_table.inline_table_string_test)}"
     assert isinstance(new_inline_table.inline_table_int_test, Integer)
     document.inline_table_array_test.append(new_inline_table)
     assert len(document.inline_table_array_test) == 3
