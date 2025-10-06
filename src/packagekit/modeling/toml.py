@@ -17,7 +17,6 @@ from typing import (
     MutableMapping,
     MutableSequence,
     Self,
-    TypedDict,
     cast,
     overload,
 )
@@ -25,7 +24,6 @@ from typing import (
 import tomlkit
 from tomlkit import TOMLDocument
 from tomlkit.items import (
-    AbstractTable,
     AoT,
     Array,
     Bool,
@@ -42,75 +40,26 @@ from tomlkit.items import (
 )
 
 from .typing_utils import AnnotationInfo, get_type_param
-from .validated_dataclass import BaseValidatedDataclass, FieldInfo
+from .validated_dataclass import BaseValidatedDataclass, DataclassConfig, FieldInfo
 from .validating import Converter, ValidationContext
 
 __all__ = [
-    "FieldMetadata",
     "BaseDocumentWrapper",
     "BaseTableWrapper",
     "BaseInlineTableWrapper",
+    "ArrayItemType",
     "ArrayWrapper",
     "TableArrayWrapper",
-    "ArrayItemType",
 ]
 
 type BuiltinType = str | int | float | bool | datetime.date | datetime.time | datetime.datetime
-type TomlkitType = String | Integer | Float | Bool | Date | Time | DateTime | Item | Array | AbstractTable
 
-type ValueType = BaseTomlWrapper | TomlkitType
-"""
-Type after normalization.
-"""
+type TomlkitArrayItemType = String | Integer | Float | Bool | Date | Time | DateTime | InlineTable | Array
 
-type ArrayItemType = BuiltinType | TomlkitType | BaseInlineTableWrapper | ArrayWrapper
+type ArrayItemType = BuiltinType | TomlkitArrayItemType | BaseInlineTableWrapper | ArrayWrapper
 """
 Types which can be used as fields of array items.
 """
-
-# keep in sync with BuiltinType
-BUILTIN_TYPES = (
-    str,
-    int,
-    float,
-    bool,
-    datetime.date,
-    datetime.time,
-    datetime.datetime,
-)
-
-# keep in sync with TomlkitType
-TOMLKIT_TYPES = (
-    String,
-    Integer,
-    Float,
-    Bool,
-    Date,
-    Time,
-    DateTime,
-    Item,
-    Array,
-    AbstractTable,
-)
-
-CONTAINER_TYPES = (
-    *BUILTIN_TYPES,
-    *TOMLKIT_TYPES,
-)
-"""
-Types which can be used as fields of containers (in addition to wrapper types).
-"""
-
-
-class FieldMetadata(TypedDict):
-    """
-    Encapsulates metadata for a field definition in a document, table, or inline table.
-    """
-
-    alias: str
-    """
-    Field name to use when accessing the toml document.
-    """
 
 
 class BaseTomlWrapper[TomlkitT](ABC):
@@ -142,7 +91,11 @@ class BaseTomlWrapper[TomlkitT](ABC):
         ...
 
     @abstractmethod
-    def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT): ...
+    def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
+        """
+        Propagate this wrapper's state to newly created tomlkit object.
+        """
+        ...
 
     @classmethod
     def _finalize_obj(
@@ -191,62 +144,47 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.
     """
 
-    def __setattr__(self, name: str, value: Any):
-        super().__setattr__(name, value)
-
-        # if applicable, propagate to wrapped tomlkit object
-        if self._tomlkit_obj and (field_info := self.dataclass_fields.get(name)):
-            self._propagate_field(self._tomlkit_obj, field_info, getattr(self, name))
+    dataclass_config = DataclassConfig(validate_on_assignment=True)
 
     def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
         return CONVERTERS
 
-    # TODO: validator hook for any field: dataclass_pre_validator(field_info, value)
-    # - call normalize_value
+    def dataclass_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
+        value_ = _normalize_value(value) if value is not None else None
+
+        # if applicable, propagate to wrapped tomlkit object
+        if self._tomlkit_obj:
+            self._propagate_field(self._tomlkit_obj, field_info, value_)
+
+        return value_
 
     @classmethod
     def _from_tomlkit_obj(
         cls,
         tomlkit_obj: TomlkitT,
     ) -> Self:
-        values: dict[str, Any] = {}
-
-        for name, field_info in cls.dataclass_get_fields().items():
-            field_name = cls._get_field_name(field_info)
-            if value := tomlkit_obj.get(field_name):
-                values[name] = value
-
-        obj = cls(**values)
+        obj = cls.dataclass_load(tomlkit_obj, by_alias=True)
         return cls._finalize_obj(tomlkit_obj, obj)
-
-    @classmethod
-    def _get_field_name(cls, field_info: FieldInfo) -> str:
-        """
-        Get name of field, handling alias if applicable.
-        """
-        return field_info.field.metadata.get("alias", field_info.field.name)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         for name, field_info in self.dataclass_fields.items():
-            value = getattr(self, name, None)
-            if value is None:
-                continue
-            self._propagate_field(tomlkit_obj, field_info, value)
+            self._propagate_field(tomlkit_obj, field_info, getattr(self, name))
 
     def _propagate_field(
         self, tomlkit_obj: TomlkitT, field_info: FieldInfo, value: Any
     ):
         """
-        Propagate field to this container's tomlkit obj.
+        Propagate field to this container's tomlkit object.
         """
-        field_name = type(self)._get_field_name(field_info)
+        field_name = field_info.get_name(by_alias=True)
+
         if value is None:
+            # propagate delete
             if field_name in tomlkit_obj:
                 del tomlkit_obj[field_name]
         else:
-            tomlkit_obj[field_name] = (
-                value.tomlkit_obj if isinstance(value, BaseTomlWrapper) else value
-            )
+            # propagate item
+            tomlkit_obj[field_name] = _normalize_item(value)
 
 
 class BaseDocumentWrapper(BaseContainerWrapper[TOMLDocument]):
@@ -297,7 +235,7 @@ class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
         return tomlkit.inline_table()
 
 
-class BaseArrayWrapper[TomlkitT: list, ItemT](
+class BaseArrayWrapper[TomlkitT: list, ItemT: BaseTomlWrapper | Item](
     MutableSequence[ItemT], BaseTomlWrapper[TomlkitT]
 ):
     """
@@ -412,9 +350,9 @@ class ArrayWrapper[ItemT: ArrayItemType](BaseArrayWrapper[Array, ItemT]):
         return tomlkit_obj.value
 
 
-class TableArrayWrapper[TableT: BaseTableWrapper](BaseArrayWrapper[AoT, TableT]):
+class TableArrayWrapper[ItemT: BaseTableWrapper](BaseArrayWrapper[AoT, ItemT]):
     """
-    Array of tables.
+    Array of (non-inline) tables.
     """
 
     def _create_tomlkit_obj(self) -> AoT:
@@ -425,37 +363,35 @@ class TableArrayWrapper[TableT: BaseTableWrapper](BaseArrayWrapper[AoT, TableT])
         return tomlkit_obj.body
 
 
-def _normalize_value(value: Any) -> ValueType:
+def _normalize_value(value: Any) -> BaseTomlWrapper | Item:
     """
     Normalize value to `BaseTomlWrapper` or tomlkit item.
     """
-    if isinstance(value, BaseTomlWrapper):
-        return value
-    elif isinstance(value, TOMLKIT_TYPES):
+    if isinstance(value, (BaseTomlWrapper, Item)):
         return value
     else:
         return tomlkit.item(value)
 
 
-def _normalize_values(values: Iterable[Any]) -> list[ValueType]:
+def _normalize_values(values: Iterable[Any]) -> list[BaseTomlWrapper | Item]:
     """
     Normalize values to `BaseTomlWrapper`s or items.
     """
     return [_normalize_value(v) for v in values]
 
 
-def _normalize_item(obj: ValueType) -> TomlkitType:
+def _normalize_item(obj: BaseTomlWrapper | Item) -> Item:
     """
     Normalize object to tomlkit item.
     """
     if isinstance(obj, BaseTomlWrapper):
         return obj.tomlkit_obj
     else:
-        assert isinstance(obj, TOMLKIT_TYPES)
+        assert isinstance(obj, Item)
         return obj
 
 
-def _normalize_items(objs: Iterable[Any]) -> list[Any]:
+def _normalize_items(objs: Iterable[BaseTomlWrapper | Item]) -> list[Item]:
     """
     Normalize objects to tomlkit items.
     """

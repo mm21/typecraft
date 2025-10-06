@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import field
 
 import tomlkit
-from pytest import raises
 from tomlkit.items import Array, InlineTable, Integer, String
 
 from packagekit.modeling.toml import (
@@ -11,9 +10,9 @@ from packagekit.modeling.toml import (
     BaseDocumentWrapper,
     BaseInlineTableWrapper,
     BaseTableWrapper,
-    FieldMetadata,
     TableArrayWrapper,
 )
+from packagekit.modeling.validated_dataclass import FieldMetadata
 
 
 class DocumentTest(BaseDocumentWrapper):
@@ -44,11 +43,7 @@ class InlineTableTest(BaseInlineTableWrapper):
     inline_table_int_test: int
 
 
-class InvalidTableTest(BaseTableWrapper):
-    invalid_union: int | str = 0
-
-
-DOCUMENT_STR = """
+DOCUMENT_STR = """\
 string_test = "test string"
 int_test = 123
 optional_int_test = 456
@@ -154,8 +149,3 @@ def test_document():
     assert isinstance(document.table_test.table_string_test, String)
     assert document.tomlkit_obj["table-test"]["table_string_test"] == "table test string 2"  # type: ignore
     assert document.table_test.table_string_test is document.tomlkit_obj["table-test"]["table_string_test"]  # type: ignore
-
-
-def test_invalid():
-    with raises(TypeError):
-        InvalidTableTest()
