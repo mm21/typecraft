@@ -5,14 +5,14 @@ from dataclasses import field
 import tomlkit
 from tomlkit.items import Array, InlineTable, Integer, String
 
-from packagekit.modeling.toml import (
+from modelingkit.toml import (
     ArrayWrapper,
     BaseDocumentWrapper,
     BaseInlineTableWrapper,
     BaseTableWrapper,
     TableArrayWrapper,
 )
-from packagekit.modeling.validated_dataclass import FieldMetadata
+from modelingkit.validated_dataclass import FieldMetadata
 
 
 class DocumentTest(BaseDocumentWrapper):

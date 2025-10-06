@@ -3,7 +3,7 @@ from typing import Any
 
 from pytest import raises
 
-from packagekit.modeling.validated_dataclass import (
+from modelingkit.validated_dataclass import (
     BaseValidatedDataclass,
     DataclassConfig,
     FieldInfo,

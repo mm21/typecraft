@@ -3,7 +3,7 @@ from typing import Annotated, Generator, Literal
 
 from pytest import raises
 
-from packagekit.modeling.validating import Converter, validate_obj
+from modelingkit.validating import Converter, validate_obj
 
 
 def test_conversion():
