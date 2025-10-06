@@ -39,8 +39,8 @@ from tomlkit.items import (
     Trivia,
 )
 
+from .model import BaseModel, FieldInfo, ModelConfig
 from .typing_utils import AnnotationInfo, get_type_param
-from .validated_dataclass import BaseValidatedDataclass, DataclassConfig, FieldInfo
 from .validating import Converter, ValidationContext
 
 __all__ = [
@@ -58,7 +58,12 @@ type TomlkitArrayItemType = String | Integer | Float | Bool | Date | Time | Date
 
 type ArrayItemType = BuiltinType | TomlkitArrayItemType | BaseInlineTableWrapper | ArrayWrapper
 """
-Types which can be used as fields of array items.
+Types which can be used as array items.
+"""
+
+type ItemType = Item | BaseTomlWrapper
+"""
+Types which can be normalized to a tomlkit item.
 """
 
 
@@ -133,7 +138,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
 
 
 class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
-    BaseValidatedDataclass, BaseTomlWrapper[TomlkitT]
+    BaseModel, BaseTomlWrapper[TomlkitT]
 ):
     """
     Base container for items in a document or table. Upon reading a TOML file via
@@ -144,7 +149,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.
     """
 
-    dataclass_config = DataclassConfig(validate_on_assignment=True)
+    dataclass_config = ModelConfig(validate_on_assignment=True)
 
     def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
         return CONVERTERS
@@ -235,16 +240,16 @@ class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
         return tomlkit.inline_table()
 
 
-class BaseArrayWrapper[TomlkitT: list, ItemT: BaseTomlWrapper | Item](
+class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
     MutableSequence[ItemT], BaseTomlWrapper[TomlkitT]
 ):
     """
     Base array of either primitive types or tables.
     """
 
-    __list: list[ItemT]
+    __list: list[ItemType]
     """
-    List of values, whether tomlkit objects or wrappers.
+    List of ItemT values normalized to tomlkit objects or wrappers.
     """
 
     @overload
@@ -265,7 +270,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: BaseTomlWrapper | Item](
     def __getitem__(self, index: slice) -> list[ItemT]: ...
 
     def __getitem__(self, index: int | slice) -> ItemT | list[ItemT]:
-        return self.__list[index]
+        return cast(ItemT | list[ItemT], self.__list[index])
 
     @overload
     def __setitem__(self, index: int, value: ItemT): ...
@@ -276,14 +281,14 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: BaseTomlWrapper | Item](
     def __setitem__(self, index: int | slice, value: ItemT | Iterable[ItemT]):
         if isinstance(index, int):
             value_ = _normalize_value(value)
-            self.__list[index] = cast(ItemT, value_)
+            self.__list[index] = value_
             if self._tomlkit_obj:
                 self._tomlkit_obj[index] = _normalize_item(value_)
         else:
             assert isinstance(index, slice)
             assert isinstance(value, Iterable)
             value_ = _normalize_values(value)
-            self.__list[index] = cast(list[ItemT], value_)
+            self.__list[index] = value_
             if self._tomlkit_obj:
                 self._tomlkit_obj[index] = _normalize_items(value_)
 
@@ -303,7 +308,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: BaseTomlWrapper | Item](
 
     def insert(self, index: int, value: ItemT):
         value_ = _normalize_value(value)
-        self.__list.insert(index, cast(ItemT, value_))
+        self.__list.insert(index, value_)
         if self._tomlkit_obj:
             self._tomlkit_obj.insert(index, _normalize_item(value_))
 
@@ -363,7 +368,7 @@ class TableArrayWrapper[ItemT: BaseTableWrapper](BaseArrayWrapper[AoT, ItemT]):
         return tomlkit_obj.body
 
 
-def _normalize_value(value: Any) -> BaseTomlWrapper | Item:
+def _normalize_value(value: Any) -> ItemType:
     """
     Normalize value to `BaseTomlWrapper` or tomlkit item.
     """
@@ -373,14 +378,14 @@ def _normalize_value(value: Any) -> BaseTomlWrapper | Item:
         return tomlkit.item(value)
 
 
-def _normalize_values(values: Iterable[Any]) -> list[BaseTomlWrapper | Item]:
+def _normalize_values(values: Iterable[Any]) -> list[ItemType]:
     """
     Normalize values to `BaseTomlWrapper`s or items.
     """
     return [_normalize_value(v) for v in values]
 
 
-def _normalize_item(obj: BaseTomlWrapper | Item) -> Item:
+def _normalize_item(obj: ItemType) -> Item:
     """
     Normalize object to tomlkit item.
     """
@@ -391,7 +396,7 @@ def _normalize_item(obj: BaseTomlWrapper | Item) -> Item:
         return obj
 
 
-def _normalize_items(objs: Iterable[BaseTomlWrapper | Item]) -> list[Item]:
+def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
     """
     Normalize objects to tomlkit items.
     """

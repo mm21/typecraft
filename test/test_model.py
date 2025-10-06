@@ -3,45 +3,45 @@ from typing import Any
 
 from pytest import raises
 
-from modelingkit.validated_dataclass import (
-    BaseValidatedDataclass,
-    DataclassConfig,
+from modelingkit.model import (
+    BaseModel,
     FieldInfo,
     FieldMetadata,
+    ModelConfig,
 )
 
 
-class BasicTest(BaseValidatedDataclass):
+class BasicTest(BaseModel):
     a: int = 123
     b: str = "abc"
 
 
-class UnionTest(BaseValidatedDataclass):
-    dataclass_config = DataclassConfig(validate_on_assignment=True)
+class UnionTest(BaseModel):
+    dataclass_config = ModelConfig(validate_on_assignment=True)
 
     a: int | str = 123
 
 
-class ValidateOnAssignmentTest(BaseValidatedDataclass):
-    dataclass_config = DataclassConfig(validate_on_assignment=True)
+class ValidateOnAssignmentTest(BaseModel):
+    dataclass_config = ModelConfig(validate_on_assignment=True)
 
     a: int = 123
     b: str = "abc"
 
 
-class LenientTest(BaseValidatedDataclass):
-    dataclass_config = DataclassConfig(lenient=True)
+class LenientTest(BaseModel):
+    dataclass_config = ModelConfig(lenient=True)
 
     a: int = 123
     b: str = "abc"
 
 
-class NestedTest(BaseValidatedDataclass):
+class NestedTest(BaseModel):
     basic: BasicTest
     union: UnionTest
 
 
-class PrePostValidateTest(BaseValidatedDataclass):
+class PrePostValidateTest(BaseModel):
     a: int
 
     def dataclass_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
@@ -55,7 +55,7 @@ class PrePostValidateTest(BaseValidatedDataclass):
         return value
 
 
-class LoadDumpTest(BaseValidatedDataclass):
+class LoadDumpTest(BaseModel):
     test_field: int = field(metadata=FieldMetadata(alias="test-field"))
 
 

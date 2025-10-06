@@ -17,8 +17,8 @@ from .validating import Converter, ValidationContext, validate_obj
 
 __all__ = [
     "FieldInfo",
-    "DataclassConfig",
-    "BaseValidatedDataclass",
+    "ModelConfig",
+    "BaseModel",
 ]
 
 
@@ -61,9 +61,7 @@ class FieldInfo:
         )
 
     @classmethod
-    def _from_field(
-        cls, obj_cls: type[BaseValidatedDataclass], field: Field
-    ) -> FieldInfo:
+    def _from_field(cls, obj_cls: type[BaseModel], field: Field) -> FieldInfo:
         """
         Get field info from field.
         """
@@ -78,7 +76,7 @@ class FieldInfo:
 
 
 @dataclass(kw_only=True)
-class DataclassConfig:
+class ModelConfig:
     """
     Configures dataclass.
     """
@@ -95,13 +93,13 @@ class DataclassConfig:
 
 
 @dataclass_transform(kw_only_default=True)
-class BaseValidatedDataclass:
+class BaseModel:
     """
     Base class to transform subclass to dataclass and provide recursive field
     validation.
     """
 
-    dataclass_config: DataclassConfig = DataclassConfig()
+    dataclass_config: ModelConfig = ModelConfig()
     """
     Set on subclass to configure this dataclass.
     """
@@ -228,16 +226,14 @@ class BaseValidatedDataclass:
 
 def convert_dataclass(
     obj: Any, annotation_info: AnnotationInfo, _: ValidationContext
-) -> BaseValidatedDataclass:
+) -> BaseModel:
     type_ = annotation_info.concrete_type
-    assert issubclass(type_, BaseValidatedDataclass)
+    assert issubclass(type_, BaseModel)
     assert isinstance(obj, Mapping)
     return type_(**obj)
 
 
-NESTED_DATACLASS_CONVERTER = Converter(
-    BaseValidatedDataclass, (Mapping,), func=convert_dataclass
-)
+NESTED_DATACLASS_CONVERTER = Converter(BaseModel, (Mapping,), func=convert_dataclass)
 """
 Converts a mapping (e.g. dict) to a validated dataclass.
 """
