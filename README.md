@@ -1,12 +1,11 @@
-# PackageKit
+# ModelingKit
 
-Toolkit for day-to-day package development
+Toolkit for data modeling, validation, and typing
 
 Facilitates the following:
 
-- **Normalization**: Advanced mechanism to normalize objects with user-defined source/destination types and mapping logic
-- **YAML models**: Load/store models (pydantic, dataclass) from/to a YAML file
-- **Logging**: Setup rich output and logging to timestamped file
-- **Development workflow**:
-    - `doit` task factory for formatting, test coverage, etc
-    - Process test coverage and generate badges
+- **Data models**: Lightweight, pydantic-like modeling with validation
+    - Based on dataclasses, not custom metaclasses; avoids metaclass conflicts
+- **Validation**: Mechanism to validate and convert objects based on annotations, with user-defined source/destination types and conversion logic
+- **Typing**: Utilities to extract metadata from `Annotated[]`, handle `Literal[]` and unions, and wrap type info in a user-friendly container
+- **TOML models**: Wrapper for `tomlkit` with user-defined model classes for documents and tables, also handling arrays of models
