@@ -78,7 +78,7 @@ class FieldInfo:
 @dataclass(kw_only=True)
 class ModelConfig:
     """
-    Configures dataclass.
+    Configures model.
     """
 
     lenient: bool = False
@@ -95,13 +95,13 @@ class ModelConfig:
 @dataclass_transform(kw_only_default=True)
 class BaseModel:
     """
-    Base class to transform subclass to dataclass and provide recursive field
+    Base class to transform subclass to model and provide recursive field
     validation.
     """
 
-    dataclass_config: ModelConfig = ModelConfig()
+    model_config: ModelConfig = ModelConfig()
     """
-    Set on subclass to configure this dataclass.
+    Set on subclass to configure this model.
     """
 
     __init_done: bool = False
@@ -124,34 +124,34 @@ class BaseModel:
         self.__init_done = True
 
     def __setattr__(self, name: str, value: Any):
-        field_info = self.dataclass_fields.get(name)
+        field_info = self.model_fields.get(name)
 
         # validate value if applicable
         if field_info and (
-            not self.__init_done or self.dataclass_config.validate_on_assignment
+            not self.__init_done or self.model_config.validate_on_assignment
         ):
-            value_ = self.dataclass_pre_validate(field_info, value)
+            value_ = self.model_pre_validate(field_info, value)
             value_ = validate_obj(
                 value_,
                 field_info.annotation_info.annotation,
                 *self.__converters,
-                lenient=self.dataclass_config.lenient,
+                lenient=self.model_config.lenient,
             )
-            value_ = self.dataclass_post_validate(field_info, value_)
+            value_ = self.model_post_validate(field_info, value_)
         else:
             value_ = value
 
         super().__setattr__(name, value_)
 
     @classmethod
-    def dataclass_load(cls, obj: Mapping, /, *, by_alias: bool = False) -> Self:
+    def model_load(cls, obj: Mapping, /, *, by_alias: bool = False) -> Self:
         """
-        Create instance of dataclass from mapping, substituting aliases if
+        Create instance of model from mapping, substituting aliases if
         `by_alias` is `True`.
         """
         values: dict[str, Any] = {}
 
-        for name, field_info in cls.dataclass_get_fields().items():
+        for name, field_info in cls.model_get_fields().items():
             mapping_name = field_info.get_name(by_alias=by_alias)
             if mapping_name in obj:
                 values[name] = obj[mapping_name]
@@ -159,46 +159,53 @@ class BaseModel:
         return cls(**values)
 
     @classmethod
-    def dataclass_get_fields(cls) -> dict[str, FieldInfo]:
+    def model_get_fields(cls) -> dict[str, FieldInfo]:
         """
-        Get dataclass fields from class.
+        Get model fields from class.
         """
-        return cls.__dataclass_fields()
+        return cls.__model_fields()
 
     @cached_property
-    def dataclass_fields(self) -> dict[str, FieldInfo]:
+    def model_fields(self) -> dict[str, FieldInfo]:
         """
-        Get dataclass fields from instance.
+        Get model fields from instance.
         """
-        return type(self).dataclass_get_fields()
+        return type(self).model_get_fields()
 
-    def dataclass_dump(self, *, by_alias: bool = False) -> dict[str, Any]:
+    def model_dump(self, *, by_alias: bool = False) -> dict[str, Any]:
         """
-        Dump dataclass to dictionary, substituting aliases if `by_alias` is `True`.
+        Dump model to dictionary, substituting aliases if `by_alias` is `True`.
         """
         values: dict[str, Any] = {}
 
-        for name, field_info in self.dataclass_fields.items():
+        for name, field_info in self.model_fields.items():
+            value = getattr(self, name)
+
+            # recurse if this is a nested model
+            if issubclass(field_info.annotation_info.concrete_type, BaseModel):
+                assert isinstance(value, BaseModel)
+                value = value.model_dump()
+
             mapping_name = field_info.get_name(by_alias=by_alias)
-            values[mapping_name] = getattr(self, name)
+            values[mapping_name] = value
 
         return values
 
-    def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
+    def model_get_converters(self) -> tuple[Converter[Any], ...]:
         """
         Override to provide converters for values by type, including inner values like
         elements of lists.
         """
         return tuple()
 
-    def dataclass_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
+    def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
         """
         Override to perform validation on value before built-in validation.
         """
         _ = field_info
         return value
 
-    def dataclass_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
+    def model_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
         """
         Override to perform validation on value after built-in validation.
         """
@@ -207,7 +214,7 @@ class BaseModel:
 
     @classmethod
     @cache
-    def __dataclass_fields(cls) -> dict[str, FieldInfo]:
+    def __model_fields(cls) -> dict[str, FieldInfo]:
         """
         Implementation of API to keep the `dataclass_fields` signature intact,
         overridden by `@cache`.
@@ -221,10 +228,10 @@ class BaseModel:
         """
         # add converter for nested dataclasses at end in case user passes a
         # converter for a subclass
-        return (*self.dataclass_get_converters(), NESTED_DATACLASS_CONVERTER)
+        return (*self.model_get_converters(), MODEL_CONVERTER)
 
 
-def convert_dataclass(
+def convert_model(
     obj: Any, annotation_info: AnnotationInfo, _: ValidationContext
 ) -> BaseModel:
     type_ = annotation_info.concrete_type
@@ -233,9 +240,9 @@ def convert_dataclass(
     return type_(**obj)
 
 
-NESTED_DATACLASS_CONVERTER = Converter(BaseModel, (Mapping,), func=convert_dataclass)
+MODEL_CONVERTER = Converter(BaseModel, (Mapping,), func=convert_model)
 """
-Converts a mapping (e.g. dict) to a validated dataclass.
+Converts a mapping (e.g. dict) to a model.
 """
 
 

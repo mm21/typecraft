@@ -149,12 +149,12 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
     `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.
     """
 
-    dataclass_config = ModelConfig(validate_on_assignment=True)
+    model_config = ModelConfig(validate_on_assignment=True)
 
-    def dataclass_get_converters(self) -> tuple[Converter[Any], ...]:
+    def model_get_converters(self) -> tuple[Converter[Any], ...]:
         return CONVERTERS
 
-    def dataclass_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
+    def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
         value_ = _normalize_value(value) if value is not None else None
 
         # if applicable, propagate to wrapped tomlkit object
@@ -168,11 +168,11 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         cls,
         tomlkit_obj: TomlkitT,
     ) -> Self:
-        obj = cls.dataclass_load(tomlkit_obj, by_alias=True)
+        obj = cls.model_load(tomlkit_obj, by_alias=True)
         return cls._finalize_obj(tomlkit_obj, obj)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
-        for name, field_info in self.dataclass_fields.items():
+        for name, field_info in self.model_fields.items():
             self._propagate_field(tomlkit_obj, field_info, getattr(self, name))
 
     def _propagate_field(

@@ -17,20 +17,20 @@ class BasicTest(BaseModel):
 
 
 class UnionTest(BaseModel):
-    dataclass_config = ModelConfig(validate_on_assignment=True)
+    model_config = ModelConfig(validate_on_assignment=True)
 
     a: int | str = 123
 
 
 class ValidateOnAssignmentTest(BaseModel):
-    dataclass_config = ModelConfig(validate_on_assignment=True)
+    model_config = ModelConfig(validate_on_assignment=True)
 
     a: int = 123
     b: str = "abc"
 
 
 class LenientTest(BaseModel):
-    dataclass_config = ModelConfig(lenient=True)
+    model_config = ModelConfig(lenient=True)
 
     a: int = 123
     b: str = "abc"
@@ -44,11 +44,11 @@ class NestedTest(BaseModel):
 class PrePostValidateTest(BaseModel):
     a: int
 
-    def dataclass_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
+    def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
         assert field_info.field.name == "a"
         return int(value)
 
-    def dataclass_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
+    def model_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
         assert field_info.field.name == "a"
         assert isinstance(value, int)
         assert value > 0
@@ -109,6 +109,9 @@ def test_nested():
     assert dc.basic.b == "cba"
     assert dc.union.a == 321
 
+    dump = dc.model_dump()
+    assert dump == nested_dict
+
 
 def test_pre_post_validate():
     dc = PrePostValidateTest(a="123")  # type: ignore
@@ -121,13 +124,13 @@ def test_pre_post_validate():
 def test_load_dump():
 
     # without alias
-    dc = LoadDumpTest.dataclass_load({"test_field": 123})
+    dc = LoadDumpTest.model_load({"test_field": 123})
     assert dc.test_field == 123
-    dump = dc.dataclass_dump()
+    dump = dc.model_dump()
     assert dump["test_field"] == 123
 
     # with alias
-    dc = LoadDumpTest.dataclass_load({"test-field": 123}, by_alias=True)
+    dc = LoadDumpTest.model_load({"test-field": 123}, by_alias=True)
     assert dc.test_field == 123
-    dump = dc.dataclass_dump(by_alias=True)
+    dump = dc.model_dump(by_alias=True)
     assert dump["test-field"] == 123
