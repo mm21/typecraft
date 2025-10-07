@@ -1,3 +1,14 @@
+"""
+Dataclass-based data models with validation.
+
+TODO:
+- Decorators to register validators/serializers (model and field level)
+    - Remove model_[pre/post]_validate()
+- Type-based serialization mechanism
+- Built-in validation helpers (comparison, range, ...)
+- Lambda-based validation (return True if valid)
+"""
+
 from __future__ import annotations
 
 import dataclasses
@@ -77,7 +88,7 @@ def Field(
     """
     Create a new field. Wraps a dataclass field along with metadata.
     """
-    metadata_ = FieldMetadata(alias=alias, user_metadata=user_metadata)
+    metadata = FieldMetadata(alias=alias, user_metadata=user_metadata)
     return dataclasses.field(
         default=default,
         default_factory=default_factory,
@@ -85,7 +96,7 @@ def Field(
         repr=repr,
         hash=hash,
         compare=compare,
-        metadata={"metadata": metadata_},
+        metadata={"metadata": metadata},
     )
 
 
