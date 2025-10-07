@@ -2,36 +2,91 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from dataclasses import Field, dataclass
+from dataclasses import MISSING, dataclass
 from functools import cache, cached_property
 from typing import (
     Any,
+    Callable,
     Self,
-    TypedDict,
     dataclass_transform,
     get_type_hints,
+    overload,
 )
 
 from .typing_utils import AnnotationInfo
 from .validating import Converter, ValidationContext, validate_obj
 
 __all__ = [
+    "Field",
     "FieldInfo",
+    "FieldMetadata",
     "ModelConfig",
     "BaseModel",
 ]
 
 
-class FieldMetadata(TypedDict):
-    """
-    Encapsulates metadata for a field definition. Pass into dataclass's `field` via
-    `metadata` argument.
-    """
+@overload
+def Field[T](
+    *,
+    default: T,
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> T: ...
 
-    alias: str
+
+@overload
+def Field[T](
+    *,
+    default_factory: Callable[[], T],
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> T: ...
+
+
+@overload
+def Field(
+    *,
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> Any: ...
+
+
+def Field(
+    *,
+    default: Any = MISSING,
+    default_factory: Any = MISSING,
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> Any:
     """
-    Field name to use when loading a dumping from/to dict.
+    Create a new field. Wraps a dataclass field along with metadata.
     """
+    metadata_ = FieldMetadata(alias=alias, user_metadata=user_metadata)
+    return dataclasses.field(
+        default=default,
+        default_factory=default_factory,
+        init=init,
+        repr=repr,
+        hash=hash,
+        compare=compare,
+        metadata={"metadata": metadata_},
+    )
 
 
 @dataclass(kw_only=True)
@@ -40,7 +95,7 @@ class FieldInfo:
     Field info with annotations processed.
     """
 
-    field: Field
+    field: dataclasses.Field
     """
     Dataclass field.
     """
@@ -50,18 +105,28 @@ class FieldInfo:
     Annotation info.
     """
 
+    metadata: FieldMetadata
+    """
+    Metadata passed to field definition.
+    """
+
+    @property
+    def name(self) -> str:
+        """
+        Accessor for field name.
+        """
+        return self.field.name
+
     def get_name(self, *, by_alias: bool = False) -> str:
         """
         Get this field's name, optionally using its alias.
         """
-        return (
-            self.field.metadata.get("alias", self.field.name)
-            if by_alias
-            else self.field.name
-        )
+        return self.metadata.alias or self.name if by_alias else self.name
 
     @classmethod
-    def _from_field(cls, obj_cls: type[BaseModel], field: Field) -> FieldInfo:
+    def _from_field(
+        cls, obj_cls: type[BaseModel], field: dataclasses.Field
+    ) -> FieldInfo:
         """
         Get field info from field.
         """
@@ -72,7 +137,29 @@ class FieldInfo:
         annotation = type_hints[field.name]
         annotation_info = AnnotationInfo(annotation)
 
-        return FieldInfo(field=field, annotation_info=annotation_info)
+        metadata = field.metadata.get("metadata") or FieldMetadata()
+        assert isinstance(metadata, FieldMetadata)
+
+        return FieldInfo(
+            field=field, annotation_info=annotation_info, metadata=metadata
+        )
+
+
+@dataclass(kw_only=True)
+class FieldMetadata:
+    """
+    Encapsulates metadata for a field definition.
+    """
+
+    alias: str | None = None
+    """
+    Field name to use when loading a dumping from/to dict.
+    """
+
+    user_metadata: Any | None = None
+    """
+    User-provided metadata.
+    """
 
 
 @dataclass(kw_only=True)
@@ -246,7 +333,7 @@ Converts a mapping (e.g. dict) to a model.
 """
 
 
-def _get_fields(class_or_instance: Any) -> tuple[Field, ...]:
+def _get_fields(class_or_instance: Any) -> tuple[dataclasses.Field, ...]:
     """
     Wrapper for `dataclasses.fields()` to enable type checking in case type checkers
     aren't aware `class_or_instance` is actually a dataclass.

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import field
-
 import tomlkit
 from tomlkit.items import Array, InlineTable, Integer, String
 
-from modelingkit.model import FieldMetadata
+from modelingkit.model import Field
 from modelingkit.toml import (
     ArrayWrapper,
     BaseDocumentWrapper,
@@ -19,9 +17,7 @@ class DocumentTest(BaseDocumentWrapper):
     string_test: String
     int_test: Integer
     optional_int_test: int | None = None
-    optional_int_test_2: int | None = field(
-        default=None, metadata=FieldMetadata(alias="optional-int-test-2")
-    )
+    optional_int_test_2: int | None = Field(default=None, alias="optional-int-test-2")
     optional_int_test_3: int | None = None
     inline_table_test: InlineTableTest
     optional_inline_table_test: InlineTableTest | None = None
@@ -30,7 +26,7 @@ class DocumentTest(BaseDocumentWrapper):
     nested_array_test: ArrayWrapper[ArrayWrapper[int]]
     inline_table_array_test: ArrayWrapper[InlineTableTest]
 
-    table_test: TableTest = field(metadata=FieldMetadata(alias="table-test"))
+    table_test: TableTest = Field(alias="table-test")
     table_array_test: TableArrayWrapper[TableTest]
 
 

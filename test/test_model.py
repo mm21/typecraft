@@ -1,12 +1,11 @@
-from dataclasses import field
 from typing import Any
 
 from pytest import raises
 
 from modelingkit.model import (
     BaseModel,
+    Field,
     FieldInfo,
-    FieldMetadata,
     ModelConfig,
 )
 
@@ -45,18 +44,18 @@ class PrePostValidateTest(BaseModel):
     a: int
 
     def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
-        assert field_info.field.name == "a"
+        assert field_info.name == "a"
         return int(value)
 
     def model_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
-        assert field_info.field.name == "a"
+        assert field_info.name == "a"
         assert isinstance(value, int)
         assert value > 0
         return value
 
 
 class LoadDumpTest(BaseModel):
-    test_field: int = field(metadata=FieldMetadata(alias="test-field"))
+    test_field: int = Field(alias="test-field")
 
 
 def test_basic():
