@@ -369,8 +369,8 @@ def _validate_tuple(
     type_ = annotation_info.concrete_type
     assert issubclass(type_, tuple)
 
-    # fixed-length tuple like tuple[int, str, float]
     if annotation_info.args_info[-1].annotation is not ...:
+        # fixed-length tuple like tuple[int, str, float]
         assert not isinstance(
             obj, set
         ), f"Can't convert from set to fixed-length tuple as items would be in random order: {obj} ({annotation_info})"
