@@ -96,25 +96,39 @@ class AnnotationInfo:
     def is_literal(self) -> bool:
         return self.origin is Literal
 
-    def is_subclass(self, other: AnnotationInfo):
+    @overload
+    def is_subclass(self, other: AnnotationInfo, /) -> bool: ...
+
+    @overload
+    def is_subclass(self, other: Any, /) -> bool: ...
+
+    def is_subclass(self, other: Any, /) -> bool:
         """
-        Check if this annotation is a "subclass" of other; e.g. would return `True` for
+        Check if this annotation is a "subclass" of other; e.g. returns `True` for
         `AnnotationInfo(list[int]).is_subclass(list[Any])` since `int` is a "subclass"
         of `Any`.
         """
 
+        other_info = (
+            other if isinstance(other, AnnotationInfo) else AnnotationInfo(other)
+        )
+
+        # handle union
+        if other_info.is_union:
+            return any(self.is_subclass(a) for a in other_info.args_info)
+
         # check concrete type
-        if not issubclass(self.concrete_type, other.concrete_type):
+        if not issubclass(self.concrete_type, other_info.concrete_type):
             return False
 
-        other_args = other.args_info
+        other_args = other_info.args_info
 
         # missing args assumed to be Any
         # - no need to pad args if other has more args; my args will always be a
         # subset of Any
-        if len(self.args_info) < len(other.args_info):
+        if len(self.args_info) < len(other_args):
             my_args = list(self.args_info) + [AnnotationInfo(Any)] * (
-                len(other.args_info) - len(self.args_info)
+                len(other_args) - len(self.args_info)
             )
         else:
             my_args = self.args_info
