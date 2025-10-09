@@ -113,7 +113,11 @@ class AnnotationInfo:
             other if isinstance(other, AnnotationInfo) else AnnotationInfo(other)
         )
 
-        # handle union
+        # handle union for self
+        if self.is_union:
+            return all(a.is_subclass(other_info) for a in self.args_info)
+
+        # handle union for other
         if other_info.is_union:
             return any(self.is_subclass(a) for a in other_info.args_info)
 

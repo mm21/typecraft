@@ -47,6 +47,16 @@ def test_subclass_union():
     """
 
     a1 = AnnotationInfo(int)
-    a2 = AnnotationInfo(int | bool)
+    a2 = AnnotationInfo(int | str)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a1 = AnnotationInfo(int | str)
+    a2 = AnnotationInfo(int | str | float)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a1 = AnnotationInfo(list[int | str])
+    a2 = AnnotationInfo(list)
     assert a1.is_subclass(a2)
     assert not a2.is_subclass(a1)
