@@ -1,9 +1,10 @@
 from types import NoneType
-from typing import Annotated, Generator, Literal
+from typing import Annotated, Any, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.validating import Converter, validate_obj
+from modelingkit.typing_utils import AnnotationInfo
+from modelingkit.validating import Converter, ValidationContext, validate_obj
 
 
 def test_conversion():
@@ -126,3 +127,42 @@ def test_invalid():
 
     with raises(ValueError):
         _ = validate_obj(0, str | bool)
+
+
+def test_any():
+    """
+    Test conversion to Any.
+    """
+
+    def func(obj: Any, annotation_info: AnnotationInfo, context: ValidationContext):
+        assert isinstance(obj, int)
+        return -obj
+
+    converter = Converter(Any, func=func)
+    obj = 123
+
+    assert converter.can_convert(obj, Any)
+    conv_obj = converter.convert(obj, AnnotationInfo(Any))
+    assert conv_obj == -123
+
+
+def test_generic():
+    """
+    Test conversion with generic types.
+    """
+
+    def func(
+        obj: Any, annotation_info: AnnotationInfo, context: ValidationContext
+    ) -> list[str]:
+        return [str(o) for o in obj]
+
+    converter = Converter(list[str], (list[int],), func=func)
+    obj = [123]
+
+    assert converter.can_convert(obj, list[str])
+    assert not converter.can_convert(obj, list[float])
+    assert not converter.can_convert(obj, list[Any])
+    assert not converter.can_convert(obj, list)
+
+    conv_obj = converter.convert(obj, AnnotationInfo(list[str]))
+    assert conv_obj == ["123"]

@@ -96,6 +96,36 @@ class AnnotationInfo:
     def is_literal(self) -> bool:
         return self.origin is Literal
 
+    def is_subclass(self, other: AnnotationInfo):
+        """
+        Check if this annotation is a "subclass" of other; e.g. would return `True` for
+        `AnnotationInfo(list[int]).is_subclass(list[Any])` since `int` is a "subclass"
+        of `Any`.
+        """
+
+        # check concrete type
+        if not issubclass(self.concrete_type, other.concrete_type):
+            return False
+
+        other_args = other.args_info
+
+        # missing args assumed to be Any
+        # - no need to pad args if other has more args; my args will always be a
+        # subset of Any
+        if len(self.args_info) < len(other.args_info):
+            my_args = list(self.args_info) + [AnnotationInfo(Any)] * (
+                len(other.args_info) - len(self.args_info)
+            )
+        else:
+            my_args = self.args_info
+
+        # recurse into args
+        for my_arg, other_arg in zip(my_args, other_args):
+            if not my_arg.is_subclass(other_arg):
+                return False
+
+        return True
+
 
 def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
     """
@@ -133,12 +163,12 @@ def flatten_union(annotation: Any, /) -> tuple[Any, ...]:
 def get_concrete_type(annotation: Any, /) -> type:
     """
     Get concrete type of parameterized annotation, or `object` if the annotation is
-    a literal.
+    a literal or `Any`.
     """
     annotation_, _ = split_annotated(annotation)
     concrete_type = get_origin(annotation_) or annotation_
 
-    if concrete_type is Literal:
+    if concrete_type in {Literal, Any}:
         return object
 
     # convert singletons to respective type so isinstance() works as expected
