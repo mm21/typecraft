@@ -37,6 +37,10 @@ def test_is_type():
     assert a.is_type([])
     assert not a.is_type([1, "2"])
 
+    a = AnnotationInfo(list[int | str])
+    assert a.is_type([1, "2"])
+    assert not a.is_type([1, "2", 3.0])
+
     # parameterized set
     a = AnnotationInfo(set[int])
     assert a.is_type({1, 2, 3})
