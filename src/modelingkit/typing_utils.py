@@ -96,42 +96,76 @@ class AnnotationInfo:
     def is_literal(self) -> bool:
         return self.origin is Literal
 
-    @overload
-    def is_subclass(self, other: AnnotationInfo, /) -> bool: ...
-
-    @overload
-    def is_subclass(self, other: Any, /) -> bool: ...
-
-    def is_subclass(self, other: Any, /) -> bool:
+    def is_type(self, obj: Any) -> bool:
         """
-        Check if this annotation is a "subclass" of other; e.g. returns `True` for
-        `AnnotationInfo(list[int]).is_subclass(list[Any])` since `int` is a "subclass"
-        of `Any`.
+        Check if object is an instance of this annotation; loosely equivalent to
+        `isinstance(obj, annotation)`. Recurses into collections, so e.g.:
+
+        - `AnnotationInfo(list[int]).is_type([1, 2, 3])` returns `True`
+        - `AnnotationInfo(list[int]).is_type([1, 2, "3"])` returns `False`
+        """
+        if self.is_literal:
+            return any(obj == value for value in self.args)
+
+        if self.is_union:
+            return any(a.is_type(obj) for a in self.args_info)
+
+        if not isinstance(obj, self.concrete_type):
+            return False
+
+        if issubclass(self.concrete_type, (list, tuple, set, dict)):
+            return self._check_collection(obj)
+
+        # concrete type matches and is not a collection
+        return True
+
+    @overload
+    def is_subclass(self, annotation: AnnotationInfo, /) -> bool: ...
+
+    @overload
+    def is_subclass(self, annotation: Any, /) -> bool: ...
+
+    def is_subclass(self, annotation: Any, /) -> bool:
+        """
+        Check if this annotation is a "subclass" of other annotation; e.g. returns
+        `True` for `AnnotationInfo(list[int]).is_subclass(list[Any])` since `int` is
+        a "subclass" of `Any`.
         """
 
-        other_info = (
-            other if isinstance(other, AnnotationInfo) else AnnotationInfo(other)
+        other = (
+            annotation
+            if isinstance(annotation, AnnotationInfo)
+            else AnnotationInfo(annotation)
         )
 
         # handle union for self
         if self.is_union:
-            return all(a.is_subclass(other_info) for a in self.args_info)
+            return all(a.is_subclass(other) for a in self.args_info)
 
         # handle union for other
-        if other_info.is_union:
-            return any(self.is_subclass(a) for a in other_info.args_info)
+        if other.is_union:
+            return any(self.is_subclass(a) for a in other.args_info)
 
-        # check concrete type
-        if not issubclass(self.concrete_type, other_info.concrete_type):
+        # handle literal for self
+        if self.is_literal:
+            return all(other.is_type(value) for value in self.args)
+
+        # handle literal for other: non-literal can never be a "subclass" of literal
+        if other.is_literal:
             return False
 
-        other_args = other_info.args_info
+        # check concrete type
+        if not issubclass(self.concrete_type, other.concrete_type):
+            return False
 
-        # missing args assumed to be Any
-        # - no need to pad args if other has more args; my args will always be a
+        # concrete type matches, check args
+        other_args = other.args_info
+
+        # pad missing args in self, assumed to be Any
+        # - no need to pad if other has more args; my args will always be a
         # subset of Any
         if len(self.args_info) < len(other_args):
-            my_args = list(self.args_info) + [AnnotationInfo(Any)] * (
+            my_args = list(self.args_info) + [ANY_ANNOTATION] * (
                 len(other_args) - len(self.args_info)
             )
         else:
@@ -143,6 +177,52 @@ class AnnotationInfo:
                 return False
 
         return True
+
+    def _check_collection(self, obj: Any) -> bool:
+        """
+        Recursively check if object matches this collection's annotation.
+        """
+        assert isinstance(obj, self.concrete_type)
+
+        if isinstance(obj, (list, set)):
+            return self._check_list_or_set(obj)
+        elif isinstance(obj, tuple):
+            return self._check_tuple(obj)
+        else:
+            assert isinstance(obj, dict)
+            return self._check_dict(obj)
+
+    def _check_list_or_set(self, obj: list[Any] | set[Any]) -> bool:
+        assert len(self.args_info) in {0, 1}
+        annotation = self.args_info[0] if len(self.args_info) == 1 else ANY_ANNOTATION
+
+        return all(annotation.is_type(o) for o in obj)
+
+    def _check_tuple(self, obj: tuple[Any]) -> bool:
+        if len(self.args_info) and self.args_info[-1].annotation is not ...:
+            # fixed-length tuple like tuple[int, str, float]
+            return all(a.is_type(o) for a, o in zip(self.args_info, obj))
+        else:
+            # homogeneous tuple like tuple[int, ...]
+            assert len(self.args_info) in {0, 2}
+            annotation = (
+                self.args_info[0] if len(self.args_info) == 2 else ANY_ANNOTATION
+            )
+
+            return all(annotation.is_type(o) for o in obj)
+
+    def _check_dict(self, obj: dict[Any, Any]) -> bool:
+        assert len(self.args_info) in {0, 2}
+        key_annotation, value_annotation = (
+            self.args_info
+            if len(self.args_info) == 2
+            else (ANY_ANNOTATION, ANY_ANNOTATION)
+        )
+
+        return all(
+            key_annotation.is_type(k) and value_annotation.is_type(v)
+            for k, v in obj.items()
+        )
 
 
 def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
@@ -263,3 +343,9 @@ def get_type_param[BaseT, ParamT](
         return None
 
     return get_arg(cls)
+
+
+ANY_ANNOTATION = AnnotationInfo(Any)
+"""
+Annotation encapsulating `Any`.
+"""
