@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Callable, Generator, cast, overload
 
-from .typing_utils import AnnotationInfo
+from .annotations import AnnotationInfo
 
 __all__ = [
     "ConverterFuncType",

@@ -24,8 +24,8 @@ from typing import (
     overload,
 )
 
-from .typing_utils import AnnotationInfo
-from .validating import Converter, ValidationContext, validate_obj
+from .annotations import AnnotationInfo
+from .validation import Converter, ValidationContext, validate_obj
 
 __all__ = [
     "Field",

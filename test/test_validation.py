@@ -3,8 +3,8 @@ from typing import Annotated, Any, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.typing_utils import AnnotationInfo
-from modelingkit.validating import Converter, ValidationContext, validate_obj
+from modelingkit.annotations import AnnotationInfo
+from modelingkit.validation import Converter, ValidationContext, validate_obj
 
 
 def test_conversion():

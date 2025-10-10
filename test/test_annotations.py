@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from modelingkit.typing_utils import AnnotationInfo
+from modelingkit.annotations import AnnotationInfo
 
 
 def test_is_type():

@@ -3,14 +3,14 @@ from __future__ import annotations
 import tomlkit
 from tomlkit.items import Array, InlineTable, Integer, String
 
-from modelingkit.model import Field
-from modelingkit.toml import (
+from modelingkit.extras.toml import (
     ArrayWrapper,
     BaseDocumentWrapper,
     BaseInlineTableWrapper,
     BaseTableWrapper,
     TableArrayWrapper,
 )
+from modelingkit.model import Field
 
 
 class DocumentTest(BaseDocumentWrapper):

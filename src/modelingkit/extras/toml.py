@@ -39,9 +39,9 @@ from tomlkit.items import (
     Trivia,
 )
 
-from .model import BaseModel, FieldInfo, ModelConfig
-from .typing_utils import AnnotationInfo, get_type_param
-from .validating import Converter, ValidationContext
+from ..annotations import AnnotationInfo, get_type_param
+from ..model import BaseModel, FieldInfo, ModelConfig
+from ..validation import Converter, ValidationContext
 
 __all__ = [
     "BaseDocumentWrapper",
