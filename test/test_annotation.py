@@ -2,6 +2,19 @@ from typing import Any, Literal, Union
 
 from modelingkit.annotation import Annotation
 
+type TestType = list[int]
+
+
+def test_alias():
+    """
+    Test normalizing type alias.
+    """
+
+    a = Annotation(TestType)
+    assert a.origin is list
+    assert len(a.args) == 1
+    assert a.args[0] is int
+
 
 def test_union():
     """

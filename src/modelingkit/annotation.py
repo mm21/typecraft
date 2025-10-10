@@ -5,6 +5,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    TypeAliasType,
     TypeVar,
     Union,
     cast,
@@ -15,9 +16,8 @@ from typing import (
 
 __all__ = [
     "Annotation",
+    "normalize_alias",
     "split_annotated",
-    "is_union",
-    "flatten_union",
     "get_concrete_type",
     "get_type_param",
 ]
@@ -67,7 +67,8 @@ class Annotation:
     """
 
     def __init__(self, annotation: Any, /):
-        annotation_, extras = split_annotated(annotation)
+        annotation_, extras = split_annotated(normalize_alias(annotation))
+        annotation_ = normalize_alias(annotation_)
 
         self.annotation = annotation_
         self.extras = extras
@@ -229,9 +230,17 @@ class Annotation:
         )
 
 
+def normalize_alias(annotation: Any) -> Any:
+    """
+    If annotation is a type alias, extract the corresponding definition; otherwise,
+    return the annotation as-is.
+    """
+    return annotation.__value__ if isinstance(annotation, TypeAliasType) else annotation
+
+
 def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
     """
-    Split Annotated[x, ...] (if present) into annotation and extras.
+    Split Annotated[x, ...] (if passed) into annotation and extras.
     """
     if get_origin(annotation) is Annotated:
         args = get_args(annotation)
@@ -244,22 +253,6 @@ def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
         extras = ()
 
     return annotation_, extras
-
-
-def is_union(annotation: Any, /) -> bool:
-    """
-    Check whether the annotation is a union.
-    """
-    annotation_, _ = split_annotated(annotation)
-    return isinstance(annotation_, UnionType) or get_origin(annotation_) is Union
-
-
-def flatten_union(annotation: Any, /) -> tuple[Any, ...]:
-    """
-    Flatten union (if present) into its constituent types.
-    """
-    annotation_, _ = split_annotated(annotation)
-    return get_args(annotation_) if is_union(annotation_) else (annotation_,)
 
 
 def get_concrete_type(annotation: Any, /) -> type:
