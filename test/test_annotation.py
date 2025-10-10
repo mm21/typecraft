@@ -1,6 +1,18 @@
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 from modelingkit.annotation import Annotation
+
+
+def test_union():
+    """
+    Test methods of defining unions.
+    """
+
+    a = Annotation(int | str)
+    assert a.is_union
+
+    a = Annotation(Union[int, str])
+    assert a.is_union
 
 
 def test_is_type():
