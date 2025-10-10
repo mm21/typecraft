@@ -14,7 +14,7 @@ from typing import (
 )
 
 __all__ = [
-    "AnnotationInfo",
+    "Annotation",
     "split_annotated",
     "is_union",
     "flatten_union",
@@ -23,9 +23,11 @@ __all__ = [
 ]
 
 
-class AnnotationInfo:
+class Annotation:
     """
-    Performs normalizations on annotation and encapsulates useful info.
+    Comprehensive representation of an annotation with interfaces to determine
+    relationships to objects (`isinstance()`-like) and other annotations
+    (`issubclass()`-like).
     """
 
     annotation: Any
@@ -49,7 +51,7 @@ class AnnotationInfo:
     Type parameters.
     """
 
-    args_info: tuple[AnnotationInfo, ...]
+    args_info: tuple[Annotation, ...]
     """
     Annotation info for type parameters, if not `is_literal`.
     """
@@ -72,7 +74,7 @@ class AnnotationInfo:
         self.origin = get_origin(annotation_)
         self.args = get_args(annotation_)
         self.args_info = (
-            tuple(AnnotationInfo(a) for a in self.args)
+            tuple(Annotation(a) for a in self.args)
             if self.origin is not Literal
             else ()
         )
@@ -84,9 +86,7 @@ class AnnotationInfo:
         origin = f"origin={self.origin}"
         args = f"args={self.args_info}"
         concrete_type = f"concrete_type={self.concrete_type}"
-        return (
-            f"AnnotationInfo({annotation}, {extras}, {origin}, {args}, {concrete_type})"
-        )
+        return f"Annotation({annotation}, {extras}, {origin}, {args}, {concrete_type})"
 
     @property
     def is_union(self) -> bool:
@@ -99,10 +99,13 @@ class AnnotationInfo:
     def is_type(self, obj: Any) -> bool:
         """
         Check if object is an instance of this annotation; loosely equivalent to
-        `isinstance(obj, annotation)`. Recurses into collections, so e.g.:
+        `isinstance(obj, annotation)`.
 
-        - `AnnotationInfo(list[int]).is_type([1, 2, 3])` returns `True`
-        - `AnnotationInfo(list[int]).is_type([1, 2, "3"])` returns `False`
+        Examples:
+
+        - `Annotation(Any).is_type(1)` returns `True`
+        - `Annotation(list[int]).is_type([1, 2, 3])` returns `True`
+        - `Annotation(list[int]).is_type([1, 2, "3"])` returns `False`
         """
         if self.is_literal:
             return any(obj == value for value in self.args)
@@ -120,46 +123,47 @@ class AnnotationInfo:
         return True
 
     @overload
-    def is_subclass(self, annotation: AnnotationInfo, /) -> bool: ...
+    def is_subclass(self, other: Annotation, /) -> bool: ...
 
     @overload
-    def is_subclass(self, annotation: Any, /) -> bool: ...
+    def is_subclass(self, other: Any, /) -> bool: ...
 
-    def is_subclass(self, annotation: Any, /) -> bool:
+    def is_subclass(self, other: Any, /) -> bool:
         """
-        Check if this annotation is a "subclass" of other annotation; e.g. returns
-        `True` for `AnnotationInfo(list[int]).is_subclass(list[Any])` since `int` is
-        a "subclass" of `Any`.
+        Check if this annotation is a "subclass" of other annotation; loosely
+        equivalent to `issubclass(annotation, other)`.
+
+        Examples:
+
+        - `Annotation(int).is_subclass(Annotation(Any))` returns `True`
+        - `Annotation(list[int]).is_subclass(list[Any])` returns `True`
+        - `Annotation(list[int]).is_subclass(list[str])` returns `False`
         """
 
-        other = (
-            annotation
-            if isinstance(annotation, AnnotationInfo)
-            else AnnotationInfo(annotation)
-        )
+        other_ = other if isinstance(other, Annotation) else Annotation(other)
 
         # handle union for self
         if self.is_union:
-            return all(a.is_subclass(other) for a in self.args_info)
+            return all(a.is_subclass(other_) for a in self.args_info)
 
         # handle union for other
-        if other.is_union:
-            return any(self.is_subclass(a) for a in other.args_info)
+        if other_.is_union:
+            return any(self.is_subclass(a) for a in other_.args_info)
 
         # handle literal for self
         if self.is_literal:
-            return all(other.is_type(value) for value in self.args)
+            return all(other_.is_type(value) for value in self.args)
 
         # handle literal for other: non-literal can never be a "subclass" of literal
-        if other.is_literal:
+        if other_.is_literal:
             return False
 
         # check concrete type
-        if not issubclass(self.concrete_type, other.concrete_type):
+        if not issubclass(self.concrete_type, other_.concrete_type):
             return False
 
         # concrete type matches, check args
-        other_args = other.args_info
+        other_args = other_.args_info
 
         # pad missing args in self, assumed to be Any
         # - no need to pad if other has more args; my args will always be a
@@ -345,7 +349,7 @@ def get_type_param[BaseT, ParamT](
     return get_arg(cls)
 
 
-ANY_ANNOTATION = AnnotationInfo(Any)
+ANY_ANNOTATION = Annotation(Any)
 """
 Annotation encapsulating `Any`.
 """

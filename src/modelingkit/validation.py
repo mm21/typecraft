@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Callable, Generator, cast, overload
 
-from .annotations import AnnotationInfo
+from .annotation import Annotation
 
 __all__ = [
     "ConverterFuncType",
@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-type ConverterFuncType[T] = Callable[[Any, AnnotationInfo, ValidationContext], T]
+type ConverterFuncType[T] = Callable[[Any, Annotation, ValidationContext], T]
 """
 Function which converts the given object.
 """
@@ -63,7 +63,7 @@ class ValidationContext:
     def __repr__(self) -> str:
         return f"ValidationContext(converters={self.__converters}, lenient={self.__lenient})"
 
-    def validate_obj(self, obj: Any, annotation_info: AnnotationInfo) -> Any:
+    def validate_obj(self, obj: Any, annotation_info: Annotation) -> Any:
         return _validate_obj(obj, annotation_info, self)
 
     @property
@@ -82,14 +82,14 @@ class Converter[T]:
 
     # TODO: just have annotation info, not type
 
-    __target_annotation_info: AnnotationInfo
+    __target_annotation_info: Annotation
 
     __target_type: type[T]
     """
     Concrete type to convert to.
     """
 
-    __source_annotation_info: tuple[AnnotationInfo, ...]
+    __source_annotation_info: tuple[Annotation, ...]
 
     __source_types: tuple[type[Any], ...]
     """
@@ -125,9 +125,9 @@ class Converter[T]:
         source_types: tuple[type[Any], ...] = (),
         func: ConverterFuncType[T] | None = None,
     ):
-        self.__target_annotation_info = AnnotationInfo(target_type)
+        self.__target_annotation_info = Annotation(target_type)
         self.__target_type = target_type
-        self.__source_annotation_info = tuple(AnnotationInfo(s) for s in source_types)
+        self.__source_annotation_info = tuple(Annotation(s) for s in source_types)
         self.__source_types = source_types
         self.__func = func
 
@@ -145,7 +145,7 @@ class Converter[T]:
     def convert(
         self,
         obj: Any,
-        annotation_info: AnnotationInfo,
+        annotation_info: Annotation,
         context: ValidationContext | None = None,
         /,
     ) -> T:
@@ -187,7 +187,7 @@ class Converter[T]:
         """
         Check if this converter can convert the given object.
         """
-        target_annotation_info = AnnotationInfo(target_type)
+        target_annotation_info = Annotation(target_type)
 
         # check target
         if not target_annotation_info.is_subclass(self.__target_annotation_info):
@@ -232,7 +232,7 @@ def validate_obj(
     Handles nested parameterized types like list[list[int]] by recursively
     applying validation and conversion at each level.
     """
-    annotation_info = AnnotationInfo(target_type)
+    annotation_info = Annotation(target_type)
     context = ValidationContext(*converters, lenient=lenient)
     return _validate_obj(obj, annotation_info, context)
 
@@ -262,7 +262,7 @@ def validate_objs[T](
 
 def _validate_obj(
     obj: Any,
-    annotation_info: AnnotationInfo,
+    annotation_info: Annotation,
     context: ValidationContext,
 ) -> Any:
 
@@ -285,7 +285,7 @@ def _validate_obj(
     return obj
 
 
-def _check_obj(obj: Any, annotation_info: AnnotationInfo) -> bool:
+def _check_obj(obj: Any, annotation_info: Annotation) -> bool:
     """
     Check if object satisfies the annotation.
     """
@@ -296,7 +296,7 @@ def _check_obj(obj: Any, annotation_info: AnnotationInfo) -> bool:
 
 
 def _validate_union(
-    obj: Any, annotation_info: AnnotationInfo, context: ValidationContext
+    obj: Any, annotation_info: Annotation, context: ValidationContext
 ) -> Any:
     """
     Validate constituent types of union.
@@ -313,7 +313,7 @@ def _validate_union(
 
 def _validate_collection(
     obj: CollectionType,
-    annotation_info: AnnotationInfo,
+    annotation_info: Annotation,
     context: ValidationContext,
 ) -> Any:
     """
@@ -344,7 +344,7 @@ def _validate_collection(
 
 def _validate_list(
     obj: ValueCollectionType,
-    annotation_info: AnnotationInfo,
+    annotation_info: Annotation,
     context: ValidationContext,
 ) -> list[Any]:
     type_ = annotation_info.concrete_type
@@ -363,7 +363,7 @@ def _validate_list(
 
 def _validate_tuple(
     obj: ValueCollectionType,
-    annotation_info: AnnotationInfo,
+    annotation_info: Annotation,
     context: ValidationContext,
 ) -> tuple[Any]:
     type_ = annotation_info.concrete_type
@@ -401,7 +401,7 @@ def _validate_tuple(
 
 def _validate_set(
     obj: ValueCollectionType,
-    annotation_info: AnnotationInfo,
+    annotation_info: Annotation,
     context: ValidationContext,
 ) -> set[Any]:
     type_ = annotation_info.concrete_type
@@ -422,7 +422,7 @@ def _validate_set(
 
 def _validate_dict(
     obj: Mapping,
-    annotation_info: AnnotationInfo,
+    annotation_info: Annotation,
     context: ValidationContext,
 ) -> dict:
     type_ = annotation_info.concrete_type
@@ -446,7 +446,7 @@ def _validate_dict(
 
 
 def _convert_obj(
-    obj: Any, annotation_info: AnnotationInfo, context: ValidationContext
+    obj: Any, annotation_info: Annotation, context: ValidationContext
 ) -> Any:
     """
     Convert object by invoking converters and built-in handling, raising `ValueError`

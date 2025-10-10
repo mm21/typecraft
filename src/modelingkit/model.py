@@ -24,7 +24,7 @@ from typing import (
     overload,
 )
 
-from .annotations import AnnotationInfo
+from .annotation import Annotation
 from .validation import Converter, ValidationContext, validate_obj
 
 __all__ = [
@@ -111,7 +111,7 @@ class FieldInfo:
     Dataclass field.
     """
 
-    annotation_info: AnnotationInfo
+    annotation_info: Annotation
     """
     Annotation info.
     """
@@ -146,7 +146,7 @@ class FieldInfo:
 
         assert field.name in type_hints
         annotation = type_hints[field.name]
-        annotation_info = AnnotationInfo(annotation)
+        annotation_info = Annotation(annotation)
 
         metadata = field.metadata.get("metadata") or FieldMetadata()
         assert isinstance(metadata, FieldMetadata)
@@ -330,7 +330,7 @@ class BaseModel:
 
 
 def convert_model(
-    obj: Any, annotation_info: AnnotationInfo, _: ValidationContext
+    obj: Any, annotation_info: Annotation, _: ValidationContext
 ) -> BaseModel:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, BaseModel)

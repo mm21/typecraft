@@ -3,7 +3,7 @@ from typing import Annotated, Any, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.annotations import AnnotationInfo
+from modelingkit.annotation import Annotation
 from modelingkit.validation import Converter, ValidationContext, validate_obj
 
 
@@ -134,7 +134,7 @@ def test_any():
     Test conversion to Any.
     """
 
-    def func(obj: Any, annotation_info: AnnotationInfo, context: ValidationContext):
+    def func(obj: Any, annotation_info: Annotation, context: ValidationContext):
         assert isinstance(obj, int)
         return -obj
 
@@ -142,7 +142,7 @@ def test_any():
     obj = 123
 
     assert converter.can_convert(obj, Any)
-    conv_obj = converter.convert(obj, AnnotationInfo(Any))
+    conv_obj = converter.convert(obj, Annotation(Any))
     assert conv_obj == -123
 
 
@@ -152,7 +152,7 @@ def test_generic():
     """
 
     def func(
-        obj: Any, annotation_info: AnnotationInfo, context: ValidationContext
+        obj: Any, annotation_info: Annotation, context: ValidationContext
     ) -> list[str]:
         return [str(o) for o in obj]
 
@@ -164,5 +164,5 @@ def test_generic():
     assert not converter.can_convert(obj, list[Any])
     assert not converter.can_convert(obj, list)
 
-    conv_obj = converter.convert(obj, AnnotationInfo(list[str]))
+    conv_obj = converter.convert(obj, Annotation(list[str]))
     assert conv_obj == ["123"]

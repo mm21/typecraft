@@ -39,7 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..annotations import AnnotationInfo, get_type_param
+from ..annotation import Annotation, get_type_param
 from ..model import BaseModel, FieldInfo, ModelConfig
 from ..validation import Converter, ValidationContext
 
@@ -324,7 +324,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
     def _from_tomlkit_obj_with_annotation(
         cls,
         tomlkit_obj: TomlkitT,
-        annotation_info: AnnotationInfo,
+        annotation_info: Annotation,
         context: ValidationContext,
     ) -> Self:
         assert len(annotation_info.args_info) == 1
@@ -404,7 +404,7 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def convert_table(
-    obj: Any, annotation_info: AnnotationInfo, _: ValidationContext
+    obj: Any, annotation_info: Annotation, _: ValidationContext
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
@@ -412,7 +412,7 @@ def convert_table(
 
 
 def convert_array(
-    obj: Any, annotation_info: AnnotationInfo, context: ValidationContext
+    obj: Any, annotation_info: Annotation, context: ValidationContext
 ) -> ArrayWrapper | TableArrayWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
