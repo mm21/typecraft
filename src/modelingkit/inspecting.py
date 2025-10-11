@@ -20,10 +20,10 @@ from typing import (
 
 __all__ = [
     "Annotation",
-    "normalize_annotation",
     "unwrap_alias",
     "split_annotated",
     "is_union",
+    "normalize_annotation",
     "flatten_union",
     "get_concrete_type",
     "get_type_param",

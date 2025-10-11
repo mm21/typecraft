@@ -1,3 +1,7 @@
+"""
+Tests for `Annotation` class.
+"""
+
 from typing import Any, Literal, Union
 
 from modelingkit.inspecting import Annotation
