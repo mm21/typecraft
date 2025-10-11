@@ -24,8 +24,8 @@ from typing import (
     overload,
 )
 
-from .annotation import Annotation
-from .validation import Converter, ValidationContext, validate_obj
+from .converting import ConversionContext, Converter, validate_obj
+from .inspecting import Annotation
 
 __all__ = [
     "Field",
@@ -330,7 +330,7 @@ class BaseModel:
 
 
 def convert_model(
-    obj: Any, annotation_info: Annotation, _: ValidationContext
+    obj: Any, annotation_info: Annotation, _: ConversionContext
 ) -> BaseModel:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, BaseModel)

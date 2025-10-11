@@ -3,8 +3,8 @@ from typing import Annotated, Any, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.annotation import Annotation
-from modelingkit.validation import Converter, ValidationContext, validate_obj
+from modelingkit.converting import ConversionContext, Converter, validate_obj
+from modelingkit.inspecting import Annotation
 
 
 def test_conversion():
@@ -134,7 +134,7 @@ def test_any():
     Test conversion to Any.
     """
 
-    def func(obj: Any, annotation_info: Annotation, context: ValidationContext):
+    def func(obj: Any, annotation_info: Annotation, context: ConversionContext):
         assert isinstance(obj, int)
         return -obj
 
@@ -152,7 +152,7 @@ def test_generic():
     """
 
     def func(
-        obj: Any, annotation_info: Annotation, context: ValidationContext
+        obj: Any, annotation_info: Annotation, context: ConversionContext
     ) -> list[str]:
         return [str(o) for o in obj]
 

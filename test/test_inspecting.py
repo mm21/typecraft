@@ -1,6 +1,6 @@
 from typing import Any, Literal, Union
 
-from modelingkit.annotation import Annotation
+from modelingkit.inspecting import Annotation
 
 type TestType = list[int]
 

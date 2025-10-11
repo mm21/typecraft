@@ -39,9 +39,9 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..annotation import Annotation, get_type_param
-from ..model import BaseModel, FieldInfo, ModelConfig
-from ..validation import Converter, ValidationContext
+from ..converting import ConversionContext, Converter
+from ..inspecting import Annotation, get_type_param
+from ..models import BaseModel, FieldInfo, ModelConfig
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -325,10 +325,10 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
         cls,
         tomlkit_obj: TomlkitT,
         annotation_info: Annotation,
-        context: ValidationContext,
+        context: ConversionContext,
     ) -> Self:
-        assert len(annotation_info.args_info) == 1
-        item_annotation = annotation_info.args_info[0]
+        assert len(annotation_info.arg_annotations) == 1
+        item_annotation = annotation_info.arg_annotations[0]
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
@@ -404,7 +404,7 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def convert_table(
-    obj: Any, annotation_info: Annotation, _: ValidationContext
+    obj: Any, annotation_info: Annotation, _: ConversionContext
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
@@ -412,7 +412,7 @@ def convert_table(
 
 
 def convert_array(
-    obj: Any, annotation_info: Annotation, context: ValidationContext
+    obj: Any, annotation_info: Annotation, context: ConversionContext
 ) -> ArrayWrapper | TableArrayWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))

@@ -10,7 +10,7 @@ from modelingkit.extras.toml import (
     BaseTableWrapper,
     TableArrayWrapper,
 )
-from modelingkit.model import Field
+from modelingkit.models import Field
 
 
 class DocumentTest(BaseDocumentWrapper):
