@@ -109,32 +109,6 @@ class Annotation:
     def is_literal(self) -> bool:
         return self.origin is Literal
 
-    def is_type(self, obj: Any) -> bool:
-        """
-        Check if object is an instance of this annotation; loosely equivalent to
-        `isinstance(obj, annotation)`.
-
-        Examples:
-
-        - `Annotation(Any).is_type(1)` returns `True`
-        - `Annotation(list[int]).is_type([1, 2, 3])` returns `True`
-        - `Annotation(list[int]).is_type([1, 2, "3"])` returns `False`
-        """
-        if self.is_literal:
-            return any(obj == value for value in self.args)
-
-        if self.is_union:
-            return any(a.is_type(obj) for a in self.arg_annotations)
-
-        if not isinstance(obj, self.concrete_type):
-            return False
-
-        if issubclass(self.concrete_type, (list, tuple, set, dict)):
-            return self._check_collection(obj)
-
-        # concrete type matches and is not a collection
-        return True
-
     @overload
     def is_subclass(self, other: Annotation, /) -> bool: ...
 
@@ -152,7 +126,6 @@ class Annotation:
         - `Annotation(list[int]).is_subclass(list[Any])` returns `True`
         - `Annotation(list[int]).is_subclass(list[str])` returns `False`
         """
-
         other_ = other if isinstance(other, Annotation) else Annotation(other)
 
         # handle union for self
@@ -193,6 +166,32 @@ class Annotation:
             if not my_arg.is_subclass(other_arg):
                 return False
 
+        return True
+
+    def is_type(self, obj: Any) -> bool:
+        """
+        Check if object is an instance of this annotation; loosely equivalent to
+        `isinstance(obj, annotation)`.
+
+        Examples:
+
+        - `Annotation(Any).is_type(1)` returns `True`
+        - `Annotation(list[int]).is_type([1, 2, 3])` returns `True`
+        - `Annotation(list[int]).is_type([1, 2, "3"])` returns `False`
+        """
+        if self.is_literal:
+            return any(obj == value for value in self.args)
+
+        if self.is_union:
+            return any(a.is_type(obj) for a in self.arg_annotations)
+
+        if not isinstance(obj, self.concrete_type):
+            return False
+
+        if issubclass(self.concrete_type, (list, tuple, set, dict)):
+            return self._check_collection(obj)
+
+        # concrete type matches and is not a collection
         return True
 
     def _check_collection(self, obj: Any) -> bool:
@@ -246,6 +245,56 @@ class Annotation:
             key_annotation.is_type(k) and value_annotation.is_type(v)
             for k, v in obj.items()
         )
+
+
+@overload
+def is_subclass(annotation: Annotation, other: Annotation) -> bool: ...
+
+
+@overload
+def is_subclass(annotation: Annotation, other: Any) -> bool: ...
+
+
+@overload
+def is_subclass(annotation: Any, other: Annotation) -> bool: ...
+
+
+@overload
+def is_subclass(annotation: Any, other: Any) -> bool: ...
+
+
+def is_subclass(annotation: Any, other: Any) -> bool:
+    """
+    Return whether annotation is a "subclass" of other annotation.
+
+    Accommodates generic types and fully resolves type aliases, unions, and
+    `Annotated`.
+    """
+    annotation_ = (
+        annotation if isinstance(annotation, Annotation) else Annotation(annotation)
+    )
+    return annotation_.is_subclass(other)
+
+
+@overload
+def is_instance(obj: Any, annotation: Annotation) -> bool: ...
+
+
+@overload
+def is_instance(obj: Any, annotation: Any) -> bool: ...
+
+
+def is_instance(obj: Any, annotation: Any) -> bool:
+    """
+    Return whether an object is an "instance" of an annotation.
+
+    Accommodates generic types and fully resolves type aliases, unions, and
+    `Annotated`.
+    """
+    annotation_ = (
+        annotation if isinstance(annotation, Annotation) else Annotation(annotation)
+    )
+    return annotation_.is_type(obj)
 
 
 def unwrap_alias(annotation: Any, /) -> Any:

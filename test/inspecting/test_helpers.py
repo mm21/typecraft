@@ -6,8 +6,11 @@ from types import EllipsisType, NoneType, UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from modelingkit.inspecting import (
+    Annotation,
     flatten_union,
     get_concrete_type,
+    is_instance,
+    is_subclass,
     is_union,
     normalize_annotation,
     split_annotated,
@@ -15,13 +18,37 @@ from modelingkit.inspecting import (
 )
 
 type SimpleAlias = int
-type NestedAlias = Union[int, str]
 type UnionAlias = int | str
+type LegacyUnionAlias = Union[int, str]
 type AnnotatedAlias = Annotated[int, "doc"]
 type ListAlias = list[int]
 type AnnotatedListAlias = Annotated[ListAlias, "doc"]
 type UnionWithAnnotatedAlias = Union[Annotated[int, "positive"], str]
 type DeepAlias = Annotated[Union[int, str], "constraint"]
+
+
+def test_is_subclass():
+    # verify all overloads
+    assert is_subclass(Annotation(int), Annotation(Any))
+    assert is_subclass(Annotation(int), Any)
+    assert is_subclass(int, Annotation(Any))
+    assert is_subclass(int, Any)
+
+    # verify with alias
+    assert is_subclass(SimpleAlias, UnionAlias)
+    assert is_subclass(ListAlias, AnnotatedListAlias)
+
+
+def test_is_instance():
+    # verify all overloads
+    assert is_instance(1, Any)
+    assert is_instance(1, int)
+    assert is_instance(1, Annotation(Any))
+    assert is_instance(1, Annotation(int))
+
+    # verify with alias
+    assert is_instance(1, UnionAlias)
+    assert is_instance([1], ListAlias)
 
 
 def test_unwrap_alias():
@@ -35,7 +62,7 @@ def test_unwrap_alias():
 
     # aliases should be unwrapped
     assert unwrap_alias(SimpleAlias) is int
-    assert unwrap_alias(NestedAlias) == Union[int, str]
+    assert unwrap_alias(LegacyUnionAlias) == Union[int, str]
 
 
 def test_split_annotated():

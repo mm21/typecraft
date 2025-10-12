@@ -4,17 +4,16 @@ Tests for `Annotation` class.
 
 from typing import Any, Literal, Union
 
-from modelingkit.inspecting import Annotation
+from modelingkit.inspecting import Annotation, is_instance, is_subclass
 
-type TestType = list[int]
+type ListAlias = list[int]
 
 
 def test_alias():
     """
     Test normalizing type alias.
     """
-
-    a = Annotation(TestType)
+    a = Annotation(ListAlias)
     assert a.origin is list
     assert len(a.args) == 1
     assert a.args[0] is int
@@ -24,7 +23,6 @@ def test_union():
     """
     Test methods of defining unions.
     """
-
     a = Annotation(int | str)
     assert a.is_union
 
@@ -32,11 +30,84 @@ def test_union():
     assert a.is_union
 
 
-def test_is_type():
+def test_is_subclass():
     """
-    Test `Annotation.is_type()` checks.
+    Test `is_subclass` / `Annotation.is_subclass()` checks.
     """
+    a1 = Annotation(int)
+    a2 = Annotation(Any)
+    assert a1.is_subclass(a2)
+    assert a1.is_subclass(Any)
+    assert not a2.is_subclass(a1)
 
+    a1 = Annotation(list[int])
+    a2 = Annotation(list[Any])
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    # same but with alias
+    assert is_subclass(ListAlias, list[Any])
+    assert not is_subclass(list[Any], ListAlias)
+
+    a1 = Annotation(list[int])
+    a2 = Annotation(list[float])
+    assert not a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a1 = Annotation(list[list[bool]])
+    a2 = Annotation(list[list[int]])
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    # list is assumed to be list[Any]
+    a1 = Annotation(list[int])
+    a2 = Annotation(list)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a1 = Annotation(list[Any])
+    a2 = Annotation(list)
+    assert a1.is_subclass(a2)
+    assert a2.is_subclass(a1)
+
+    # unions
+    a1 = Annotation(int)
+    a2 = Annotation(int | str)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a1 = Annotation(int | str)
+    a2 = Annotation(int | str | float)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a1 = Annotation(list[int | str])
+    a2 = Annotation(list)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    # literals
+    a1 = Annotation(Literal["a"])
+    a2 = Annotation(Literal["a", "b"])
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a2 = Annotation(str)
+    assert a1.is_subclass(a2)
+    assert not a2.is_subclass(a1)
+
+    a3 = Annotation(Literal["a", "b"] | int)
+    a4 = Annotation(int)
+    assert a1.is_subclass(a3)
+    assert a4.is_subclass(a3)
+    assert not a3.is_subclass(a1)
+    assert not a3.is_subclass(a4)
+
+
+def test_is_instance():
+    """
+    Test `is_instance()` / `Annotation.is_type()` checks.
+    """
     # non-generics
     a = Annotation(Any)
     assert a.is_type(1)
@@ -69,6 +140,11 @@ def test_is_type():
     assert a.is_type([])
     assert not a.is_type([1, "2"])
 
+    # same but with alias
+    assert is_instance([1, 2], ListAlias)
+    assert is_instance([], ListAlias)
+    assert not is_instance([1, "2"], ListAlias)
+
     a = Annotation(list[int | str])
     assert a.is_type([1, "2"])
     assert not a.is_type([1, "2", 3.0])
@@ -100,83 +176,19 @@ def test_is_type():
     assert a.is_type({"a": 1, "b": "2"})
     assert not a.is_type({0: 1})
 
+    # unions
+    a = Annotation(int | str)
+    assert a.is_type(1)
+    assert a.is_type("a")
+    assert not a.is_type(1.0)
 
-def test_subclass():
-    """
-    Test basic subclass checks for generics.
-    """
+    a = Annotation(Union[int, str])
+    assert a.is_type(1)
+    assert a.is_type("a")
+    assert not a.is_type(1.0)
 
-    a1 = Annotation(int)
-    a2 = Annotation(Any)
-    assert a1.is_subclass(a2)
-    assert a1.is_subclass(Any)
-    assert not a2.is_subclass(a1)
-
-    a1 = Annotation(list[int])
-    a2 = Annotation(list[Any])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a1 = Annotation(list[int])
-    a2 = Annotation(list[float])
-    assert not a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a1 = Annotation(list[list[bool]])
-    a2 = Annotation(list[list[int]])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    # list is assumed to be list[Any]
-    a1 = Annotation(list[int])
-    a2 = Annotation(list)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a1 = Annotation(list[Any])
-    a2 = Annotation(list)
-    assert a1.is_subclass(a2)
-    assert a2.is_subclass(a1)
-
-
-def test_subclass_union():
-    """
-    Test subclass checks with unions.
-    """
-
-    a1 = Annotation(int)
-    a2 = Annotation(int | str)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a1 = Annotation(int | str)
-    a2 = Annotation(int | str | float)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a1 = Annotation(list[int | str])
-    a2 = Annotation(list)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-
-def test_subclass_literal():
-    """
-    Test subclass checks with literals.
-    """
-
-    a1 = Annotation(Literal["a"])
-    a2 = Annotation(Literal["a", "b"])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a2 = Annotation(str)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
-
-    a3 = Annotation(Literal["a", "b"] | int)
-    a4 = Annotation(int)
-    assert a1.is_subclass(a3)
-    assert a4.is_subclass(a3)
-    assert not a3.is_subclass(a1)
-    assert not a3.is_subclass(a4)
+    # literals
+    a = Annotation(Literal["a", "b"])
+    assert a.is_type("a")
+    assert not a.is_type("c")
+    assert not a.is_type(1)
