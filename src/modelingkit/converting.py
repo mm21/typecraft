@@ -4,23 +4,33 @@ Utilities to recursively convert and validate objects.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Mapping
-from typing import Any, Callable, Generator, cast, overload
+from typing import Any, Callable, Generator, Literal, Union, cast, overload
 
 from .inspecting import Annotation, flatten_union
 
 __all__ = [
-    "ConverterFuncType",
-    "ConversionContext",
+    "ConvertFuncType",
+    "ConvertContext",
     "Converter",
-    "validate_obj",
-    "validate_objs",
+    "validate",
+    "normalize_to_list",
 ]
 
 
-type ConverterFuncType[T] = Callable[[Any, Annotation, ConversionContext], T]
+type ConvertFuncType[T] = Callable[[Any], T] | Callable[
+    [Any, Annotation, ConvertContext], T
+]
 """
-Function which converts the given object.
+Function which converts the given object. Can optionally take the annotation and
+context, generally used to propagate to nested objects (e.g. elements of custom
+collections).
+"""
+
+type VarianceType = Literal["contravariant", "invariant"]
+"""
+Variance supported by a converter.
 """
 
 type ValueCollectionType = list | tuple | set | frozenset | range | Generator
@@ -37,27 +47,30 @@ Types convertible to collection types.
 VALUE_COLLECTION_TYPES = flatten_union(ValueCollectionType)
 COLLECTION_TYPES = flatten_union(CollectionType)
 
-print(f"--- VALUE_COLLECTION_TYPES: {VALUE_COLLECTION_TYPES}")
-print(f"--- COLLECTION_TYPES: {COLLECTION_TYPES}")
 
-
-class ConversionContext:
+class ConvertContext:
     """
     Encapsulates conversion parameters, propagated throughout the conversion process.
     """
 
+    # TODO: converter registry instead of tuple
     __converters: tuple[Converter, ...]
     __lenient: bool = False
+
+    # TODO: always: perform conversion even if type already matches target (for
+    # serialization)
 
     def __init__(self, *converters: Converter, lenient: bool = False):
         self.__converters = converters
         self.__lenient = lenient
 
     def __repr__(self) -> str:
-        return f"ValidationContext(converters={self.__converters}, lenient={self.__lenient})"
+        return (
+            f"ConvertContext(converters={self.__converters}, lenient={self.__lenient})"
+        )
 
-    def validate_obj(self, obj: Any, annotation_info: Annotation) -> Any:
-        return _validate_obj(obj, annotation_info, self)
+    def validate(self, obj: Any, annotation_info: Annotation) -> Any:
+        return _dispatch_validation(obj, annotation_info, self)
 
     @property
     def converters(self) -> tuple[Converter, ...]:
@@ -68,132 +81,162 @@ class ConversionContext:
         return self.__lenient
 
 
-class Converter[T]:
+class Converter[T = Any]:
     """
-    Encapsulates type conversion parameters from one or more types to a target type.
-    """
-
-    # TODO: just have annotation info, not type
-
-    __target_annotation_info: Annotation
-
-    __target_type: type[T]
-    """
-    Concrete type to convert to.
+    Encapsulates type conversion parameters from a source annotation (which may be
+    a union) to a target annotation.
     """
 
-    __source_annotation_info: tuple[Annotation, ...]
-
-    __source_types: tuple[type[Any], ...]
+    __source_annotation: Annotation
     """
-    Concrete type(s) to convert from. An empty tuple means factory can accept any type.
+    Annotation specifying type to convert from.
     """
 
-    __func: ConverterFuncType[T] | None
+    __target_annotation: Annotation
+    """
+    Annotation specifying type to convert to.
+    """
+
+    __func: ConvertFuncType[Any] | None
     """
     Callable returning an instance of target type. Must take exactly one positional
     argument of one of the type(s) given in `from_types`. May be the target type itself
     if its constructor takes exactly one positional argument.
     """
 
+    __variance: VarianceType
+
     @overload
     def __init__(
         self,
-        target_type: type[T],
-        source_types: tuple[type[Any], ...] = (),
-        func: ConverterFuncType[T] | None = None,
+        source_annotation: Any,
+        target_annotation: type[T],
+        /,
+        *,
+        func: ConvertFuncType[T] | None = None,
+        variance: VarianceType = "contravariant",
     ): ...
 
     @overload
     def __init__(
         self,
-        target_type: Any,
-        source_types: tuple[Any, ...] = (),
-        func: ConverterFuncType[T] | None = None,
+        source_annotation: Any,
+        target_annotation: Any = Any,
+        /,
+        *,
+        func: ConvertFuncType[Any] | None = None,
+        variance: VarianceType = "contravariant",
     ): ...
 
     def __init__(
         self,
-        target_type: type[T],
-        source_types: tuple[type[Any], ...] = (),
-        func: ConverterFuncType[T] | None = None,
+        source_annotation: Any,
+        target_annotation: Any = Any,
+        func: ConvertFuncType[Any] | None = None,
+        variance: VarianceType = "contravariant",
     ):
-        self.__target_annotation_info = Annotation(target_type)
-        self.__target_type = target_type
-        self.__source_annotation_info = tuple(Annotation(s) for s in source_types)
-        self.__source_types = source_types
+        self.__source_annotation = Annotation(source_annotation)
+        self.__target_annotation = Annotation(target_annotation)
         self.__func = func
+        self.__variance = variance
 
     def __repr__(self) -> str:
-        return f"Converter(target_type={self.__target_type}, source_types={self.__source_types}, func={self.__func})"
+        return f"Converter(source={self.__source_annotation}, target={self.__target_annotation}, func={self.__func}), variance={self.__variance}"
 
     @property
-    def target_type(self) -> type[T]:
-        return self.__target_type
+    def target_annotation(self) -> Annotation:
+        return self.__target_annotation
 
     @property
-    def source_types(self) -> tuple[type[Any], ...]:
-        return self.__source_types
+    def source_annotation(self) -> Annotation:
+        return self.__source_annotation
 
     def convert(
         self,
         obj: Any,
-        annotation_info: Annotation,
-        context: ConversionContext | None = None,
+        target_annotation: Annotation,
+        context: ConvertContext | None = None,
         /,
     ) -> T:
         """
         Convert object or raise `ValueError`.
+
+        `target_annotation` is required because some converters may inspect it to
+        recurse into items of collections. For example, a converter to MyList[T]
+        would invoke conversion to type T on each item.
         """
-        if not self.can_convert(obj, self.__target_type):
+        if not self.can_convert(obj, target_annotation):
             raise ValueError(
                 f"Object '{obj}' ({type(obj)}) cannot be converted using {self}"
             )
 
-        context_ = context or ConversionContext()
+        context_ = context or ConvertContext(self)
 
         try:
             if self.__func:
-                new_obj = self.__func(obj, annotation_info, context_)
+                # provided convert function
+                sig = inspect.signature(self.__func)
+                if len(sig.parameters) == 1:
+                    func = cast(Callable[[Any], Any], self.__func)
+                    new_obj = func(obj)
+                else:
+                    func = cast(
+                        Callable[[Any, Annotation, ConvertContext], Any], self.__func
+                    )
+                    new_obj = func(obj, target_annotation, context_)
             else:
-                new_obj = cast(Callable[[Any], T], self.__target_type)(obj)
+                # direct object construction
+                concrete_type = cast(
+                    Callable[[Any], T], self.__target_annotation.concrete_type
+                )
+                new_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
             raise ValueError(
                 f"Converter {self} failed to convert {obj} ({type(obj)}): {e}"
             ) from None
 
-        if not isinstance(new_obj, self.__target_annotation_info.concrete_type):
+        if not isinstance(new_obj, self.__target_annotation.concrete_type):
             raise ValueError(
                 f"Converter {self} failed to convert {obj} ({type(obj)}), got {new_obj} ({type(new_obj)})"
             )
 
         return new_obj
 
-    # TODO: take target_type as AnnotationInfo
     @overload
-    def can_convert(self, obj: Any, target_type: type[Any], /) -> bool: ...
+    def can_convert(self, obj: Any, target_annotation: Annotation, /) -> bool: ...
 
     @overload
-    def can_convert(self, obj: Any, target_type: Any, /) -> bool: ...
+    def can_convert(self, obj: Any, target_annotation: Any, /) -> bool: ...
 
-    def can_convert(self, obj: Any, target_type: type[Any], /) -> bool:
+    def can_convert(self, obj: Any, target_annotation: Any, /) -> bool:
         """
-        Check if this converter can convert the given object.
+        Check if this converter can convert the given object to the given annotation.
         """
-        target_annotation_info = Annotation(target_type)
-
-        # check target
-        if not target_annotation_info.is_subclass(self.__target_annotation_info):
-            return False
-
-        # check source(s)
-        return len(self.__source_types) == 0 or any(
-            isinstance(obj, s.concrete_type) for s in self.__source_annotation_info
+        target_annotation_ = (
+            target_annotation
+            if isinstance(target_annotation, Annotation)
+            else Annotation(target_annotation)
         )
 
+        if self.__variance == "invariant":
+            # exact match only
+            if not target_annotation_ == self.__target_annotation:
+                return False
+        else:
+            # contravariant (default): annotation must be a subclass of
+            # self.__target_annotation
+            # - for example, a converter configured with target BaseModel can also
+            # convert UserModel
+            if not target_annotation_.is_subclass(self.__target_annotation):
+                return False
 
+        # check source
+        return self.__source_annotation.is_type(obj)
+
+
+# TODO: take converter registry instead of tuple
 @overload
-def validate_obj[T](
+def validate[T](
     obj: Any,
     target_type: type[T],
     /,
@@ -203,7 +246,7 @@ def validate_obj[T](
 
 
 @overload
-def validate_obj(
+def validate(
     obj: Any,
     target_type: Any,
     /,
@@ -212,7 +255,7 @@ def validate_obj(
 ) -> Any: ...
 
 
-def validate_obj(
+def validate(
     obj: Any,
     target_type: Any,
     /,
@@ -226,11 +269,11 @@ def validate_obj(
     applying validation and conversion at each level.
     """
     annotation_info = Annotation(target_type)
-    context = ConversionContext(*converters, lenient=lenient)
-    return _validate_obj(obj, annotation_info, context)
+    context = ConvertContext(*converters, lenient=lenient)
+    return _dispatch_validation(obj, annotation_info, context)
 
 
-def validate_objs[T](
+def normalize_to_list[T](
     obj_or_objs: Any,
     target_type: type[T],
     /,
@@ -250,13 +293,13 @@ def validate_objs[T](
         objs = [obj_or_objs]
 
     # validate each object and place in a new list
-    return [validate_obj(o, target_type, *converters, lenient=lenient) for o in objs]
+    return [validate(o, target_type, *converters, lenient=lenient) for o in objs]
 
 
-def _validate_obj(
+def _dispatch_validation(
     obj: Any,
     annotation_info: Annotation,
-    context: ConversionContext,
+    context: ConvertContext,
 ) -> Any:
 
     # handle union type
@@ -266,8 +309,8 @@ def _validate_obj(
     # if object does not satisfy annotation, attempt conversion
     # - converters (custom and lenient conversions) are assumed to always recurse if
     # applicable
-    if not _check_obj(obj, annotation_info):
-        return _convert_obj(obj, annotation_info, context)
+    if not _check_valid(obj, annotation_info):
+        return _convert(obj, annotation_info, context)
 
     # if type is a builtin collection, recurse
     if issubclass(annotation_info.concrete_type, (list, tuple, set, dict)):
@@ -278,7 +321,23 @@ def _validate_obj(
     return obj
 
 
-def _check_obj(obj: Any, annotation_info: Annotation) -> bool:
+def _validate_union(
+    obj: Any, annotation_info: Annotation, context: ConvertContext
+) -> Any:
+    """
+    Validate constituent types of union.
+    """
+    for arg in annotation_info.arg_annotations:
+        try:
+            return _dispatch_validation(obj, arg, context)
+        except (ValueError, TypeError):
+            continue
+    raise ValueError(
+        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {annotation_info}"
+    )
+
+
+def _check_valid(obj: Any, annotation_info: Annotation) -> bool:
     """
     Check if object satisfies the annotation.
     """
@@ -288,26 +347,10 @@ def _check_obj(obj: Any, annotation_info: Annotation) -> bool:
         return isinstance(obj, annotation_info.concrete_type)
 
 
-def _validate_union(
-    obj: Any, annotation_info: Annotation, context: ConversionContext
-) -> Any:
-    """
-    Validate constituent types of union.
-    """
-    for arg in annotation_info.arg_annotations:
-        try:
-            return _validate_obj(obj, arg, context)
-        except (ValueError, TypeError):
-            continue
-    raise ValueError(
-        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {annotation_info}"
-    )
-
-
 def _validate_collection(
     obj: CollectionType,
     annotation_info: Annotation,
-    context: ConversionContext,
+    context: ConvertContext,
 ) -> Any:
     """
     Validate collection of objects.
@@ -338,14 +381,14 @@ def _validate_collection(
 def _validate_list(
     obj: ValueCollectionType,
     annotation_info: Annotation,
-    context: ConversionContext,
+    context: ConvertContext,
 ) -> list[Any]:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, list)
     assert len(annotation_info.arg_annotations) == 1
 
     arg = annotation_info.arg_annotations[0]
-    validated_objs = [context.validate_obj(o, arg) for o in obj]
+    validated_objs = [context.validate(o, arg) for o in obj]
 
     if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
@@ -357,7 +400,7 @@ def _validate_list(
 def _validate_tuple(
     obj: ValueCollectionType,
     annotation_info: Annotation,
-    context: ConversionContext,
+    context: ConvertContext,
 ) -> tuple[Any]:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, tuple)
@@ -376,14 +419,14 @@ def _validate_tuple(
                 f"Tuple length mismatch: expected {len(annotation_info.arg_annotations)}, got {len(sized_obj)}: {sized_obj} ({annotation_info})"
             )
         validated_objs = tuple(
-            context.validate_obj(o, arg)
+            context.validate(o, arg)
             for o, arg in zip(sized_obj, annotation_info.arg_annotations)
         )
     else:
         # homogeneous tuple like tuple[int, ...]
         assert len(annotation_info.arg_annotations) == 2
         arg = annotation_info.arg_annotations[0]
-        validated_objs = tuple(context.validate_obj(o, arg) for o in obj)
+        validated_objs = tuple(context.validate(o, arg) for o in obj)
 
     if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
@@ -395,14 +438,14 @@ def _validate_tuple(
 def _validate_set(
     obj: ValueCollectionType,
     annotation_info: Annotation,
-    context: ConversionContext,
+    context: ConvertContext,
 ) -> set[Any]:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, set)
     assert len(annotation_info.arg_annotations) == 1
 
     arg = annotation_info.arg_annotations[0]
-    validated_objs = {context.validate_obj(o, arg) for o in obj}
+    validated_objs = {context.validate(o, arg) for o in obj}
 
     if isinstance(obj, type_):
         obj_ids = {id(o) for o in obj}
@@ -416,7 +459,7 @@ def _validate_set(
 def _validate_dict(
     obj: Mapping,
     annotation_info: Annotation,
-    context: ConversionContext,
+    context: ConvertContext,
 ) -> dict:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, dict)
@@ -424,7 +467,7 @@ def _validate_dict(
     key_type, value_type = annotation_info.arg_annotations
 
     validated_objs = {
-        context.validate_obj(k, key_type): context.validate_obj(v, value_type)
+        context.validate(k, key_type): context.validate(v, value_type)
         for k, v in obj.items()
     }
 
@@ -438,50 +481,46 @@ def _validate_dict(
     return type_(**validated_objs)
 
 
-def _convert_obj(
-    obj: Any, annotation_info: Annotation, context: ConversionContext
-) -> Any:
+def _convert(obj: Any, target_annotation: Annotation, context: ConvertContext) -> Any:
     """
     Convert object by invoking converters and built-in handling, raising `ValueError`
     if it could not be converted.
     """
+    # TODO: wrap in ConverterRegistry
+
     # try user-provided converters
-    if converter := _find_converter(
-        obj, annotation_info.concrete_type, context.converters
-    ):
-        return converter.convert(obj, annotation_info, context)
+    if converter := _find_converter(obj, target_annotation, context.converters):
+        return converter.convert(obj, target_annotation, context)
 
     # if lenient, keep trying
     if context.lenient:
         # built-in converters
-        if converter := _find_converter(
-            obj, annotation_info.concrete_type, BUILTIN_CONVERTERS
-        ):
-            return converter.convert(obj, annotation_info, context)
+        if converter := _find_converter(obj, target_annotation, BUILTIN_CONVERTERS):
+            return converter.convert(obj, target_annotation, context)
 
         # direct object construction
-        return annotation_info.concrete_type(obj)
+        return target_annotation.concrete_type(obj)
 
     raise ValueError(
-        f"Object '{obj}' ({type(obj)}) could not be converted to {annotation_info}"
+        f"Object '{obj}' ({type(obj)}) could not be converted to {target_annotation}"
     )
 
 
 def _find_converter(
-    obj: Any, target_type: type[Any], converters: tuple[Converter, ...]
+    obj: Any, target_annotation: Annotation, converters: tuple[Converter, ...]
 ) -> Converter | None:
     """
     Find the first converter that can handle the given object to target type conversion.
     """
     for converter in converters:
-        if converter.can_convert(obj, target_type):
+        if converter.can_convert(obj, target_annotation):
             return converter
     return None
 
 
 BUILTIN_CONVERTERS = (
-    Converter(list, VALUE_COLLECTION_TYPES, _validate_list),
-    Converter(tuple, VALUE_COLLECTION_TYPES, _validate_tuple),
-    Converter(set, VALUE_COLLECTION_TYPES, _validate_set),
-    Converter(dict, (Mapping,), _validate_dict),
+    Converter(Union[VALUE_COLLECTION_TYPES], list, func=_validate_list),
+    Converter(Union[VALUE_COLLECTION_TYPES], tuple, func=_validate_tuple),
+    Converter(Union[VALUE_COLLECTION_TYPES], set, func=_validate_set),
+    Converter(Mapping, dict, func=_validate_dict),
 )

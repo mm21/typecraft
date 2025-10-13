@@ -24,7 +24,7 @@ from typing import (
     overload,
 )
 
-from .converting import ConversionContext, Converter, validate_obj
+from .converting import ConvertContext, Converter, validate
 from .inspecting import Annotation
 
 __all__ = [
@@ -229,7 +229,7 @@ class BaseModel:
             not self.__init_done or self.model_config.validate_on_assignment
         ):
             value_ = self.model_pre_validate(field_info, value)
-            value_ = validate_obj(
+            value_ = validate(
                 value_,
                 field_info.annotation_info.annotation,
                 *self.__converters,
@@ -330,7 +330,7 @@ class BaseModel:
 
 
 def convert_model(
-    obj: Any, annotation_info: Annotation, _: ConversionContext
+    obj: Any, annotation_info: Annotation, _: ConvertContext
 ) -> BaseModel:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, BaseModel)
@@ -338,7 +338,7 @@ def convert_model(
     return type_(**obj)
 
 
-MODEL_CONVERTER = Converter(BaseModel, (Mapping,), func=convert_model)
+MODEL_CONVERTER = Converter(Mapping, BaseModel, func=convert_model)
 """
 Converts a mapping (e.g. dict) to a model.
 """

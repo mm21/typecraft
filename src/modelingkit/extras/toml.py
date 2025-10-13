@@ -39,7 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..converting import ConversionContext, Converter
+from ..converting import ConvertContext, Converter
 from ..inspecting import Annotation, get_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
 
@@ -325,14 +325,14 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
         cls,
         tomlkit_obj: TomlkitT,
         annotation_info: Annotation,
-        context: ConversionContext,
+        context: ConvertContext,
     ) -> Self:
         assert len(annotation_info.arg_annotations) == 1
         item_annotation = annotation_info.arg_annotations[0]
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
-        validated_items = [context.validate_obj(o, item_annotation) for o in items]
+        validated_items = [context.validate(o, item_annotation) for o in items]
 
         obj = cls(validated_items)
         return cls._finalize_obj(tomlkit_obj, obj)
@@ -404,7 +404,7 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def convert_table(
-    obj: Any, annotation_info: Annotation, _: ConversionContext
+    obj: Any, annotation_info: Annotation, _: ConvertContext
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
@@ -412,7 +412,7 @@ def convert_table(
 
 
 def convert_array(
-    obj: Any, annotation_info: Annotation, context: ConversionContext
+    obj: Any, annotation_info: Annotation, context: ConvertContext
 ) -> ArrayWrapper | TableArrayWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
@@ -420,8 +420,8 @@ def convert_array(
 
 
 CONVERTERS = (
-    Converter(BaseTableWrapper, (Table,), func=convert_table),
-    Converter(BaseInlineTableWrapper, (InlineTable,), func=convert_table),
-    Converter(ArrayWrapper, (Array,), func=convert_array),
-    Converter(TableArrayWrapper, (AoT,), func=convert_array),
+    Converter(Table, BaseTableWrapper, func=convert_table),
+    Converter(InlineTable, BaseInlineTableWrapper, func=convert_table),
+    Converter(Array, ArrayWrapper, func=convert_array),
+    Converter(AoT, TableArrayWrapper, func=convert_array),
 )

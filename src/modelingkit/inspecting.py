@@ -94,12 +94,18 @@ class Annotation:
         self.concrete_type = get_concrete_type(annotation_)
 
     def __repr__(self) -> str:
-        annotation = f"annotation={self.annotation}"
+        annotation = f"{self.annotation}"
         extras = f"extras={self.extras}"
         origin = f"origin={self.origin}"
-        args = f"args={self.arg_annotations}"
+        args = f"args={self.args}"
         concrete_type = f"concrete_type={self.concrete_type}"
-        return f"Annotation({annotation}, {extras}, {origin}, {args}, {concrete_type})"
+        desc = ", ".join((annotation, extras, origin, args, concrete_type))
+        return f"Annotation({desc})"
+
+    def __eq__(self, other: Any, /) -> bool:
+        if not isinstance(other, Annotation):
+            return False
+        return self.is_subclass(other) and other.is_subclass(self)
 
     @property
     def is_union(self) -> bool:

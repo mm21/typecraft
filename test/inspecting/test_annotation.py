@@ -192,3 +192,13 @@ def test_is_instance():
     assert a.is_type("a")
     assert not a.is_type("c")
     assert not a.is_type(1)
+
+
+def test_eq():
+    """
+    Test equality check.
+    """
+    assert Annotation(int) == Annotation(int)
+    assert Annotation(list[Any]) == Annotation(list[Any])
+    assert Annotation(list) == Annotation(list[Any])
+    assert Annotation(list[str]) != Annotation(list[Any])
