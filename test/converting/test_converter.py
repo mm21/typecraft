@@ -4,7 +4,7 @@ Test low-level conversion via `Converter` classes.
 
 from typing import Any
 
-from modelingkit.converting import ConvertContext, Converter
+from modelingkit.converting import ConvertContext, Converter, ConverterRegistry
 from modelingkit.inspecting import Annotation
 
 
@@ -20,7 +20,7 @@ def test_any():
     def func2(obj: Any, annotation: Annotation, context: ConvertContext):
         assert isinstance(obj, int)
         assert annotation.concrete_type is object
-        assert len(context.converters) == 1
+        assert len(context.registry) == 1
         return -2 * obj
 
     obj = 1
@@ -74,3 +74,40 @@ def test_invariant():
     # invariant convert cannot convert to bool, strictly int
     assert converter_inv.can_convert(obj, int)
     assert not converter_inv.can_convert(obj, bool)
+
+
+def test_registry():
+    """
+    Test converter registry.
+    """
+
+    # create a registry
+    registry = ConverterRegistry()
+
+    @registry.register(variance="invariant")
+    def str_to_int_inv(s: str) -> int:
+        """Convert string to integer, not encompassing bool."""
+        return int(s)
+
+    # register converters using decorator
+    @registry.register
+    def str_to_int(
+        s: str,
+        annotation: Annotation,
+        context: ConvertContext,
+    ) -> int:
+        """Convert string to integer, also encompassing bool."""
+        return annotation.concrete_type(s)
+
+    # use the registry
+    obj = "42"
+
+    converter = registry.find(obj, Annotation(int))
+    assert converter
+    assert converter.variance == "invariant"
+    assert converter.convert(obj, Annotation(int)) == 42
+
+    converter = registry.find(obj, Annotation(bool))
+    assert converter
+    assert converter.variance == "contravariant"
+    assert converter.convert(obj, Annotation(bool)) is True

@@ -5,8 +5,19 @@ Utilities to recursively convert and validate objects.
 from __future__ import annotations
 
 import inspect
+from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any, Callable, Generator, Literal, Union, cast, overload
+from typing import (
+    Any,
+    Callable,
+    Generator,
+    Literal,
+    Sequence,
+    Union,
+    cast,
+    get_type_hints,
+    overload,
+)
 
 from .inspecting import Annotation, flatten_union
 
@@ -14,6 +25,7 @@ __all__ = [
     "ConvertFuncType",
     "ConvertContext",
     "Converter",
+    "ConverterRegistry",
     "validate",
     "normalize_to_list",
 ]
@@ -53,35 +65,34 @@ class ConvertContext:
     Encapsulates conversion parameters, propagated throughout the conversion process.
     """
 
-    # TODO: converter registry instead of tuple
-    __converters: tuple[Converter, ...]
+    __registry: ConverterRegistry
     __lenient: bool = False
 
     # TODO: always: perform conversion even if type already matches target (for
     # serialization)
 
-    def __init__(self, *converters: Converter, lenient: bool = False):
-        self.__converters = converters
+    def __init__(
+        self,
+        *,
+        registry: ConverterRegistry | None = None,
+        lenient: bool = False,
+    ):
+        self.__registry = registry or ConverterRegistry()
         self.__lenient = lenient
 
     def __repr__(self) -> str:
-        return (
-            f"ConvertContext(converters={self.__converters}, lenient={self.__lenient})"
-        )
-
-    def validate(self, obj: Any, annotation_info: Annotation) -> Any:
-        return _dispatch_validation(obj, annotation_info, self)
+        return f"ConvertContext(registry={self.__registry}, lenient={self.__lenient})"
 
     @property
-    def converters(self) -> tuple[Converter, ...]:
-        return self.__converters
+    def registry(self) -> ConverterRegistry:
+        return self.__registry
 
     @property
     def lenient(self) -> bool:
         return self.__lenient
 
 
-class Converter[T = Any]:
+class Converter[T]:
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
@@ -151,6 +162,12 @@ class Converter[T = Any]:
     def source_annotation(self) -> Annotation:
         return self.__source_annotation
 
+    @property
+    def variance(self) -> VarianceType:
+        return self.__variance
+
+    # note: context is only passed for isolated testing; it should always be passed
+    # in the validate()/serialize() procedures
     def convert(
         self,
         obj: Any,
@@ -165,12 +182,10 @@ class Converter[T = Any]:
         recurse into items of collections. For example, a converter to MyList[T]
         would invoke conversion to type T on each item.
         """
-        if not self.can_convert(obj, target_annotation):
-            raise ValueError(
-                f"Object '{obj}' ({type(obj)}) cannot be converted using {self}"
-            )
+        # should be checked by the caller
+        assert self.can_convert(obj, target_annotation)
 
-        context_ = context or ConvertContext(self)
+        context_ = context or ConvertContext(registry=ConverterRegistry(self))
 
         try:
             if self.__func:
@@ -234,7 +249,180 @@ class Converter[T = Any]:
         return self.__source_annotation.is_type(obj)
 
 
-# TODO: take converter registry instead of tuple
+class ConverterRegistry:
+    """
+    Registry for managing type converters.
+
+    Provides efficient lookup of converters based on source object type
+    and target annotation.
+    """
+
+    __converter_map: dict[type, list[Converter]]
+    """
+    Converters grouped by concrete target type for efficiency.
+    """
+
+    __converters: list[Converter] = []
+    """
+    List of all converters for fallback/contravariant matching.
+    """
+
+    def __init__(self, *converters: Converter):
+        self.__converter_map = defaultdict(list)
+        self.__converters = []
+        self.extend(converters)
+
+    def __repr__(self) -> str:
+        return f"ConverterRegistry(converters={self.__converters})"
+
+    def __len__(self) -> int:
+        """Return the number of registered converters."""
+        return len(self.__converters)
+
+    @property
+    def converters(self) -> list[Converter]:
+        """
+        Get converters currently registered.
+        """
+        return self.__converters
+
+    def add(self, converter: Converter):
+        """
+        Add a converter to the registry.
+        """
+        target_type = converter.target_annotation.concrete_type
+        self.__converter_map[target_type].append(converter)
+        self.__converters.append(converter)
+
+    def find(self, obj: Any, target_annotation: Annotation) -> Converter | None:
+        """
+        Find the first converter that can handle the conversion.
+
+        Searches in order:
+        1. Exact target type matches
+        2. All converters (for contravariant matching)
+        """
+        target_type = target_annotation.concrete_type
+
+        # first try converters registered for the exact target type
+        if target_type in self.__converter_map:
+            for converter in self.__converter_map[target_type]:
+                if converter.can_convert(obj, target_annotation):
+                    return converter
+
+        # then try all converters (handles contravariant, generic cases)
+        for converter in self.__converters:
+            if converter not in self.__converter_map.get(target_type, []):
+                if converter.can_convert(obj, target_annotation):
+                    return converter
+
+        return None
+
+    def extend(self, converters: Sequence[Converter]):
+        """
+        Add multiple converters to the registry.
+        """
+        for converter in converters:
+            self.add(converter)
+
+    @overload
+    def register[T](self, func: ConvertFuncType[T]) -> ConvertFuncType[T]: ...
+
+    @overload
+    def register[T](
+        self, *, variance: VarianceType = "contravariant"
+    ) -> Callable[[ConvertFuncType[T]], ConvertFuncType[T]]: ...
+
+    def register[T](
+        self,
+        func: ConvertFuncType[T] | None = None,
+        *,
+        variance: VarianceType = "contravariant",
+    ) -> ConvertFuncType | Callable[[ConvertFuncType[T]], ConvertFuncType[T]]:
+        """
+        Decorator to register a conversion function.
+
+        Annotations are inferred from the function signature:
+
+        ```python
+        @registry.register
+        def str_to_int(s: str) -> int:
+            return int(s)
+        ```
+
+        Or with custom variance: (invariant means subclasses of `MyClass` will not be
+        included when matching for conversion)
+
+        ```python
+        @registry.register(variance="invariant")
+        def convert_exact(s: str) -> MyClass:
+            return MyClass(s)
+        ```
+
+        The function can have 1 or 3 parameters:
+        - 1 parameter: `func(obj) -> target`
+        - 3 parameters: `func(obj, annotation, context) -> target`
+        """
+
+        def wrapper(f: ConvertFuncType[T]) -> ConvertFuncType[T]:
+            # get type hints to handle stringized annotations from __future__ import
+            try:
+                # get_type_hints resolves forward references and stringized annotations
+                type_hints = get_type_hints(f)
+            except (NameError, AttributeError) as e:
+                raise ValueError(
+                    f"Failed to resolve type hints for {f.__name__}: {e}. "
+                    "Ensure all types are imported or defined."
+                ) from e
+
+            # get parameters
+            sig = inspect.signature(f)
+            params = list(sig.parameters.keys())
+
+            if not params:
+                raise ValueError(f"Function {f.__name__} has no parameters")
+
+            # get source annotation from first parameter
+            first_param = params[0]
+            if first_param not in type_hints:
+                raise ValueError(
+                    f"Function {f.__name__} first parameter '{first_param}' "
+                    "has no type annotation."
+                )
+            source_annotation = type_hints[first_param]
+
+            # get target annotation from return type
+            if "return" not in type_hints:
+                raise ValueError(
+                    f"Function {f.__name__} has no return type annotation."
+                )
+            target_annotation = type_hints["return"]
+
+            # validate parameter count
+            param_count = len(params)
+            if param_count not in (1, 3):
+                raise ValueError(
+                    f"Converter function {f.__name__} must have 1 or 3 parameters, "
+                    f"got {param_count}"
+                )
+
+            # create and register the converter
+            converter = Converter(
+                source_annotation, target_annotation, func=f, variance=variance
+            )
+            self.add(converter)
+
+            return f
+
+        # handle both @register and @register(...) syntax
+        if func is None:
+            # called with parameters: @register(...)
+            return wrapper
+        else:
+            # called without parameters: @register
+            return wrapper(func)
+
+
 @overload
 def validate[T](
     obj: Any,
@@ -242,6 +430,16 @@ def validate[T](
     /,
     *converters: Converter[T],
     lenient: bool = False,
+) -> T: ...
+
+
+@overload
+def validate[T](
+    obj: Any,
+    target_type: type[T],
+    /,
+    *,
+    context: ConvertContext | None = None,
 ) -> T: ...
 
 
@@ -255,12 +453,23 @@ def validate(
 ) -> Any: ...
 
 
+@overload
+def validate(
+    obj: Any,
+    target_type: Any,
+    /,
+    *,
+    context: ConvertContext | None = None,
+) -> Any: ...
+
+
 def validate(
     obj: Any,
     target_type: Any,
     /,
     *converters: Converter[Any],
     lenient: bool = False,
+    context: ConvertContext | None = None,
 ) -> Any:
     """
     Recursively validate object, converting to the target type if applicable.
@@ -268,9 +477,17 @@ def validate(
     Handles nested parameterized types like list[list[int]] by recursively
     applying validation and conversion at each level.
     """
-    annotation_info = Annotation(target_type)
-    context = ConvertContext(*converters, lenient=lenient)
-    return _dispatch_validation(obj, annotation_info, context)
+    # can only pass context or registry, not both
+    if context:
+        assert len(converters) == 0
+
+    context_ = context or ConvertContext(
+        registry=ConverterRegistry(*converters), lenient=lenient
+    )
+    target_annotation = (
+        target_type if isinstance(target_type, Annotation) else Annotation(target_type)
+    )
+    return _dispatch_validation(obj, target_annotation, context_)
 
 
 def normalize_to_list[T](
@@ -387,8 +604,8 @@ def _validate_list(
     assert issubclass(type_, list)
     assert len(annotation_info.arg_annotations) == 1
 
-    arg = annotation_info.arg_annotations[0]
-    validated_objs = [context.validate(o, arg) for o in obj]
+    item_type = annotation_info.arg_annotations[0]
+    validated_objs = [validate(o, item_type, context=context) for o in obj]
 
     if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
@@ -419,14 +636,14 @@ def _validate_tuple(
                 f"Tuple length mismatch: expected {len(annotation_info.arg_annotations)}, got {len(sized_obj)}: {sized_obj} ({annotation_info})"
             )
         validated_objs = tuple(
-            context.validate(o, arg)
-            for o, arg in zip(sized_obj, annotation_info.arg_annotations)
+            validate(o, item_type, context=context)
+            for o, item_type in zip(sized_obj, annotation_info.arg_annotations)
         )
     else:
         # homogeneous tuple like tuple[int, ...]
         assert len(annotation_info.arg_annotations) == 2
-        arg = annotation_info.arg_annotations[0]
-        validated_objs = tuple(context.validate(o, arg) for o in obj)
+        item_type = annotation_info.arg_annotations[0]
+        validated_objs = tuple(validate(o, item_type, context=context) for o in obj)
 
     if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
@@ -444,8 +661,8 @@ def _validate_set(
     assert issubclass(type_, set)
     assert len(annotation_info.arg_annotations) == 1
 
-    arg = annotation_info.arg_annotations[0]
-    validated_objs = {context.validate(o, arg) for o in obj}
+    item_type = annotation_info.arg_annotations[0]
+    validated_objs = {validate(o, item_type, context=context) for o in obj}
 
     if isinstance(obj, type_):
         obj_ids = {id(o) for o in obj}
@@ -467,7 +684,7 @@ def _validate_dict(
     key_type, value_type = annotation_info.arg_annotations
 
     validated_objs = {
-        context.validate(k, key_type): context.validate(v, value_type)
+        validate(k, key_type, context=context): validate(v, value_type, context=context)
         for k, v in obj.items()
     }
 
@@ -486,19 +703,19 @@ def _convert(obj: Any, target_annotation: Annotation, context: ConvertContext) -
     Convert object by invoking converters and built-in handling, raising `ValueError`
     if it could not be converted.
     """
-    # TODO: wrap in ConverterRegistry
-
-    # try user-provided converters
-    if converter := _find_converter(obj, target_annotation, context.converters):
+    # try user-provided converters from registry
+    converter = context.registry.find(obj, target_annotation)
+    if converter:
         return converter.convert(obj, target_annotation, context)
 
     # if lenient, keep trying
     if context.lenient:
-        # built-in converters
-        if converter := _find_converter(obj, target_annotation, BUILTIN_CONVERTERS):
+        # try built-in converters
+        converter = BUILTIN_REGISTRY.find(obj, target_annotation)
+        if converter:
             return converter.convert(obj, target_annotation, context)
 
-        # direct object construction
+        # try direct object construction
         return target_annotation.concrete_type(obj)
 
     raise ValueError(
@@ -506,21 +723,12 @@ def _convert(obj: Any, target_annotation: Annotation, context: ConvertContext) -
     )
 
 
-def _find_converter(
-    obj: Any, target_annotation: Annotation, converters: tuple[Converter, ...]
-) -> Converter | None:
-    """
-    Find the first converter that can handle the given object to target type conversion.
-    """
-    for converter in converters:
-        if converter.can_convert(obj, target_annotation):
-            return converter
-    return None
-
-
-BUILTIN_CONVERTERS = (
+BUILTIN_REGISTRY = ConverterRegistry(
     Converter(Union[VALUE_COLLECTION_TYPES], list, func=_validate_list),
     Converter(Union[VALUE_COLLECTION_TYPES], tuple, func=_validate_tuple),
     Converter(Union[VALUE_COLLECTION_TYPES], set, func=_validate_set),
     Converter(Mapping, dict, func=_validate_dict),
 )
+"""
+Registry of built-in converters.
+"""

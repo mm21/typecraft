@@ -39,7 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..converting import ConvertContext, Converter
+from ..converting import ConvertContext, Converter, validate
 from ..inspecting import Annotation, get_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
 
@@ -324,15 +324,15 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
     def _from_tomlkit_obj_with_annotation(
         cls,
         tomlkit_obj: TomlkitT,
-        annotation_info: Annotation,
+        annotation: Annotation,
         context: ConvertContext,
     ) -> Self:
-        assert len(annotation_info.arg_annotations) == 1
-        item_annotation = annotation_info.arg_annotations[0]
+        assert len(annotation.arg_annotations) == 1
+        item_type = annotation.arg_annotations[0]
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
-        validated_items = [context.validate(o, item_annotation) for o in items]
+        validated_items = [validate(o, item_type, context=context) for o in items]
 
         obj = cls(validated_items)
         return cls._finalize_obj(tomlkit_obj, obj)
