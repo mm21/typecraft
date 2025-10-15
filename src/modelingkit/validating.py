@@ -65,9 +65,9 @@ class TypedValidator[T]:
 
     __func: ValidatorFuncType[Any] | None
     """
-    Callable returning an instance of target type. Must take exactly one positional
-    argument of one of the type(s) given in `from_types`. May be the target type itself
-    if its constructor takes exactly one positional argument.
+    Callable returning an instance of target type. Must take exactly one
+    positional argument of the type given in `source_annotation`. May be the
+    target type itself if its constructor takes exactly one positional argument.
     """
 
     __variance: VarianceType
@@ -87,7 +87,7 @@ class TypedValidator[T]:
     def __init__(
         self,
         source_annotation: Any,
-        target_annotation: Any = Any,
+        target_annotation: Any,
         /,
         *,
         func: ValidatorFuncType[Any] | None = None,
@@ -97,7 +97,9 @@ class TypedValidator[T]:
     def __init__(
         self,
         source_annotation: Any,
-        target_annotation: Any = Any,
+        target_annotation: Any,
+        /,
+        *,
         func: ValidatorFuncType[Any] | None = None,
         variance: VarianceType = "contravariant",
     ):
@@ -110,12 +112,12 @@ class TypedValidator[T]:
         return f"TypedValidator(source={self.__source_annotation}, target={self.__target_annotation}, func={self.__func}), variance={self.__variance}"
 
     @property
-    def target_annotation(self) -> Annotation:
-        return self.__target_annotation
-
-    @property
     def source_annotation(self) -> Annotation:
         return self.__source_annotation
+
+    @property
+    def target_annotation(self) -> Annotation:
+        return self.__target_annotation
 
     @property
     def variance(self) -> VarianceType:
@@ -170,17 +172,11 @@ class TypedValidator[T]:
 
         return new_obj
 
-    @overload
-    def can_convert(self, obj: Any, target_annotation: Annotation, /) -> bool: ...
-
-    @overload
-    def can_convert(self, obj: Any, target_annotation: Any, /) -> bool: ...
-
-    def can_convert(self, obj: Any, target_annotation: Any, /) -> bool:
+    def can_convert(self, obj: Any, target_annotation: Any | Annotation, /) -> bool:
         """
         Check if this converter can convert the given object to the given annotation.
         """
-        target_annotation_ = (
+        target_ann = (
             target_annotation
             if isinstance(target_annotation, Annotation)
             else Annotation(target_annotation)
@@ -188,14 +184,14 @@ class TypedValidator[T]:
 
         if self.__variance == "invariant":
             # exact match only
-            if not target_annotation_ == self.__target_annotation:
+            if not target_ann == self.__target_annotation:
                 return False
         else:
             # contravariant (default): annotation must be a subclass of
             # self.__target_annotation
             # - for example, a converter configured with target BaseModel can also
             # convert UserModel
-            if not target_annotation_.is_subclass(self.__target_annotation):
+            if not target_ann.is_subclass(self.__target_annotation):
                 return False
 
         # check source

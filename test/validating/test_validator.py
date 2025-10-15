@@ -30,8 +30,8 @@ def test_any():
     obj = 1
 
     # test both function types
-    converter1 = TypedValidator(Any, func=func1)
-    converter2 = TypedValidator(Any, func=func2)
+    converter1 = TypedValidator(Any, Any, func=func1)
+    converter2 = TypedValidator(Any, Any, func=func2)
 
     assert converter1.can_convert(obj, Annotation(Any))
     conv_obj = converter1.convert(obj, Annotation(Any), ValidationContext())
