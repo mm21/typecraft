@@ -39,9 +39,9 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..converting import ConvertContext, Converter, validate
 from ..inspecting import Annotation, get_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
+from ..validating import TypedValidator, ValidationContext, validate
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -151,7 +151,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     model_config = ModelConfig(validate_on_assignment=True)
 
-    def model_get_converters(self) -> tuple[Converter[Any], ...]:
+    def model_get_converters(self) -> tuple[TypedValidator[Any], ...]:
         return CONVERTERS
 
     def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
@@ -325,7 +325,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
         cls,
         tomlkit_obj: TomlkitT,
         annotation: Annotation,
-        context: ConvertContext,
+        context: ValidationContext,
     ) -> Self:
         assert len(annotation.arg_annotations) == 1
         item_type = annotation.arg_annotations[0]
@@ -404,7 +404,7 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def convert_table(
-    obj: Any, annotation_info: Annotation, _: ConvertContext
+    obj: Any, annotation_info: Annotation, _: ValidationContext
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
@@ -412,7 +412,7 @@ def convert_table(
 
 
 def convert_array(
-    obj: Any, annotation_info: Annotation, context: ConvertContext
+    obj: Any, annotation_info: Annotation, context: ValidationContext
 ) -> ArrayWrapper | TableArrayWrapper:
     type_ = annotation_info.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
@@ -420,8 +420,8 @@ def convert_array(
 
 
 CONVERTERS = (
-    Converter(Table, BaseTableWrapper, func=convert_table),
-    Converter(InlineTable, BaseInlineTableWrapper, func=convert_table),
-    Converter(Array, ArrayWrapper, func=convert_array),
-    Converter(AoT, TableArrayWrapper, func=convert_array),
+    TypedValidator(Table, BaseTableWrapper, func=convert_table),
+    TypedValidator(InlineTable, BaseInlineTableWrapper, func=convert_table),
+    TypedValidator(Array, ArrayWrapper, func=convert_array),
+    TypedValidator(AoT, TableArrayWrapper, func=convert_array),
 )

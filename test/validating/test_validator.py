@@ -1,11 +1,15 @@
 """
-Test low-level conversion via `Converter` classes.
+Test low-level validation via `TypedValidator` instances.
 """
 
 from typing import Any
 
-from modelingkit.converting import ConvertContext, Converter, ConverterRegistry
 from modelingkit.inspecting import Annotation
+from modelingkit.validating import (
+    TypedValidator,
+    TypedValidatorRegistry,
+    ValidationContext,
+)
 
 
 def test_any():
@@ -17,7 +21,7 @@ def test_any():
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, annotation: Annotation, context: ConvertContext):
+    def func2(obj: Any, annotation: Annotation, context: ValidationContext):
         assert isinstance(obj, int)
         assert annotation.concrete_type is object
         assert len(context.registry) == 1
@@ -26,8 +30,8 @@ def test_any():
     obj = 1
 
     # test both function types
-    converter1 = Converter(Any, func=func1)
-    converter2 = Converter(Any, func=func2)
+    converter1 = TypedValidator(Any, func=func1)
+    converter2 = TypedValidator(Any, func=func2)
 
     assert converter1.can_convert(obj, Annotation(Any))
     conv_obj = converter1.convert(obj, Annotation(Any))
@@ -46,7 +50,7 @@ def test_generic():
     def func(obj: Any) -> list[str]:
         return [str(o) for o in obj]
 
-    converter = Converter(list[int], list[str], func=func)
+    converter = TypedValidator(list[int], list[str], func=func)
     obj = [123]
 
     assert converter.can_convert(obj, list[str])
@@ -63,8 +67,8 @@ def test_invariant():
     Test converter with variance="invariant".
     """
 
-    converter_contra = Converter(str, int)
-    converter_inv = Converter(str, int, variance="invariant")
+    converter_contra = TypedValidator(str, int)
+    converter_inv = TypedValidator(str, int, variance="invariant")
     obj = "123"
 
     # contravariant converter can convert to bool since it's a subclass of int
@@ -82,7 +86,7 @@ def test_registry():
     """
 
     # create a registry
-    registry = ConverterRegistry()
+    registry = TypedValidatorRegistry()
 
     @registry.register(variance="invariant")
     def str_to_int_inv(s: str) -> int:
@@ -94,7 +98,7 @@ def test_registry():
     def str_to_int(
         s: str,
         annotation: Annotation,
-        context: ConvertContext,
+        context: ValidationContext,
     ) -> int:
         """Convert string to integer, also encompassing bool."""
         return annotation.concrete_type(s)

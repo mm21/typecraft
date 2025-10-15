@@ -1,9 +1,13 @@
+"""
+Test end-to-end validation via APIs.
+"""
+
 from types import NoneType
 from typing import Annotated, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.converting import Converter, normalize_to_list, validate
+from modelingkit.validating import TypedValidator, normalize_to_list, validate
 
 
 def test_valid():
@@ -57,7 +61,7 @@ def test_invalid():
 def test_conversion():
 
     # test with and without explicit converters
-    for converters in [(Converter(str, int),), ()]:
+    for converters in [(TypedValidator(str, int),), ()]:
 
         # list[str | int] -> list[int]
         result = validate(["1", "2", 3], list[int], *converters, lenient=True)
