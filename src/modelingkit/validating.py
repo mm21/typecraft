@@ -123,7 +123,7 @@ class TypedValidator[T]:
     def variance(self) -> VarianceType:
         return self.__variance
 
-    def convert(
+    def validate(
         self,
         obj: Any,
         target_annotation: Annotation,
@@ -134,15 +134,15 @@ class TypedValidator[T]:
         Convert object or raise `ValueError`.
 
         `target_annotation` is required because some validators may inspect it
-        to recurse into items of collections. For example, a converter to
+        to recurse into items of collections. For example, a validator to
         MyList[T] would invoke conversion to type T on each item.
         """
         # should be checked by the caller
-        assert self.can_convert(obj, target_annotation)
+        assert self.can_validate(obj, target_annotation)
 
         try:
             if self.__func:
-                # provided convert function
+                # provided validation function
                 sig = inspect.signature(self.__func)
                 if len(sig.parameters) == 1:
                     # function taking object only
@@ -162,19 +162,20 @@ class TypedValidator[T]:
                 new_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
             raise ValueError(
-                f"TypedValidator {self} failed to convert {obj} ({type(obj)}): {e}"
+                f"TypedValidator {self} failed to validate {obj} ({type(obj)}): {e}"
             ) from None
 
         if not isinstance(new_obj, self.__target_annotation.concrete_type):
             raise ValueError(
-                f"TypedValidator {self} failed to convert {obj} ({type(obj)}), got {new_obj} ({type(new_obj)})"
+                f"TypedValidator {self} failed to validate {obj} ({type(obj)}), got {new_obj} ({type(new_obj)})"
             )
 
         return new_obj
 
-    def can_convert(self, obj: Any, target_annotation: Any | Annotation, /) -> bool:
+    def can_validate(self, obj: Any, target_annotation: Any | Annotation, /) -> bool:
         """
-        Check if this converter can convert the given object to the given annotation.
+        Check if this validator can convert the given object to the given
+        annotation.
         """
         target_ann = (
             target_annotation
@@ -189,8 +190,8 @@ class TypedValidator[T]:
         else:
             # contravariant (default): annotation must be a subclass of
             # self.__target_annotation
-            # - for example, a converter configured with target BaseModel can also
-            # convert UserModel
+            # - for example, a validator configured with target BaseModel can also
+            # validate UserModel
             if not target_ann.is_subclass(self.__target_annotation):
                 return False
 
@@ -208,7 +209,7 @@ class TypedValidatorRegistry:
 
     __validator_map: dict[type, list[TypedValidator]]
     """
-    Converters grouped by concrete target type for efficiency.
+    Validators grouped by concrete target type for efficiency.
     """
 
     __validators: list[TypedValidator] = []
@@ -235,17 +236,17 @@ class TypedValidatorRegistry:
         """
         return self.__validators
 
-    def add(self, converter: TypedValidator):
+    def add(self, validator: TypedValidator):
         """
-        Add a converter to the registry.
+        Add a validator to the registry.
         """
-        target_type = converter.target_annotation.concrete_type
-        self.__validator_map[target_type].append(converter)
-        self.__validators.append(converter)
+        target_type = validator.target_annotation.concrete_type
+        self.__validator_map[target_type].append(validator)
+        self.__validators.append(validator)
 
     def find(self, obj: Any, target_annotation: Annotation) -> TypedValidator | None:
         """
-        Find the first converter that can handle the conversion.
+        Find the first validator that can handle the conversion.
 
         Searches in order:
         1. Exact target type matches
@@ -255,15 +256,15 @@ class TypedValidatorRegistry:
 
         # first try validators registered for the exact target type
         if target_type in self.__validator_map:
-            for converter in self.__validator_map[target_type]:
-                if converter.can_convert(obj, target_annotation):
-                    return converter
+            for validator in self.__validator_map[target_type]:
+                if validator.can_validate(obj, target_annotation):
+                    return validator
 
         # then try all validators (handles contravariant, generic cases)
-        for converter in self.__validators:
-            if converter not in self.__validator_map.get(target_type, []):
-                if converter.can_convert(obj, target_annotation):
-                    return converter
+        for validator in self.__validators:
+            if validator not in self.__validator_map.get(target_type, []):
+                if validator.can_validate(obj, target_annotation):
+                    return validator
 
         return None
 
@@ -271,8 +272,8 @@ class TypedValidatorRegistry:
         """
         Add multiple validators to the registry.
         """
-        for converter in validators:
-            self.add(converter)
+        for validator in validators:
+            self.add(validator)
 
     @overload
     def register[T](self, func: ValidatorFuncType[T]) -> ValidatorFuncType[T]: ...
@@ -313,29 +314,29 @@ class TypedValidatorRegistry:
         - 3 parameters: `func(obj, annotation, context) -> target`
         """
 
-        def wrapper(f: ValidatorFuncType[T]) -> ValidatorFuncType[T]:
+        def wrapper(wrapped_func: ValidatorFuncType[T]) -> ValidatorFuncType[T]:
             # get type hints to handle stringized annotations from __future__ import
             try:
                 # get_type_hints resolves forward references and stringized annotations
-                type_hints = get_type_hints(f)
+                type_hints = get_type_hints(wrapped_func)
             except (NameError, AttributeError) as e:
                 raise ValueError(
-                    f"Failed to resolve type hints for {f.__name__}: {e}. "
+                    f"Failed to resolve type hints for {wrapped_func.__name__}: {e}. "
                     "Ensure all types are imported or defined."
                 ) from e
 
             # get parameters
-            sig = inspect.signature(f)
+            sig = inspect.signature(wrapped_func)
             params = list(sig.parameters.keys())
 
             if not params:
-                raise ValueError(f"Function {f.__name__} has no parameters")
+                raise ValueError(f"Function {wrapped_func.__name__} has no parameters")
 
             # get source annotation from first parameter
             first_param = params[0]
             if first_param not in type_hints:
                 raise ValueError(
-                    f"Function {f.__name__} first parameter '{first_param}' "
+                    f"Function {wrapped_func.__name__} first parameter '{first_param}' "
                     "has no type annotation."
                 )
             source_annotation = type_hints[first_param]
@@ -343,7 +344,7 @@ class TypedValidatorRegistry:
             # get target annotation from return type
             if "return" not in type_hints:
                 raise ValueError(
-                    f"Function {f.__name__} has no return type annotation."
+                    f"Function {wrapped_func.__name__} has no return type annotation."
                 )
             target_annotation = type_hints["return"]
 
@@ -351,17 +352,20 @@ class TypedValidatorRegistry:
             param_count = len(params)
             if param_count not in (1, 3):
                 raise ValueError(
-                    f"TypedValidator function {f.__name__} must have 1 or 3 parameters, "
+                    f"TypedValidator function {wrapped_func.__name__} must have 1 or 3 parameters, "
                     f"got {param_count}"
                 )
 
-            # create and register the converter
-            converter = TypedValidator(
-                source_annotation, target_annotation, func=f, variance=variance
+            # create and register the validator
+            validator = TypedValidator(
+                source_annotation,
+                target_annotation,
+                func=wrapped_func,
+                variance=variance,
             )
-            self.add(converter)
+            self.add(validator)
 
-            return f
+            return wrapped_func
 
         # handle both @register and @register(...) syntax
         if func is None:
@@ -671,20 +675,19 @@ def _convert(
     obj: Any, target_annotation: Annotation, context: ValidationContext
 ) -> Any:
     """
-    Convert object by invoking validators and built-in handling, raising `ValueError`
-    if it could not be converted.
+    Convert object by invoking validators and built-in handling, raising
+    `ValueError` if it could not be converted.
     """
     # try user-provided validators from registry
-    converter = context.registry.find(obj, target_annotation)
-    if converter:
-        return converter.convert(obj, target_annotation, context)
+    if validator := context.registry.find(obj, target_annotation):
+        return validator.validate(obj, target_annotation, context)
 
     # if lenient, keep trying
     if context.lenient:
         # try built-in validators
-        converter = BUILTIN_REGISTRY.find(obj, target_annotation)
-        if converter:
-            return converter.convert(obj, target_annotation, context)
+        validator = BUILTIN_REGISTRY.find(obj, target_annotation)
+        if validator:
+            return validator.validate(obj, target_annotation, context)
 
         # try direct object construction
         return target_annotation.concrete_type(obj)
