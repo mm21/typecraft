@@ -41,7 +41,7 @@ from tomlkit.items import (
 
 from ..inspecting import Annotation, get_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
-from ..validating import TypedValidator, ValidationContext, validate
+from ..validating import TypedValidator, ValidationContext
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -332,7 +332,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
-        validated_items = [validate(o, item_type, context=context) for o in items]
+        validated_items = [context.validate(o, item_type) for o in items]
 
         obj = cls(validated_items)
         return cls._finalize_obj(tomlkit_obj, obj)

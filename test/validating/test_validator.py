@@ -24,7 +24,7 @@ def test_any():
     def func2(obj: Any, annotation: Annotation, context: ValidationContext):
         assert isinstance(obj, int)
         assert annotation.concrete_type is object
-        assert len(context.registry) == 1
+        assert not context.lenient
         return -2 * obj
 
     obj = 1
@@ -34,11 +34,11 @@ def test_any():
     converter2 = TypedValidator(Any, func=func2)
 
     assert converter1.can_convert(obj, Annotation(Any))
-    conv_obj = converter1.convert(obj, Annotation(Any))
+    conv_obj = converter1.convert(obj, Annotation(Any), ValidationContext())
     assert conv_obj == -1
 
     assert converter2.can_convert(obj, Annotation(Any))
-    conv_obj = converter2.convert(obj, Annotation(Any))
+    conv_obj = converter2.convert(obj, Annotation(Any), ValidationContext())
     assert conv_obj == -2
 
 
@@ -58,7 +58,7 @@ def test_generic():
     assert not converter.can_convert(obj, list[Any])
     assert not converter.can_convert(obj, list)
 
-    conv_obj = converter.convert(obj, Annotation(list[str]))
+    conv_obj = converter.convert(obj, Annotation(list[str]), ValidationContext())
     assert conv_obj == ["123"]
 
 
@@ -109,9 +109,9 @@ def test_registry():
     converter = registry.find(obj, Annotation(int))
     assert converter
     assert converter.variance == "invariant"
-    assert converter.convert(obj, Annotation(int)) == 42
+    assert converter.convert(obj, Annotation(int), ValidationContext()) == 42
 
     converter = registry.find(obj, Annotation(bool))
     assert converter
     assert converter.variance == "contravariant"
-    assert converter.convert(obj, Annotation(bool)) is True
+    assert converter.convert(obj, Annotation(bool), ValidationContext()) is True

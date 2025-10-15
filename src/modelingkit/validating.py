@@ -47,49 +47,6 @@ used to propagate to nested objects (e.g. elements of custom collections).
 """
 
 
-class ValidationContext:
-    """
-    Encapsulates conversion parameters, propagated throughout the conversion process.
-    """
-
-    __registry: TypedValidatorRegistry
-    __lenient: bool = False
-
-    def __init__(
-        self,
-        *,
-        registry: TypedValidatorRegistry | None = None,
-        lenient: bool = False,
-    ):
-        self.__registry = registry or TypedValidatorRegistry()
-        self.__lenient = lenient
-
-    def __repr__(self) -> str:
-        return (
-            f"ValidationContext(registry={self.__registry}, lenient={self.__lenient})"
-        )
-
-    @property
-    def registry(self) -> TypedValidatorRegistry:
-        return self.__registry
-
-    @property
-    def lenient(self) -> bool:
-        return self.__lenient
-
-    @overload
-    def validate[T](self, obj: Any, target_type: type[T]) -> T: ...
-
-    @overload
-    def validate(self, obj: Any, target_type: Any) -> Any: ...
-
-    def validate(self, obj: Any, target_type: Any) -> Any:
-        """
-        Propagate validation for given object.
-        """
-        return _dispatch_validation(obj, target_type, self)
-
-
 class TypedValidator[T]:
     """
     Encapsulates type conversion parameters from a source annotation (which may be
@@ -164,39 +121,37 @@ class TypedValidator[T]:
     def variance(self) -> VarianceType:
         return self.__variance
 
-    # note: context is only passed for isolated testing; it should always be passed
-    # in the validate()/serialize() procedures
     def convert(
         self,
         obj: Any,
         target_annotation: Annotation,
-        context: ValidationContext | None = None,
+        context: ValidationContext,
         /,
     ) -> T:
         """
         Convert object or raise `ValueError`.
 
-        `target_annotation` is required because some converters may inspect it to
-        recurse into items of collections. For example, a converter to MyList[T]
-        would invoke conversion to type T on each item.
+        `target_annotation` is required because some validators may inspect it
+        to recurse into items of collections. For example, a converter to
+        MyList[T] would invoke conversion to type T on each item.
         """
         # should be checked by the caller
         assert self.can_convert(obj, target_annotation)
-
-        context_ = context or ValidationContext(registry=TypedValidatorRegistry(self))
 
         try:
             if self.__func:
                 # provided convert function
                 sig = inspect.signature(self.__func)
                 if len(sig.parameters) == 1:
+                    # function taking object only
                     func = cast(Callable[[Any], Any], self.__func)
                     new_obj = func(obj)
                 else:
+                    # function taking object, annotation, context
                     func = cast(
                         Callable[[Any, Annotation, ValidationContext], Any], self.__func
                     )
-                    new_obj = func(obj, target_annotation, context_)
+                    new_obj = func(obj, target_annotation, context)
             else:
                 # direct object construction
                 concrete_type = cast(
@@ -249,48 +204,48 @@ class TypedValidator[T]:
 
 class TypedValidatorRegistry:
     """
-    Registry for managing type converters.
+    Registry for managing type validators.
 
-    Provides efficient lookup of converters based on source object type
+    Provides efficient lookup of validators based on source object type
     and target annotation.
     """
 
-    __converter_map: dict[type, list[TypedValidator]]
+    __validator_map: dict[type, list[TypedValidator]]
     """
     Converters grouped by concrete target type for efficiency.
     """
 
-    __converters: list[TypedValidator] = []
+    __validators: list[TypedValidator] = []
     """
-    List of all converters for fallback/contravariant matching.
+    List of all validators for fallback/contravariant matching.
     """
 
-    def __init__(self, *converters: TypedValidator):
-        self.__converter_map = defaultdict(list)
-        self.__converters = []
-        self.extend(converters)
+    def __init__(self, *validators: TypedValidator):
+        self.__validator_map = defaultdict(list)
+        self.__validators = []
+        self.extend(validators)
 
     def __repr__(self) -> str:
-        return f"TypedValidatorRegistry(converters={self.__converters})"
+        return f"TypedValidatorRegistry(validators={self.__validators})"
 
     def __len__(self) -> int:
-        """Return the number of registered converters."""
-        return len(self.__converters)
+        """Return the number of registered validators."""
+        return len(self.__validators)
 
     @property
-    def converters(self) -> list[TypedValidator]:
+    def validators(self) -> list[TypedValidator]:
         """
-        Get converters currently registered.
+        Get validators currently registered.
         """
-        return self.__converters
+        return self.__validators
 
     def add(self, converter: TypedValidator):
         """
         Add a converter to the registry.
         """
         target_type = converter.target_annotation.concrete_type
-        self.__converter_map[target_type].append(converter)
-        self.__converters.append(converter)
+        self.__validator_map[target_type].append(converter)
+        self.__validators.append(converter)
 
     def find(self, obj: Any, target_annotation: Annotation) -> TypedValidator | None:
         """
@@ -298,29 +253,29 @@ class TypedValidatorRegistry:
 
         Searches in order:
         1. Exact target type matches
-        2. All converters (for contravariant matching)
+        2. All validators (for contravariant matching)
         """
         target_type = target_annotation.concrete_type
 
-        # first try converters registered for the exact target type
-        if target_type in self.__converter_map:
-            for converter in self.__converter_map[target_type]:
+        # first try validators registered for the exact target type
+        if target_type in self.__validator_map:
+            for converter in self.__validator_map[target_type]:
                 if converter.can_convert(obj, target_annotation):
                     return converter
 
-        # then try all converters (handles contravariant, generic cases)
-        for converter in self.__converters:
-            if converter not in self.__converter_map.get(target_type, []):
+        # then try all validators (handles contravariant, generic cases)
+        for converter in self.__validators:
+            if converter not in self.__validator_map.get(target_type, []):
                 if converter.can_convert(obj, target_annotation):
                     return converter
 
         return None
 
-    def extend(self, converters: Sequence[TypedValidator]):
+    def extend(self, validators: Sequence[TypedValidator]):
         """
-        Add multiple converters to the registry.
+        Add multiple validators to the registry.
         """
-        for converter in converters:
+        for converter in validators:
             self.add(converter)
 
     @overload
@@ -421,14 +376,52 @@ class TypedValidatorRegistry:
             return wrapper(func)
 
 
-@overload
-def validate[T](
-    obj: Any,
-    target_type: type[T],
-    /,
-    *converters: TypedValidator[T],
-    lenient: bool = False,
-) -> T: ...
+class ValidationContext:
+    """
+    Encapsulates conversion parameters, propagated throughout the conversion process.
+    """
+
+    __registry: TypedValidatorRegistry
+    __lenient: bool = False
+
+    def __init__(
+        self,
+        *,
+        registry: TypedValidatorRegistry | None = None,
+        lenient: bool = False,
+    ):
+        self.__registry = registry or TypedValidatorRegistry()
+        self.__lenient = lenient
+
+    def __repr__(self) -> str:
+        return (
+            f"ValidationContext(registry={self.__registry}, lenient={self.__lenient})"
+        )
+
+    @property
+    def registry(self) -> TypedValidatorRegistry:
+        return self.__registry
+
+    @property
+    def lenient(self) -> bool:
+        return self.__lenient
+
+    @overload
+    def validate[T](self, obj: Any, target_type: type[T], /) -> T: ...
+
+    @overload
+    def validate(self, obj: Any, target_type: Any | Annotation, /) -> Any: ...
+
+    def validate(self, obj: Any, target_type: Any | Annotation, /) -> Any:
+        """
+        Validate object using registered typed validators.
+        """
+        target_ann = (
+            target_type
+            if isinstance(target_type, Annotation)
+            else Annotation(target_type)
+        )
+        return _dispatch_validation(obj, target_ann, self)
 
 
 @overload
@@ -436,8 +429,8 @@ def validate[T](
     obj: Any,
     target_type: type[T],
     /,
-    *,
-    context: ValidationContext | None = None,
+    *validators: TypedValidator[T],
+    lenient: bool = False,
 ) -> T: ...
 
 
@@ -446,18 +439,8 @@ def validate(
     obj: Any,
     target_type: Any,
     /,
-    *converters: TypedValidator[Any],
+    *validators: TypedValidator[Any],
     lenient: bool = False,
-) -> Any: ...
-
-
-@overload
-def validate(
-    obj: Any,
-    target_type: Any,
-    /,
-    *,
-    context: ValidationContext | None = None,
 ) -> Any: ...
 
 
@@ -465,9 +448,8 @@ def validate(
     obj: Any,
     target_type: Any,
     /,
-    *converters: TypedValidator[Any],
+    *validators: TypedValidator[Any],
     lenient: bool = False,
-    context: ValidationContext | None = None,
 ) -> Any:
     """
     Recursively validate object, converting to the target type if applicable.
@@ -475,24 +457,17 @@ def validate(
     Handles nested parameterized types like list[list[int]] by recursively
     applying validation and conversion at each level.
     """
-    # can only pass context or registry, not both
-    if context:
-        assert len(converters) == 0
-
-    context_ = context or ValidationContext(
-        registry=TypedValidatorRegistry(*converters), lenient=lenient
+    context = ValidationContext(
+        registry=TypedValidatorRegistry(*validators), lenient=lenient
     )
-    target_annotation = (
-        target_type if isinstance(target_type, Annotation) else Annotation(target_type)
-    )
-    return _dispatch_validation(obj, target_annotation, context_)
+    return context.validate(obj, target_type)
 
 
 def normalize_to_list[T](
     obj_or_objs: Any,
     target_type: type[T],
     /,
-    *converters: TypedValidator[T],
+    *validators: TypedValidator[T],
     lenient: bool = False,
 ) -> list[T]:
     """
@@ -508,63 +483,63 @@ def normalize_to_list[T](
         objs = [obj_or_objs]
 
     # validate each object and place in a new list
-    return [validate(o, target_type, *converters, lenient=lenient) for o in objs]
+    return [validate(o, target_type, *validators, lenient=lenient) for o in objs]
 
 
 def _dispatch_validation(
     obj: Any,
-    annotation_info: Annotation,
+    annotation: Annotation,
     context: ValidationContext,
 ) -> Any:
 
     # handle union type
-    if annotation_info.is_union:
-        return _validate_union(obj, annotation_info, context)
+    if annotation.is_union:
+        return _validate_union(obj, annotation, context)
 
     # if object does not satisfy annotation, attempt conversion
-    # - converters (custom and lenient conversions) are assumed to always recurse if
+    # - validators (custom and lenient conversions) are assumed to always recurse if
     # applicable
-    if not _check_valid(obj, annotation_info):
-        return _convert(obj, annotation_info, context)
+    if not _check_valid(obj, annotation):
+        return _convert(obj, annotation, context)
 
     # if type is a builtin collection, recurse
-    if issubclass(annotation_info.concrete_type, (list, tuple, set, dict)):
+    if issubclass(annotation.concrete_type, (list, tuple, set, dict)):
         assert isinstance(obj, COLLECTION_TYPES)
-        return _validate_collection(obj, annotation_info, context)
+        return _validate_collection(obj, annotation, context)
 
     # have the expected type and it's not a collection
     return obj
 
 
 def _validate_union(
-    obj: Any, annotation_info: Annotation, context: ValidationContext
+    obj: Any, annotation: Annotation, context: ValidationContext
 ) -> Any:
     """
     Validate constituent types of union.
     """
-    for arg in annotation_info.arg_annotations:
+    for arg in annotation.arg_annotations:
         try:
             return _dispatch_validation(obj, arg, context)
         except (ValueError, TypeError):
             continue
     raise ValueError(
-        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {annotation_info}"
+        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {annotation}"
     )
 
 
-def _check_valid(obj: Any, annotation_info: Annotation) -> bool:
+def _check_valid(obj: Any, annotation: Annotation) -> bool:
     """
     Check if object satisfies the annotation.
     """
-    if annotation_info.is_literal:
-        return obj in annotation_info.args
+    if annotation.is_literal:
+        return obj in annotation.args
     else:
-        return isinstance(obj, annotation_info.concrete_type)
+        return isinstance(obj, annotation.concrete_type)
 
 
 def _validate_collection(
     obj: CollectionType,
-    annotation_info: Annotation,
+    annotation: Annotation,
     context: ValidationContext,
 ) -> Any:
     """
@@ -572,38 +547,38 @@ def _validate_collection(
     """
 
     assert len(
-        annotation_info.arg_annotations
-    ), f"Collection has no type parameter: {obj} ({annotation_info})"
+        annotation.arg_annotations
+    ), f"Collection has no type parameter: {obj} ({annotation})"
 
-    type_ = annotation_info.concrete_type
+    type_ = annotation.concrete_type
 
     # handle conversion from mappings
     if issubclass(type_, dict):
         assert isinstance(obj, Mapping)
-        return _validate_dict(obj, annotation_info, context)
+        return _validate_dict(obj, annotation, context)
 
     # handle conversion from value collections
     assert not isinstance(obj, Mapping)
     if issubclass(type_, list):
-        return _validate_list(obj, annotation_info, context)
+        return _validate_list(obj, annotation, context)
     elif issubclass(type_, tuple):
-        return _validate_tuple(obj, annotation_info, context)
+        return _validate_tuple(obj, annotation, context)
     else:
         assert issubclass(type_, set)
-        return _validate_set(obj, annotation_info, context)
+        return _validate_set(obj, annotation, context)
 
 
 def _validate_list(
     obj: ValueCollectionType,
-    annotation_info: Annotation,
+    annotation: Annotation,
     context: ValidationContext,
 ) -> list[Any]:
-    type_ = annotation_info.concrete_type
+    type_ = annotation.concrete_type
     assert issubclass(type_, list)
-    assert len(annotation_info.arg_annotations) == 1
+    assert len(annotation.arg_annotations) == 1
 
-    item_type = annotation_info.arg_annotations[0]
-    validated_objs = [validate(o, item_type, context=context) for o in obj]
+    item_ann = annotation.arg_annotations[0]
+    validated_objs = [context.validate(o, item_ann) for o in obj]
 
     if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
         return obj
@@ -614,36 +589,36 @@ def _validate_list(
 
 def _validate_tuple(
     obj: ValueCollectionType,
-    annotation_info: Annotation,
+    ann: Annotation,
     context: ValidationContext,
 ) -> tuple[Any]:
-    type_ = annotation_info.concrete_type
+    type_ = ann.concrete_type
     assert issubclass(type_, tuple)
 
-    if annotation_info.arg_annotations[-1].annotation is not ...:
+    if ann.arg_annotations[-1].annotation is not ...:
         # fixed-length tuple like tuple[int, str, float]
         assert not isinstance(
             obj, set
-        ), f"Can't convert from set to fixed-length tuple as items would be in random order: {obj} ({annotation_info})"
+        ), f"Can't convert from set to fixed-length tuple as items would be in random order: {obj} ({ann})"
 
         # ensure object is sized
         sized_obj = list(obj) if isinstance(obj, (range, Generator)) else obj
 
-        if len(sized_obj) != len(annotation_info.arg_annotations):
+        if len(sized_obj) != len(ann.arg_annotations):
             raise ValueError(
-                f"Tuple length mismatch: expected {len(annotation_info.arg_annotations)}, got {len(sized_obj)}: {sized_obj} ({annotation_info})"
+                f"Tuple length mismatch: expected {len(ann.arg_annotations)}, got {len(sized_obj)}: {sized_obj} ({ann})"
             )
         validated_objs = tuple(
-            validate(o, item_type, context=context)
-            for o, item_type in zip(sized_obj, annotation_info.arg_annotations)
+            context.validate(o, item_ann)
+            for o, item_ann in zip(sized_obj, ann.arg_annotations)
         )
     else:
         # homogeneous tuple like tuple[int, ...]
-        assert len(annotation_info.arg_annotations) == 2
-        item_type = annotation_info.arg_annotations[0]
-        validated_objs = tuple(validate(o, item_type, context=context) for o in obj)
+        assert len(ann.arg_annotations) == 2
+        item_ann = ann.arg_annotations[0]
+        validated_objs = tuple(context.validate(o, item_ann) for o in obj)
 
-    if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
+    if isinstance(obj, type_) and all(o is v for o, v in zip(obj, validated_objs)):
         return obj
     elif type_ is tuple:
         return validated_objs
@@ -652,19 +627,19 @@ def _validate_tuple(
 
 def _validate_set(
     obj: ValueCollectionType,
-    annotation_info: Annotation,
+    annotation: Annotation,
     context: ValidationContext,
 ) -> set[Any]:
-    type_ = annotation_info.concrete_type
+    type_ = annotation.concrete_type
     assert issubclass(type_, set)
-    assert len(annotation_info.arg_annotations) == 1
+    assert len(annotation.arg_annotations) == 1
 
-    item_type = annotation_info.arg_annotations[0]
-    validated_objs = {validate(o, item_type, context=context) for o in obj}
+    item_ann = annotation.arg_annotations[0]
+    validated_objs = {context.validate(o, item_ann) for o in obj}
 
     if isinstance(obj, type_):
         obj_ids = {id(o) for o in obj}
-        if all(id(n) in obj_ids for n in validated_objs):
+        if all(id(o) in obj_ids for o in validated_objs):
             return obj
     if type_ is set:
         return validated_objs
@@ -673,16 +648,16 @@ def _validate_set(
 
 def _validate_dict(
     obj: Mapping,
-    annotation_info: Annotation,
+    annotation: Annotation,
     context: ValidationContext,
 ) -> dict:
-    type_ = annotation_info.concrete_type
+    type_ = annotation.concrete_type
     assert issubclass(type_, dict)
-    assert len(annotation_info.arg_annotations) == 2
-    key_type, value_type = annotation_info.arg_annotations
+    assert len(annotation.arg_annotations) == 2
+    key_ann, value_ann = annotation.arg_annotations
 
     validated_objs = {
-        validate(k, key_type, context=context): validate(v, value_type, context=context)
+        context.validate(k, key_ann): context.validate(v, value_ann)
         for k, v in obj.items()
     }
 
@@ -700,17 +675,17 @@ def _convert(
     obj: Any, target_annotation: Annotation, context: ValidationContext
 ) -> Any:
     """
-    Convert object by invoking converters and built-in handling, raising `ValueError`
+    Convert object by invoking validators and built-in handling, raising `ValueError`
     if it could not be converted.
     """
-    # try user-provided converters from registry
+    # try user-provided validators from registry
     converter = context.registry.find(obj, target_annotation)
     if converter:
         return converter.convert(obj, target_annotation, context)
 
     # if lenient, keep trying
     if context.lenient:
-        # try built-in converters
+        # try built-in validators
         converter = BUILTIN_REGISTRY.find(obj, target_annotation)
         if converter:
             return converter.convert(obj, target_annotation, context)
@@ -730,5 +705,5 @@ BUILTIN_REGISTRY = TypedValidatorRegistry(
     TypedValidator(Mapping, dict, func=_validate_dict),
 )
 """
-Registry of built-in converters.
+Registry of built-in validators.
 """
