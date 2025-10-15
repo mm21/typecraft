@@ -437,7 +437,7 @@ def validate[T](
 @overload
 def validate(
     obj: Any,
-    target_type: Any,
+    target_type: Any | Annotation,
     /,
     *validators: TypedValidator[Any],
     lenient: bool = False,
@@ -446,7 +446,7 @@ def validate(
 
 def validate(
     obj: Any,
-    target_type: Any,
+    target_type: Any | Annotation,
     /,
     *validators: TypedValidator[Any],
     lenient: bool = False,
