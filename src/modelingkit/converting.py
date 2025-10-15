@@ -1,5 +1,5 @@
 """
-Utilities to recursively convert and validate objects.
+Basic definitions for converting.
 """
 
 from __future__ import annotations
