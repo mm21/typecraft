@@ -304,6 +304,57 @@ def test_callable_is_subclass():
     assert a4.is_subclass(a1)
 
 
+def test_callable_type_is_subclass():
+    """
+    Test that callable types (int, str, etc.) are recognized as callables.
+    """
+    # int is like Callable[..., int]
+    a1 = Annotation(int)
+    a2 = Annotation(Callable[[Any], int])
+    assert a1.is_subclass(a2)
+
+    # int is also a subclass of Callable[..., int]
+    a2 = Annotation(Callable[..., int])
+    assert a1.is_subclass(a2)
+
+    # int is a subclass of Callable[[str], int] (broader params)
+    a2 = Annotation(Callable[[str], int])
+    assert a1.is_subclass(a2)
+
+    # int is NOT a subclass of Callable[[Any], bool] (wrong return type)
+    a2 = Annotation(Callable[[Any], bool])
+    assert not a1.is_subclass(a2)
+
+    # int is NOT a subclass of Callable[[Any], str] (wrong return type)
+    a2 = Annotation(Callable[[Any], str])
+    assert not a1.is_subclass(a2)
+
+    # str is like Callable[..., str]
+    a1 = Annotation(str)
+    a2 = Annotation(Callable[[Any], str])
+    assert a1.is_subclass(a2)
+
+    # list is like Callable[..., list]
+    a1 = Annotation(list)
+    a2 = Annotation(Callable[[Any], list])
+    assert a1.is_subclass(a2)
+
+    # more complex: int with union in Callable
+    a1 = Annotation(int)
+    a2 = Annotation(Callable[[int | str], int])
+    assert a1.is_subclass(a2)
+
+    # test with multiple parameters
+    a1 = Annotation(int)
+    a2 = Annotation(Callable[[Any, Any], int])
+    assert a1.is_subclass(a2)  # int accepts any number of args
+
+    # but Callable[[Any], int] is NOT a subclass of int (type)
+    a1 = Annotation(Callable[[Any], int])
+    a2 = Annotation(int)
+    assert not a1.is_subclass(a2)
+
+
 def test_callable_is_instance():
     """
     Test is_type for callables.
@@ -355,54 +406,3 @@ def test_callable_is_instance():
     assert a.is_type(int)
     assert a.is_type(str)
     assert a.is_type(list)
-
-
-def test_callable_type_as_callable():
-    """
-    Test that callable types (int, str, etc.) are recognized as callables.
-    """
-    # int is like Callable[..., int]
-    a1 = Annotation(int)
-    a2 = Annotation(Callable[[Any], int])
-    assert a1.is_subclass(a2)
-
-    # int is also a subclass of Callable[..., int]
-    a2 = Annotation(Callable[..., int])
-    assert a1.is_subclass(a2)
-
-    # int is a subclass of Callable[[str], int] (broader params)
-    a2 = Annotation(Callable[[str], int])
-    assert a1.is_subclass(a2)
-
-    # int is NOT a subclass of Callable[[Any], bool] (wrong return type)
-    a2 = Annotation(Callable[[Any], bool])
-    assert not a1.is_subclass(a2)
-
-    # int is NOT a subclass of Callable[[Any], str] (wrong return type)
-    a2 = Annotation(Callable[[Any], str])
-    assert not a1.is_subclass(a2)
-
-    # str is like Callable[..., str]
-    a1 = Annotation(str)
-    a2 = Annotation(Callable[[Any], str])
-    assert a1.is_subclass(a2)
-
-    # list is like Callable[..., list]
-    a1 = Annotation(list)
-    a2 = Annotation(Callable[[Any], list])
-    assert a1.is_subclass(a2)
-
-    # more complex: int with union in Callable
-    a1 = Annotation(int)
-    a2 = Annotation(Callable[[int | str], int])
-    assert a1.is_subclass(a2)
-
-    # test with multiple parameters
-    a1 = Annotation(int)
-    a2 = Annotation(Callable[[Any, Any], int])
-    assert a1.is_subclass(a2)  # int accepts any number of args
-
-    # but Callable[[Any], int] is NOT a subclass of int (type)
-    a1 = Annotation(Callable[[Any], int])
-    a2 = Annotation(int)
-    assert not a1.is_subclass(a2)
