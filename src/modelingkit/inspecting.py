@@ -182,7 +182,7 @@ class Annotation:
         if self.is_callable or other_.is_callable:
             if not self.is_callable and other_.is_callable:
                 # callable type (e.g., int, str) being compared to Callable
-                return self._is_subclass_as_callable(other_)
+                return self._is_subclass_callable_type(other_)
             return self._is_subclass_callable(other_)
 
         # check concrete type
@@ -241,22 +241,32 @@ class Annotation:
 
         return self.return_annotation.is_subclass(other.return_annotation)
 
-    def _is_subclass_as_callable(self, other: Annotation) -> bool:
+    def _is_subclass_callable_type(self, other: Annotation) -> bool:
         """
-        Check if this callable type (e.g., int, str) is a subclass of a Callable
-        annotation. Treats self as Callable[..., self.concrete_type] (accepts any
-        parameters, returns self's type).
+        Check if this type annotation (e.g., type[int], type[str]) is a subclass of a
+        Callable annotation. Treats self as Callable[..., X] where X is the type
+        parameter (accepts any parameters, returns instances of X).
+
+        Note: The annotation `int` represents instances of int (not callable).
+        The annotation `type[int]` represents the type itself (callable).
         """
-        if not callable(self.concrete_type):
+        # only type[X] annotations represent callable types
+        if self.origin is not type:
             return False
 
         assert not self.is_callable and other.is_callable
         assert other.return_annotation is not None
 
-        # we're effectively Callable[..., self.concrete_type]
-        # - with ... parameters, we accept any parameters, so contravariance always
-        # satisfied
-        return Annotation(self.concrete_type).is_subclass(other.return_annotation)
+        # we're effectively Callable[..., X] where X is our type parameter
+        # - get the type parameter (e.g., int from type[int])
+        if len(self.arg_annotations) == 0:
+            # just bare `type`, which is Callable[..., object]
+            return_ann = Annotation(object)
+        else:
+            return_ann = self.arg_annotations[0]
+
+        # With ... parameters, we accept any parameters, so contravariance always satisfied
+        return return_ann.is_subclass(other.return_annotation)
 
     def is_type(self, obj: Any) -> bool:
         """
