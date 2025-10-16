@@ -4,6 +4,8 @@ Utilities to inspect annotations.
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Callable as CallableABC
 from types import EllipsisType, NoneType, UnionType
 from typing import (
     Annotated,
@@ -63,7 +65,18 @@ class Annotation:
     arg_annotations: tuple[Annotation, ...]
     """
     Annotation info for generic type parameters, only applicable if annotation is not
-    `Literal[]`.
+    `Literal[]` or `Callable[]`.
+    """
+
+    param_annotations: tuple[Annotation, ...] | None = None
+    """
+    For callable types, annotations for the parameters.
+    `None` if Callable[..., ReturnType].
+    """
+
+    return_annotation: Annotation | None = None
+    """
+    For callable types, annotation for the return type.
     """
 
     concrete_type: type
@@ -86,9 +99,19 @@ class Annotation:
         self.extras = extras
         self.origin = get_origin(annotation_)
         self.args = get_args(annotation_)
+
+        # handle callable-specific attributes
+        if self.origin is CallableABC and self.args:
+            # args is like ([int, str], bool) or (..., bool)
+            assert len(self.args) == 2
+            params, return_type = self.args
+            if params is not ...:
+                self.param_annotations = tuple(Annotation(p) for p in params)
+            self.return_annotation = Annotation(return_type)
+
         self.arg_annotations = (
             tuple(Annotation(a) for a in self.args)
-            if self.origin is not Literal
+            if self.origin not in (Literal, CallableABC)
             else ()
         )
         self.concrete_type = get_concrete_type(annotation_)
@@ -115,6 +138,10 @@ class Annotation:
     def is_literal(self) -> bool:
         return self.origin is Literal
 
+    @property
+    def is_callable(self) -> bool:
+        return self.origin is CallableABC
+
     @overload
     def is_subclass(self, other: Annotation, /) -> bool: ...
 
@@ -131,6 +158,7 @@ class Annotation:
         - `Annotation(int).is_subclass(Annotation(Any))` returns `True`
         - `Annotation(list[int]).is_subclass(list[Any])` returns `True`
         - `Annotation(list[int]).is_subclass(list[str])` returns `False`
+        - `Annotation(int).is_subclass(Callable[[Any], int])` returns `True`
         """
         other_ = other if isinstance(other, Annotation) else Annotation(other)
 
@@ -149,6 +177,13 @@ class Annotation:
         # handle literal for other: non-literal can never be a "subclass" of literal
         if other_.is_literal:
             return False
+
+        # handle callables
+        if self.is_callable or other_.is_callable:
+            if not self.is_callable and other_.is_callable:
+                # callable type (e.g., int, str) being compared to Callable
+                return self._is_subclass_as_callable(other_)
+            return self._is_subclass_callable(other_)
 
         # check concrete type
         if not issubclass(self.concrete_type, other_.concrete_type):
@@ -174,6 +209,55 @@ class Annotation:
 
         return True
 
+    def _is_subclass_callable(self, other: Annotation) -> bool:
+        """
+        Check if this callable is a subclass of another callable.
+
+        Callables are contravariant in parameters and covariant in return type.
+        """
+        if not (self.is_callable and other.is_callable):
+            return False
+        assert self.return_annotation and other.return_annotation
+
+        # handle ... parameters (any parameters acceptable)
+        if other.param_annotations is None:
+            # other accepts any params, check return type only
+            return self.return_annotation.is_subclass(other.return_annotation)
+
+        if self.param_annotations is None:
+            # we accept any params, but other doesn't - not a subclass
+            return False
+
+        # both have specific parameters
+        if len(self.param_annotations) != len(other.param_annotations):
+            return False
+
+        # check parameters (contravariant - reversed)
+        for my_param, other_param in zip(
+            self.param_annotations, other.param_annotations
+        ):
+            if not other_param.is_subclass(my_param):
+                return False
+
+        return self.return_annotation.is_subclass(other.return_annotation)
+
+    def _is_subclass_as_callable(self, other: Annotation) -> bool:
+        """
+        Check if this callable type (e.g., int, str) is a subclass of a Callable
+        annotation. Treats self as Callable[..., self.concrete_type] (accepts any
+        parameters, returns self's type).
+        """
+        if not callable(self.concrete_type):
+            return False
+
+        assert not self.is_callable and other.is_callable
+        assert other.return_annotation is not None
+
+        # we're effectively Callable[..., self.concrete_type]
+        # - with ... parameters, we accept any parameters, so contravariance always
+        # satisfied
+        return Annotation(self.concrete_type).is_subclass(other.return_annotation)
+
     def is_type(self, obj: Any) -> bool:
         """
         Check if object is an instance of this annotation; loosely equivalent to
@@ -191,6 +275,9 @@ class Annotation:
         if self.is_union:
             return any(a.is_type(obj) for a in self.arg_annotations)
 
+        if self.is_callable:
+            return self._check_callable(obj)
+
         if not isinstance(obj, self.concrete_type):
             return False
 
@@ -199,6 +286,36 @@ class Annotation:
 
         # concrete type matches and is not a collection
         return True
+
+    def _check_callable(self, obj: Any) -> bool:
+        """
+        Check if object matches this callable annotation.
+        """
+        if not callable(obj):
+            return False
+
+        # If Callable[..., ReturnType], just check it's callable
+        if self.param_annotations is None:
+            return True
+
+        # Try to validate parameter count
+        try:
+            sig = inspect.signature(obj)
+            # Count positional and positional-or-keyword parameters
+            param_count = sum(
+                1
+                for p in sig.parameters.values()
+                if p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+            )
+
+            return param_count == len(self.param_annotations)
+        except (ValueError, TypeError):
+            # Can't get signature (e.g., built-in functions), assume it's fine
+            return True
 
     def _check_collection(self, obj: Any) -> bool:
         """
