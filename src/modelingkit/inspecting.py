@@ -41,7 +41,7 @@ class Annotation:
     Unwraps `TypeAlias` and `Annotated` if applicable.
     """
 
-    annotation: Any
+    raw: Any
     """
     Original annotation after stripping `Annotated[]` if applicable. May be a generic
     type.
@@ -92,13 +92,13 @@ class Annotation:
     """
 
     def __init__(self, annotation: Any, /):
-        annotation_, extras = split_annotated(unwrap_alias(annotation))
-        annotation_ = unwrap_alias(annotation_)
+        raw, extras = split_annotated(unwrap_alias(annotation))
+        raw = unwrap_alias(raw)
 
-        self.annotation = annotation_
+        self.raw = raw
         self.extras = extras
-        self.origin = get_origin(annotation_)
-        self.args = get_args(annotation_)
+        self.origin = get_origin(raw)
+        self.args = get_args(raw)
 
         # handle callable-specific attributes
         if self.origin is CallableABC and self.args:
@@ -114,16 +114,15 @@ class Annotation:
             if self.origin not in (Literal, CallableABC)
             else ()
         )
-        self.concrete_type = get_concrete_type(annotation_)
+        self.concrete_type = get_concrete_type(raw)
 
     def __repr__(self) -> str:
-        annotation = f"{self.annotation}"
+        raw = f"{self.raw}"
         extras = f"extras={self.extras}"
         origin = f"origin={self.origin}"
         args = f"args={self.args}"
         concrete_type = f"concrete_type={self.concrete_type}"
-        desc = ", ".join((annotation, extras, origin, args, concrete_type))
-        return f"Annotation({desc})"
+        return f"Annotation({", ".join((raw, extras, origin, args, concrete_type))})"
 
     def __eq__(self, other: Any, /) -> bool:
         if not isinstance(other, Annotation):
@@ -160,37 +159,37 @@ class Annotation:
         - `Annotation(list[int]).is_subclass(list[str])` returns `False`
         - `Annotation(int).is_subclass(Callable[[Any], int])` returns `True`
         """
-        other_ = other if isinstance(other, Annotation) else Annotation(other)
+        other_ann = other if isinstance(other, Annotation) else Annotation(other)
 
         # handle union for self
         if self.is_union:
-            return all(a.is_subclass(other_) for a in self.arg_annotations)
+            return all(a.is_subclass(other_ann) for a in self.arg_annotations)
 
         # handle union for other
-        if other_.is_union:
-            return any(self.is_subclass(a) for a in other_.arg_annotations)
+        if other_ann.is_union:
+            return any(self.is_subclass(a) for a in other_ann.arg_annotations)
 
         # handle literal for self
         if self.is_literal:
-            return all(other_.is_type(value) for value in self.args)
+            return all(other_ann.is_type(value) for value in self.args)
 
         # handle literal for other: non-literal can never be a "subclass" of literal
-        if other_.is_literal:
+        if other_ann.is_literal:
             return False
 
         # handle callables
-        if self.is_callable or other_.is_callable:
-            if not self.is_callable and other_.is_callable:
+        if self.is_callable or other_ann.is_callable:
+            if not self.is_callable and other_ann.is_callable:
                 # callable type (e.g., int, str) being compared to Callable
-                return self._is_subclass_callable_type(other_)
-            return self._is_subclass_callable(other_)
+                return self._is_subclass_callable_type(other_ann)
+            return self._is_subclass_callable(other_ann)
 
         # check concrete type
-        if not issubclass(self.concrete_type, other_.concrete_type):
+        if not issubclass(self.concrete_type, other_ann.concrete_type):
             return False
 
         # concrete type matches, check args
-        other_args = other_.arg_annotations
+        other_args = other_ann.arg_annotations
 
         # pad missing args in self, assumed to be Any
         # - no need to pad if other has more args; my args will always be a
@@ -343,41 +342,32 @@ class Annotation:
 
     def _check_list_or_set(self, obj: list[Any] | set[Any]) -> bool:
         assert len(self.arg_annotations) in {0, 1}
-        annotation = (
-            self.arg_annotations[0]
-            if len(self.arg_annotations) == 1
-            else ANY_ANNOTATION
-        )
+        ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY_ANNOTATION
 
-        return all(annotation.is_type(o) for o in obj)
+        return all(ann.is_type(o) for o in obj)
 
     def _check_tuple(self, obj: tuple[Any]) -> bool:
-        if len(self.arg_annotations) and self.arg_annotations[-1].annotation is not ...:
+        if len(self.arg_annotations) and self.arg_annotations[-1].raw is not ...:
             # fixed-length tuple like tuple[int, str, float]
             return all(a.is_type(o) for a, o in zip(self.arg_annotations, obj))
         else:
             # homogeneous tuple like tuple[int, ...]
             assert len(self.arg_annotations) in {0, 2}
-            annotation = (
-                self.arg_annotations[0]
-                if len(self.arg_annotations) == 2
-                else ANY_ANNOTATION
+            ann = (
+                self.arg_annotations[0] if len(self.arg_annotations) else ANY_ANNOTATION
             )
 
-            return all(annotation.is_type(o) for o in obj)
+            return all(ann.is_type(o) for o in obj)
 
     def _check_dict(self, obj: dict[Any, Any]) -> bool:
         assert len(self.arg_annotations) in {0, 2}
-        key_annotation, value_annotation = (
+        key_ann, value_ann = (
             self.arg_annotations
             if len(self.arg_annotations) == 2
             else (ANY_ANNOTATION, ANY_ANNOTATION)
         )
 
-        return all(
-            key_annotation.is_type(k) and value_annotation.is_type(v)
-            for k, v in obj.items()
-        )
+        return all(key_ann.is_type(k) and value_ann.is_type(v) for k, v in obj.items())
 
 
 @overload
@@ -403,10 +393,8 @@ def is_subclass(annotation: Any, other: Any) -> bool:
     Accommodates generic types and fully resolves type aliases, unions, and
     `Annotated`.
     """
-    annotation_ = (
-        annotation if isinstance(annotation, Annotation) else Annotation(annotation)
-    )
-    return annotation_.is_subclass(other)
+    ann = annotation if isinstance(annotation, Annotation) else Annotation(annotation)
+    return ann.is_subclass(other)
 
 
 @overload
@@ -424,10 +412,8 @@ def is_instance(obj: Any, annotation: Any) -> bool:
     Accommodates generic types and fully resolves type aliases, unions, and
     `Annotated`.
     """
-    annotation_ = (
-        annotation if isinstance(annotation, Annotation) else Annotation(annotation)
-    )
-    return annotation_.is_type(obj)
+    ann = annotation if isinstance(annotation, Annotation) else Annotation(annotation)
+    return ann.is_type(obj)
 
 
 def unwrap_alias(annotation: Any, /) -> Any:

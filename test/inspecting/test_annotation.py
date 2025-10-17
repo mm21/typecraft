@@ -215,17 +215,17 @@ def test_callable():
     assert a.origin is Callable
     assert a.param_annotations is not None
     assert len(a.param_annotations) == 2
-    assert a.param_annotations[0].annotation is int
-    assert a.param_annotations[1].annotation is str
+    assert a.param_annotations[0].raw is int
+    assert a.param_annotations[1].raw is str
     assert a.return_annotation is not None
-    assert a.return_annotation.annotation is bool
+    assert a.return_annotation.raw is bool
 
     # callable with ... params
     a = Annotation(Callable[..., int])
     assert a.is_callable
     assert a.param_annotations is None
     assert a.return_annotation is not None
-    assert a.return_annotation.annotation is int
+    assert a.return_annotation.raw is int
 
     # callable with no args
     a = Annotation(Callable[[], str])
@@ -233,7 +233,7 @@ def test_callable():
     assert a.param_annotations is not None
     assert len(a.param_annotations) == 0
     assert a.return_annotation is not None
-    assert a.return_annotation.annotation is str
+    assert a.return_annotation.raw is str
 
 
 def test_callable_is_subclass():

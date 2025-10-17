@@ -231,7 +231,7 @@ class BaseModel:
             value_ = self.model_pre_validate(field_info, value)
             value_ = validate(
                 value_,
-                field_info.annotation_info.annotation,
+                field_info.annotation_info.raw,
                 *self.__converters,
                 lenient=self.model_config.lenient,
             )

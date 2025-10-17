@@ -595,7 +595,7 @@ def _validate_tuple(
     type_ = ann.concrete_type
     assert issubclass(type_, tuple)
 
-    if ann.arg_annotations[-1].annotation is not ...:
+    if ann.arg_annotations[-1].raw is not ...:
         # fixed-length tuple like tuple[int, str, float]
         assert not isinstance(
             obj, set
