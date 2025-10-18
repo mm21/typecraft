@@ -177,11 +177,7 @@ class TypedValidator[T]:
         Check if this validator can convert the given object to the given
         annotation.
         """
-        target_ann = (
-            target_annotation
-            if isinstance(target_annotation, Annotation)
-            else Annotation(target_annotation)
-        )
+        target_ann = Annotation._normalize(target_annotation)
 
         if self.__variance == "invariant":
             # exact match only
@@ -416,11 +412,7 @@ class ValidationContext:
         """
         Validate object using registered typed validators.
         """
-        target_ann = (
-            target_type
-            if isinstance(target_type, Annotation)
-            else Annotation(target_type)
-        )
+        target_ann = Annotation._normalize(target_type)
         return _dispatch_validation(obj, target_ann, self)
 
 

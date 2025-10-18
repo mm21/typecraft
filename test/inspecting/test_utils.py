@@ -1,5 +1,5 @@
 """
-Tests for low-level helper functions.
+Tests for low-level annotation utilities.
 """
 
 from types import EllipsisType, NoneType, UnionType

@@ -154,11 +154,7 @@ class TypedSerializer[T]:
         Check if this serializer can serialize the given object with the given
         annotation.
         """
-        source_ann = (
-            source_annotation
-            if isinstance(source_annotation, Annotation)
-            else Annotation(source_annotation)
-        )
+        source_ann = Annotation._normalize(source_annotation)
 
         if self.__variance == "invariant":
             # exact match only
@@ -374,11 +370,7 @@ class SerializationContext:
         if source_type is None:
             source_ann = Annotation(type(obj))
         else:
-            source_ann = (
-                source_type
-                if isinstance(source_type, Annotation)
-                else Annotation(source_type)
-            )
+            source_ann = Annotation._normalize(source_type)
         return _dispatch_serialization(obj, source_ann, self)
 
 
