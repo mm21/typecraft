@@ -1,5 +1,5 @@
 """
-Basic definitions for converting.
+Basic definitions for type-based converting.
 """
 
 from __future__ import annotations

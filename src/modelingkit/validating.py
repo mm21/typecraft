@@ -18,14 +18,14 @@ from typing import (
     overload,
 )
 
-from .converting import (
+from .inspecting import Annotation
+from .typedefs import (
     COLLECTION_TYPES,
     VALUE_COLLECTION_TYPES,
     CollectionType,
     ValueCollectionType,
     VarianceType,
 )
-from .inspecting import Annotation
 
 __all__ = [
     "ValidatorFuncType",

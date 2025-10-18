@@ -16,12 +16,12 @@ from typing import (
     overload,
 )
 
-from .converting import (
+from .inspecting import Annotation
+from .typedefs import (
     COLLECTION_TYPES,
     CollectionType,
     VarianceType,
 )
-from .inspecting import Annotation
 
 __all__ = [
     "SerializerFuncType",
