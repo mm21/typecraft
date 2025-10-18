@@ -14,10 +14,10 @@ from typing import (
     Sequence,
     Union,
     cast,
-    get_type_hints,
     overload,
 )
 
+from ._utils import ConverterSignature
 from .inspecting import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -42,8 +42,10 @@ type ValidatorFuncType[T] = Callable[[Any], T] | Callable[
 ]
 """
 Function which validates the given object and returns an object of the
-parameterized type. Can optionally take the annotation and context, generally
-used to propagate to nested objects (e.g. elements of custom collections).
+parameterized type.
+
+Can optionally take the annotation and context, generally used to propagate to nested
+objects (e.g. elements of custom collections).
 """
 
 
@@ -63,7 +65,7 @@ class TypedValidator[T]:
     Annotation specifying type to convert to.
     """
 
-    __func: ValidatorFuncType[Any] | None
+    __func: ValidatorFuncType[T] | None
     """
     Callable returning an instance of target type. Must take exactly one
     positional argument of the type given in `source_annotation`. May be the
@@ -75,7 +77,7 @@ class TypedValidator[T]:
     @overload
     def __init__(
         self,
-        source_annotation: Any,
+        source_annotation: Annotation | Any,
         target_annotation: type[T],
         /,
         *,
@@ -86,8 +88,8 @@ class TypedValidator[T]:
     @overload
     def __init__(
         self,
-        source_annotation: Any,
-        target_annotation: Any,
+        source_annotation: Annotation | Any,
+        target_annotation: Annotation | Any,
         /,
         *,
         func: ValidatorFuncType[Any] | None = None,
@@ -103,8 +105,8 @@ class TypedValidator[T]:
         func: ValidatorFuncType[Any] | None = None,
         variance: VarianceType = "contravariant",
     ):
-        self.__source_annotation = Annotation(source_annotation)
-        self.__target_annotation = Annotation(target_annotation)
+        self.__source_annotation = Annotation._normalize(source_annotation)
+        self.__target_annotation = Annotation._normalize(target_annotation)
         self.__func = func
         self.__variance = variance
 
@@ -122,6 +124,25 @@ class TypedValidator[T]:
     @property
     def variance(self) -> VarianceType:
         return self.__variance
+
+    @classmethod
+    def from_func(
+        cls,
+        func: ValidatorFuncType[T],
+        /,
+        *,
+        variance: VarianceType = "contravariant",
+    ) -> TypedValidator[T]:
+        """
+        Create a TypedValidator from a function by inspecting its signature.
+        """
+        sig = ConverterSignature.from_func(func, ValidationContext)
+        return TypedValidator(
+            sig.obj_param.annotation,
+            sig.sig_info.return_annotation,
+            func=func,
+            variance=variance,
+        )
 
     def validate(
         self,
@@ -232,10 +253,29 @@ class TypedValidatorRegistry:
         """
         return self.__validators
 
-    def add(self, validator: TypedValidator):
+    @overload
+    def register(self, validator: TypedValidator, /): ...
+
+    @overload
+    def register(
+        self, func: ValidatorFuncType, /, *, variance: VarianceType = "contravariant"
+    ): ...
+
+    def register(
+        self,
+        validator_or_func: TypedValidator | ValidatorFuncType,
+        /,
+        *,
+        variance: VarianceType = "contravariant",
+    ):
         """
-        Add a validator to the registry.
+        Register a validator.
         """
+        validator = (
+            validator_or_func
+            if isinstance(validator_or_func, TypedValidator)
+            else TypedValidator.from_func(validator_or_func, variance=variance)
+        )
         target_type = validator.target_annotation.concrete_type
         self.__validator_map[target_type].append(validator)
         self.__validators.append(validator)
@@ -266,110 +306,10 @@ class TypedValidatorRegistry:
 
     def extend(self, validators: Sequence[TypedValidator]):
         """
-        Add multiple validators to the registry.
+        Register multiple validators.
         """
         for validator in validators:
-            self.add(validator)
-
-    @overload
-    def register[T](self, func: ValidatorFuncType[T]) -> ValidatorFuncType[T]: ...
-
-    @overload
-    def register[T](
-        self, *, variance: VarianceType = "contravariant"
-    ) -> Callable[[ValidatorFuncType[T]], ValidatorFuncType[T]]: ...
-
-    def register[T](
-        self,
-        func: ValidatorFuncType[T] | None = None,
-        *,
-        variance: VarianceType = "contravariant",
-    ) -> ValidatorFuncType | Callable[[ValidatorFuncType[T]], ValidatorFuncType[T]]:
-        """
-        Decorator to register a conversion function.
-
-        Annotations are inferred from the function signature:
-
-        ```python
-        @registry.register
-        def str_to_int(s: str) -> int:
-            return int(s)
-        ```
-
-        Or with custom variance: (invariant means subclasses of `MyClass` will not be
-        included when matching for conversion)
-
-        ```python
-        @registry.register(variance="invariant")
-        def convert_exact(s: str) -> MyClass:
-            return MyClass(s)
-        ```
-
-        The function can have 1 or 3 parameters:
-        - 1 parameter: `func(obj) -> target`
-        - 3 parameters: `func(obj, annotation, context) -> target`
-        """
-
-        def wrapper(wrapped_func: ValidatorFuncType[T]) -> ValidatorFuncType[T]:
-            # get type hints to handle stringized annotations from __future__ import
-            try:
-                # get_type_hints resolves forward references and stringized annotations
-                type_hints = get_type_hints(wrapped_func)
-            except (NameError, AttributeError) as e:
-                raise ValueError(
-                    f"Failed to resolve type hints for {wrapped_func.__name__}: {e}. "
-                    "Ensure all types are imported or defined."
-                ) from e
-
-            # get parameters
-            sig = inspect.signature(wrapped_func)
-            params = list(sig.parameters.keys())
-
-            if not params:
-                raise ValueError(f"Function {wrapped_func.__name__} has no parameters")
-
-            # get source annotation from first parameter
-            first_param = params[0]
-            if first_param not in type_hints:
-                raise ValueError(
-                    f"Function {wrapped_func.__name__} first parameter '{first_param}' "
-                    "has no type annotation."
-                )
-            source_annotation = type_hints[first_param]
-
-            # get target annotation from return type
-            if "return" not in type_hints:
-                raise ValueError(
-                    f"Function {wrapped_func.__name__} has no return type annotation."
-                )
-            target_annotation = type_hints["return"]
-
-            # validate parameter count
-            param_count = len(params)
-            if param_count not in (1, 3):
-                raise ValueError(
-                    f"TypedValidator function {wrapped_func.__name__} must have 1 or 3 parameters, "
-                    f"got {param_count}"
-                )
-
-            # create and register the validator
-            validator = TypedValidator(
-                source_annotation,
-                target_annotation,
-                func=wrapped_func,
-                variance=variance,
-            )
-            self.add(validator)
-
-            return wrapped_func
-
-        # handle both @register and @register(...) syntax
-        if func is None:
-            # called with parameters: @register(...)
-            return wrapper
-        else:
-            # called without parameters: @register
-            return wrapper(func)
+            self.register(validator)
 
 
 class ValidationContext:

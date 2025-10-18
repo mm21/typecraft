@@ -2,7 +2,7 @@
 Tests for function signature utilities.
 """
 
-import inspect
+from inspect import Parameter
 from typing import Any, Optional
 
 import pytest
@@ -143,8 +143,8 @@ def test_parameter_inspection():
     sig_info = FunctionSignatureInfo(func1)
 
     assert len(sig_info.params) == 2
-    assert sig_info.params["x"].parameter.kind == inspect.Parameter.POSITIONAL_ONLY
-    assert sig_info.params["y"].parameter.kind == inspect.Parameter.POSITIONAL_ONLY
+    assert sig_info.params["x"].parameter.kind == Parameter.POSITIONAL_ONLY
+    assert sig_info.params["y"].parameter.kind == Parameter.POSITIONAL_ONLY
 
     def func2(x: int, *, y: str, z: bool) -> None:
         pass
@@ -153,11 +153,9 @@ def test_parameter_inspection():
     sig_info = FunctionSignatureInfo(func2)
 
     assert len(sig_info.params) == 3
-    assert (
-        sig_info.params["x"].parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    )
-    assert sig_info.params["y"].parameter.kind == inspect.Parameter.KEYWORD_ONLY
-    assert sig_info.params["z"].parameter.kind == inspect.Parameter.KEYWORD_ONLY
+    assert sig_info.params["x"].parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
+    assert sig_info.params["y"].parameter.kind == Parameter.KEYWORD_ONLY
+    assert sig_info.params["z"].parameter.kind == Parameter.KEYWORD_ONLY
 
     # default values
     def func3(x: int, y: str = "default", z: Optional[bool] = None) -> int:
@@ -166,7 +164,7 @@ def test_parameter_inspection():
     sig_info = FunctionSignatureInfo(func3)
 
     assert len(sig_info.params) == 3
-    assert sig_info.params["x"].parameter.default == inspect.Parameter.empty
+    assert sig_info.params["x"].parameter.default == Parameter.empty
     assert sig_info.params["y"].parameter.default == "default"
     assert sig_info.params["z"].parameter.default is None
 

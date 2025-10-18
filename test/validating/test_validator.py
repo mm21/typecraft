@@ -17,11 +17,11 @@ def test_any():
     Test conversion to Any.
     """
 
-    def func1(obj: Any):
+    def func1(obj: Any) -> Any:
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, annotation: Annotation, context: ValidationContext):
+    def func2(obj: Any, annotation: Annotation, context: ValidationContext) -> Any:
         assert isinstance(obj, int)
         assert annotation.concrete_type is object
         assert not context.lenient
@@ -85,23 +85,26 @@ def test_registry():
     Test converter registry.
     """
 
-    # create a registry
-    registry = TypedValidatorRegistry()
-
-    @registry.register(variance="invariant")
     def str_to_int_inv(s: str) -> int:
-        """Convert string to integer, not encompassing bool."""
+        """
+        Convert string to integer, not encompassing bool.
+        """
         return int(s)
 
-    # register converters using decorator
-    @registry.register
     def str_to_int(
         s: str,
         annotation: Annotation,
         context: ValidationContext,
     ) -> int:
-        """Convert string to integer, also encompassing bool."""
+        """
+        Convert string to integer, also encompassing bool.
+        """
         return annotation.concrete_type(s)
+
+    # register converters
+    registry = TypedValidatorRegistry()
+    registry.register(str_to_int_inv, variance="invariant")
+    registry.register(str_to_int)
 
     # use the registry
     obj = "42"

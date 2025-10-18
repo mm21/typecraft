@@ -12,10 +12,10 @@ from typing import (
     Callable,
     Sequence,
     cast,
-    get_type_hints,
     overload,
 )
 
+from ._utils import ConverterSignature
 from .inspecting import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -36,10 +36,11 @@ type SerializerFuncType[T] = Callable[[T], Any] | Callable[
     [T, Annotation, SerializationContext], Any
 ]
 """
-Function which serializes the given object and returns a 
-JSON-serializable object. Can optionally take the annotation and context,
-generally used to propagate to nested objects (e.g. elements of custom
-collections).
+Function which serializes the given object from a specific source type and generally
+returns an object of built-in Python types.
+
+Can optionally take the annotation and context, generally used to propagate to nested
+objects (e.g. elements of custom collections).
 """
 
 
@@ -74,7 +75,7 @@ class TypedSerializer[T]:
     @overload
     def __init__(
         self,
-        source_annotation: Any,
+        source_annotation: Annotation | Any,
         /,
         *,
         func: SerializerFuncType,
@@ -87,7 +88,7 @@ class TypedSerializer[T]:
         func: SerializerFuncType,
         variance: VarianceType = "contravariant",
     ):
-        self.__source_annotation = Annotation(source_annotation)
+        self.__source_annotation = Annotation._normalize(source_annotation)
         self.__func = func
         self.__variance = variance
 
@@ -101,6 +102,19 @@ class TypedSerializer[T]:
     @property
     def variance(self) -> VarianceType:
         return self.__variance
+
+    @classmethod
+    def from_func(
+        cls,
+        func: SerializerFuncType[T],
+        *,
+        variance: VarianceType = "contravariant",
+    ) -> TypedSerializer[T]:
+        """
+        Create a TypedSerializer from a function by inspecting its signature.
+        """
+        sig = ConverterSignature.from_func(func, SerializationContext)
+        return TypedSerializer(sig.obj_param.annotation, func=func, variance=variance)
 
     def serialize(
         self,
@@ -207,10 +221,29 @@ class TypedSerializerRegistry:
         """
         return self.__serializers
 
-    def add(self, serializer: TypedSerializer):
+    @overload
+    def register(self, serializer: TypedSerializer, /): ...
+
+    @overload
+    def register(
+        self, func: SerializerFuncType, /, *, variance: VarianceType = "contravariant"
+    ): ...
+
+    def register(
+        self,
+        serializer_or_func: TypedSerializer | SerializerFuncType,
+        /,
+        *,
+        variance: VarianceType = "contravariant",
+    ):
         """
-        Add a serializer to the registry.
+        Register a serializer.
         """
+        serializer = (
+            serializer_or_func
+            if isinstance(serializer_or_func, TypedSerializer)
+            else TypedSerializer.from_func(serializer_or_func, variance=variance)
+        )
         source_type = serializer.source_annotation.concrete_type
         self.__serializer_map[source_type].append(serializer)
         self.__serializers.append(serializer)
@@ -241,100 +274,10 @@ class TypedSerializerRegistry:
 
     def extend(self, serializers: Sequence[TypedSerializer]):
         """
-        Add multiple serializers to the registry.
+        Register multiple serializers.
         """
         for serializer in serializers:
-            self.add(serializer)
-
-    @overload
-    def register(self, func: SerializerFuncType) -> SerializerFuncType: ...
-
-    @overload
-    def register(
-        self, *, variance: VarianceType = "contravariant"
-    ) -> Callable[[SerializerFuncType], SerializerFuncType]: ...
-
-    def register(
-        self,
-        func: SerializerFuncType | None = None,
-        *,
-        variance: VarianceType = "contravariant",
-    ) -> SerializerFuncType | Callable[[SerializerFuncType], SerializerFuncType]:
-        """
-        Decorator to register a serialization function.
-
-        Annotations are inferred from the function signature:
-
-        ```python
-        @registry.register
-        def serialize_myclass(obj: MyClass) -> dict:
-            return {"value": obj.value}
-        ```
-
-        Or with custom variance:
-
-        ```python
-        @registry.register(variance="invariant")
-        def serialize_exact(obj: MyClass) -> dict:
-            return {"value": obj.value}
-        ```
-
-        The function can have 1 or 3 parameters:
-        - 1 parameter: `func(obj) -> serialized`
-        - 3 parameters: `func(obj, annotation, context) -> serialized`
-
-        Return type annotation is not required.
-        """
-
-        def wrapper(wrapped_func: SerializerFuncType) -> SerializerFuncType:
-            # get type hints
-            try:
-                type_hints = get_type_hints(wrapped_func)
-            except (NameError, AttributeError) as e:
-                raise ValueError(
-                    f"Failed to resolve type hints for {wrapped_func.__name__}: {e}. "
-                    "Ensure all types are imported or defined."
-                ) from e
-
-            # get parameters
-            sig = inspect.signature(wrapped_func)
-            params = list(sig.parameters.keys())
-
-            if not params:
-                raise ValueError(f"Function {wrapped_func.__name__} has no parameters")
-
-            # get source annotation from first parameter
-            first_param = params[0]
-            if first_param not in type_hints:
-                raise ValueError(
-                    f"Function {wrapped_func.__name__} first parameter '{first_param}' "
-                    "has no type annotation."
-                )
-            source_annotation = type_hints[first_param]
-
-            # validate parameter count
-            param_count = len(params)
-            if param_count not in (1, 3):
-                raise ValueError(
-                    f"TypedSerializer function {wrapped_func.__name__} must have 1 or 3 parameters, "
-                    f"got {param_count}"
-                )
-
-            # create and register the serializer
-            serializer = TypedSerializer(
-                source_annotation, func=wrapped_func, variance=variance
-            )
-            self.add(serializer)
-
-            return wrapped_func
-
-        # handle both @register and @register(...) syntax
-        if func is None:
-            # called with parameters: @register(...)
-            return wrapper
-        else:
-            # called without parameters: @register
-            return wrapper(func)
+            self.register(serializer)
 
 
 class SerializationContext:

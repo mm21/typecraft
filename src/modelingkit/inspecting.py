@@ -7,6 +7,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
+from inspect import Parameter
 from types import EllipsisType, MappingProxyType, NoneType, UnionType
 from typing import (
     Annotated,
@@ -321,8 +322,8 @@ class Annotation:
                 for p in sig.parameters.values()
                 if p.kind
                 in (
-                    inspect.Parameter.POSITIONAL_ONLY,
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    Parameter.POSITIONAL_ONLY,
+                    Parameter.POSITIONAL_OR_KEYWORD,
                 )
             )
 
@@ -377,7 +378,7 @@ class Annotation:
 
 @dataclass
 class ParameterInfo:
-    parameter: inspect.Parameter
+    parameter: Parameter
     """
     Parameter from `inspect` module.
     """
@@ -442,6 +443,9 @@ class FunctionSignatureInfo:
                 for name, param in sig.parameters.items()
             }
         )
+
+    def __repr__(self) -> str:
+        return f"{self.func.__name__}({self.params}) -> {self.return_annotation}"
 
 
 def is_subclass(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
