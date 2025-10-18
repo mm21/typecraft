@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable as CallableABC
-from types import EllipsisType, NoneType, UnionType
+from dataclasses import dataclass
+from types import EllipsisType, MappingProxyType, NoneType, UnionType
 from typing import (
     Annotated,
     Any,
+    Callable,
     Literal,
     TypeAliasType,
     TypeVar,
@@ -17,14 +19,19 @@ from typing import (
     cast,
     get_args,
     get_origin,
+    get_type_hints,
     overload,
 )
 
 __all__ = [
     "Annotation",
+    "ParameterInfo",
+    "FunctionSignatureInfo",
+    "is_subclass",
+    "is_instance",
+    "is_union",
     "unwrap_alias",
     "split_annotated",
-    "is_union",
     "normalize_annotation",
     "flatten_union",
     "get_concrete_type",
@@ -370,6 +377,75 @@ class Annotation:
         return all(key_ann.is_type(k) and value_ann.is_type(v) for k, v in obj.items())
 
 
+@dataclass
+class ParameterInfo:
+    parameter: inspect.Parameter
+    """
+    Parameter from `inspect` module.
+    """
+
+    annotation: Annotation
+    """
+    Annotation from `get_type_hints()`, resolving any stringized annotations.
+    """
+
+
+class FunctionSignatureInfo:
+    """
+    Encapsulates information extracted from a function signature.
+    """
+
+    func: Callable[..., Any]
+    """
+    Function passed in.
+    """
+
+    params: MappingProxyType[str, ParameterInfo]
+    """
+    Mapping of parameter name to info.
+    """
+
+    return_annotation: Annotation
+    """
+    Return annotation.
+    """
+
+    def __init__(self, func: Callable[..., Any], /):
+        self.func = func
+
+        # get type hints to handle stringized annotations from __future__ import
+        try:
+            type_hints = get_type_hints(func)
+        except (NameError, AttributeError) as e:
+            raise ValueError(
+                f"Failed to resolve type hints for {func.__name__}: {e}. "
+                "Ensure all types are imported or defined."
+            ) from e
+
+        # set return annotation
+        if "return" not in type_hints:
+            raise ValueError(f"Function {func} has no return type annotation")
+        self.return_annotation = Annotation(type_hints["return"])
+
+        # get signature of function
+        sig = inspect.signature(func)
+
+        # check for parameters with missing type hints
+        missing_type_hints = [p for p in sig.parameters if p not in type_hints]
+        if len(missing_type_hints):
+            raise ValueError(
+                f"Parameters of {func} have no type annotation: {missing_type_hints}"
+            )
+
+        # set param annotations
+        self.params = MappingProxyType(
+            {
+                name: ParameterInfo(param, Annotation(type_hints[name]))
+                for name, param in sig.parameters.items()
+            }
+        )
+
+
 @overload
 def is_subclass(annotation: Annotation, other: Annotation) -> bool: ...
 
@@ -416,6 +492,14 @@ def is_instance(obj: Any, annotation: Any) -> bool:
     return ann.is_type(obj)
 
 
+def is_union(annotation: Any, /) -> bool:
+    """
+    Check whether annotation is a union, accommodating both `int | str`
+    and `Union[int, str]`.
+    """
+    return isinstance(annotation, UnionType) or get_origin(annotation) is Union
+
+
 def unwrap_alias(annotation: Any, /) -> Any:
     """
     If annotation is a `TypeAlias`, extract the corresponding definition.
@@ -432,14 +516,6 @@ def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
         assert len(args)
         return args[0], tuple(args[1:])
     return annotation, ()
-
-
-def is_union(annotation: Any, /) -> bool:
-    """
-    Check whether annotation is a union, accommodating both `int | str`
-    and `Union[int, str]`.
-    """
-    return isinstance(annotation, UnionType) or get_origin(annotation) is Union
 
 
 def normalize_annotation(annotation: Any, /, *, preserve_extras: bool = False) -> Any:
