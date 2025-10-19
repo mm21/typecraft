@@ -17,7 +17,7 @@ from typing import (
     overload,
 )
 
-from ._utils import ConverterSignature
+from ._utils import ConverterSignature, normalize_to_registry
 from .inspecting import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -193,7 +193,7 @@ class TypedValidator[T]:
 
         return new_obj
 
-    def can_validate(self, obj: Any, target_annotation: Any | Annotation, /) -> bool:
+    def can_validate(self, obj: Any, target_annotation: Annotation | Any, /) -> bool:
         """
         Check if this validator can convert the given object to the given
         annotation.
@@ -346,9 +346,9 @@ class ValidationContext:
     def validate[T](self, obj: Any, target_type: type[T], /) -> T: ...
 
     @overload
-    def validate(self, obj: Any, target_type: Any | Annotation, /) -> Any: ...
+    def validate(self, obj: Any, target_type: Annotation | Any, /) -> Any: ...
 
-    def validate(self, obj: Any, target_type: Any | Annotation, /) -> Any:
+    def validate(self, obj: Any, target_type: Annotation | Any, /) -> Any:
         """
         Validate object using registered typed validators.
         """
@@ -367,31 +367,54 @@ def validate[T](
 
 
 @overload
+def validate[T](
+    obj: Any,
+    target_type: type[T],
+    registry: TypedValidatorRegistry,
+    /,
+    *,
+    lenient: bool = False,
+) -> T: ...
+
+
+@overload
 def validate(
     obj: Any,
-    target_type: Any | Annotation,
+    target_type: Annotation | Any,
     /,
     *validators: TypedValidator[Any],
     lenient: bool = False,
 ) -> Any: ...
 
 
+@overload
 def validate(
     obj: Any,
-    target_type: Any | Annotation,
+    target_type: Annotation | Any,
+    registry: TypedValidatorRegistry,
     /,
-    *validators: TypedValidator[Any],
+    *,
+    lenient: bool = False,
+) -> Any: ...
+
+
+def validate(
+    obj: Any,
+    target_type: Annotation | Any,
+    /,
+    *validators_or_registry: TypedValidator | TypedValidatorRegistry,
     lenient: bool = False,
 ) -> Any:
     """
-    Recursively validate object, converting to the target type if applicable.
+    Recursively validate object by type, converting to the target type if needed.
 
     Handles nested parameterized types like list[list[int]] by recursively
     applying validation and conversion at each level.
     """
-    context = ValidationContext(
-        registry=TypedValidatorRegistry(*validators), lenient=lenient
+    registry = normalize_to_registry(
+        TypedValidator, TypedValidatorRegistry, *validators_or_registry
     )
+    context = ValidationContext(registry=registry, lenient=lenient)
     return context.validate(obj, target_type)
 
 

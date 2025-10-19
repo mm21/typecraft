@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from inspect import Parameter
-from typing import Any
+from typing import Any, cast
 
 from .inspecting import Annotation, FunctionSignatureInfo, ParameterInfo
 
@@ -62,3 +62,20 @@ class ConverterSignature:
                 )
 
         return ConverterSignature(obj_param, sig_info)
+
+
+def normalize_to_registry[ConverterT, RegistryT](
+    converter_cls: type[ConverterT],
+    registry_cls: type[RegistryT],
+    *converters_or_registry: Any,
+) -> RegistryT:
+    """
+    Take converters or registry and return a registry.
+    """
+    if len(converters_or_registry) == 1 and isinstance(converters_or_registry[0], registry_cls):
+        registry = cast(RegistryT, converters_or_registry[0])
+    else:
+        assert all(isinstance(v, converter_cls) for v in converters_or_registry)
+        converters = cast(tuple[ConverterT, ...], converters_or_registry)
+        registry = registry_cls(*converters)
+    return registry

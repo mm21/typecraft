@@ -5,7 +5,7 @@ Test end-to-end serialization via APIs.
 from dataclasses import dataclass
 from typing import Literal
 
-from modelingkit.serializing import TypedSerializer, serialize
+from modelingkit.serializing import TypedSerializer, TypedSerializerRegistry, serialize
 
 
 @dataclass
@@ -278,3 +278,15 @@ def test_without_serializer():
     obj = CustomClass(42)
     result = serialize(obj)
     assert result is obj  # passed through unchanged
+
+
+def test_registry():
+    """
+    Test serialization with registry.
+    """
+    registry = TypedSerializerRegistry()
+    registry.register(TypedSerializer(int, func=str))
+
+    obj = 1
+    result = serialize(obj, int, registry)
+    assert result == "1"

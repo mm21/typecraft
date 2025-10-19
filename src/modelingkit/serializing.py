@@ -15,7 +15,7 @@ from typing import (
     overload,
 )
 
-from ._utils import ConverterSignature
+from ._utils import ConverterSignature, normalize_to_registry
 from .inspecting import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -163,7 +163,7 @@ class TypedSerializer[T]:
 
         return serialized
 
-    def can_serialize(self, obj: Any, source_annotation: Any | Annotation, /) -> bool:
+    def can_serialize(self, obj: Any, source_annotation: Annotation | Any, /) -> bool:
         """
         Check if this serializer can serialize the given object with the given
         annotation.
@@ -303,7 +303,7 @@ class SerializationContext:
         return self.__registry
 
     def serialize(
-        self, obj: Any, source_type: Any | Annotation | None = None, /
+        self, obj: Any, source_type: Annotation | Any | None = None, /
     ) -> Any:
         """
         Serialize object using registered typed serializers.
@@ -317,24 +317,38 @@ class SerializationContext:
         return _dispatch_serialization(obj, source_ann, self)
 
 
+@overload
 def serialize(
     obj: Any,
-    source_type: Any | Annotation | None = None,
+    source_type: Annotation | Any,
     /,
     *serializers: TypedSerializer,
+) -> Any: ...
+
+
+@overload
+def serialize(
+    obj: Any,
+    source_type: Annotation | Any,
+    registry: TypedSerializerRegistry,
+    /,
+) -> Any: ...
+
+
+def serialize(
+    obj: Any,
+    source_type: Annotation | Any,
+    /,
+    *serializers_or_registry: TypedSerializer | TypedSerializerRegistry,
 ) -> Any:
     """
-    Recursively serialize object to a JSON-serializable format.
+    Recursively serialize object by type, generally to built-in Python types.
 
     Handles nested parameterized types like list[MyClass] by recursively
     applying serialization at each level.
-
-    Args:
-        obj: Object to serialize
-        source_type: Optional type hint for the object (inferred from obj if not provided)
-        *serializers: Custom serializers to use
     """
-    context = SerializationContext(registry=TypedSerializerRegistry(*serializers))
+    registry = normalize_to_registry(TypedSerializer, TypedSerializerRegistry, *serializers_or_registry)
+    context = SerializationContext(registry=registry)
     return context.serialize(obj, source_type)
 
 

@@ -7,7 +7,12 @@ from typing import Annotated, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.validating import TypedValidator, normalize_to_list, validate
+from modelingkit.validating import (
+    TypedValidator,
+    TypedValidatorRegistry,
+    normalize_to_list,
+    validate,
+)
 
 
 def test_valid():
@@ -130,6 +135,18 @@ def test_conversion():
         obj = gen()
         result = validate(obj, tuple[int, int, int], *converters, lenient=True)
         assert result == (0, 1, 2)
+
+
+def test_registry():
+    """
+    Test validation with registry.
+    """
+    registry = TypedValidatorRegistry()
+    registry.register(TypedValidator(str, int))
+
+    obj = "1"
+    result = validate(obj, int, registry)
+    assert result == 1
 
 
 def test_normalize_to_list():
