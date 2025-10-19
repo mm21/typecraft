@@ -39,8 +39,7 @@ def test_custom_serializer():
     result = serialize(person, Person, serializer)
     assert result == {"name": "Alice", "age": 30}
 
-    # also works without explicit type hint
-    result = serialize(person, None, serializer)
+    result = serialize(person, Person | None, serializer)
     assert result == {"name": "Alice", "age": 30}
 
 
@@ -55,7 +54,7 @@ def test_nested_custom_serializer():
     def serialize_company(
         c: Company, annotation: Annotation, context: SerializationContext
     ) -> dict:
-        # Use context to recursively serialize employees
+        # use context to recursively serialize employees
         return {
             "name": c.name,
             "employees": [context.serialize(emp, Person) for emp in c.employees],

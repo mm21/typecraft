@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
-from collections.abc import Mapping
+from types import EllipsisType
 from typing import (
     Any,
     Callable,
@@ -302,18 +302,14 @@ class SerializationContext:
     def registry(self) -> TypedSerializerRegistry:
         return self.__registry
 
-    def serialize(
-        self, obj: Any, source_type: Annotation | Any | None = None, /
-    ) -> Any:
+    def serialize(self, obj: Any, source_type: Annotation | Any, /) -> Any:
         """
         Serialize object using registered typed serializers.
 
-        If source_type is not provided, infers annotation from object's type.
+        Walks the object recursively in lockstep with the source annotation,
+        invoking type-based serializers when they match.
         """
-        if source_type is None:
-            source_ann = Annotation(type(obj))
-        else:
-            source_ann = Annotation._normalize(source_type)
+        source_ann = Annotation._normalize(source_type)
         return _dispatch_serialization(obj, source_ann, self)
 
 
@@ -376,7 +372,7 @@ def _dispatch_serialization(
         return serializer.serialize(obj, annotation, context)
 
     # handle builtin collections
-    if isinstance(obj, COLLECTION_TYPES):
+    if issubclass(annotation.concrete_type, COLLECTION_TYPES):
         return _serialize_collection(obj, annotation, context)
 
     # no serializer found, return as-is
@@ -406,71 +402,94 @@ def _serialize_collection(
     Serialize collection of objects.
     """
 
-    # handle dict
-    if isinstance(obj, Mapping):
+    assert len(
+        annotation.arg_annotations
+    ), f"Collection annotation has no type parameter: {annotation}"
+
+    type_ = annotation.concrete_type
+
+    # handle conversion from mappings
+    if issubclass(type_, dict):
+        assert isinstance(obj, type_)
         return _serialize_dict(obj, annotation, context)
 
-    # handle value collections
-    if isinstance(obj, (list, tuple)):
-        return _serialize_list_or_tuple(obj, annotation, context)
-    elif isinstance(obj, (set, frozenset)):
-        return _serialize_set(obj, annotation, context)
+    # handle conversion from value collections
+    if issubclass(type_, list):
+        assert isinstance(obj, type_)
+        return _serialize_list(obj, annotation, context)
+    elif issubclass(type_, tuple):
+        assert isinstance(obj, type_)
+        return _serialize_tuple(obj, annotation, context)
     else:
-        # range, Generator
-        return _serialize_list_or_tuple(list(obj), annotation, context)
+        assert issubclass(type_, (set, frozenset))
+        assert isinstance(obj, type_)
+        return _serialize_set(obj, annotation, context)
 
 
-def _serialize_list_or_tuple(
-    obj: list | tuple,
+def _serialize_list(
+    obj: list[Any],
     annotation: Annotation,
     context: SerializationContext,
 ) -> list[Any]:
     """
-    Serialize list or tuple to a list.
+    Serialize list to a list.
     """
-    if len(annotation.arg_annotations) >= 1:
-        item_ann = annotation.arg_annotations[0]
-    else:
-        item_ann = Annotation(type(obj[0])) if obj else Annotation(Any)
+    assert len(annotation.arg_annotations) >= 1
+    item_ann = annotation.arg_annotations[0]
 
     return [context.serialize(o, item_ann) for o in obj]
 
 
+def _serialize_tuple(
+    obj: tuple[Any],
+    annotation: Annotation,
+    context: SerializationContext,
+) -> list[Any]:
+    """
+    Serialize tuple to a list.
+    """
+    assert len(annotation.arg_annotations) >= 1
+
+    # check for Ellipsis (tuple[T, ...])
+    if annotation.arg_annotations[-1].concrete_type is EllipsisType:
+        # variable-length tuple: use first annotation for all items
+        item_ann = annotation.arg_annotations[0]
+        return [context.serialize(o, item_ann) for o in obj]
+    else:
+        # fixed-length tuple: match annotations to items
+        assert len(annotation.arg_annotations) == len(obj), (
+            f"Tuple length mismatch: expected {len(annotation.arg_annotations)} items, "
+            f"got {len(obj)}"
+        )
+        return [
+            context.serialize(o, ann) for o, ann in zip(obj, annotation.arg_annotations)
+        ]
+
+
 def _serialize_set(
-    obj: set | frozenset,
+    obj: set[Any] | frozenset[Any],
     annotation: Annotation,
     context: SerializationContext,
 ) -> list[Any]:
     """
     Serialize set to a list (sets aren't JSON-serializable).
     """
-    if len(annotation.arg_annotations) >= 1:
-        item_ann = annotation.arg_annotations[0]
-    else:
-        # infer from first element if available
-        item_ann = Annotation(type(next(iter(obj)))) if obj else Annotation(Any)
+    assert len(annotation.arg_annotations) == 1
+    item_ann = annotation.arg_annotations[0]
 
     return [context.serialize(o, item_ann) for o in obj]
 
 
 def _serialize_dict(
-    obj: Mapping,
+    obj: dict[Any, Any],
     annotation: Annotation,
     context: SerializationContext,
 ) -> dict[Any, Any]:
     """
     Serialize dict.
     """
-    if len(annotation.arg_annotations) >= 2:
-        key_ann, value_ann = annotation.arg_annotations[0:2]
-    else:
-        # infer from first item if available
-        if obj:
-            first_key, first_val = next(iter(obj.items()))
-            key_ann = Annotation(type(first_key))
-            value_ann = Annotation(type(first_val))
-        else:
-            key_ann, value_ann = Annotation(Any), Annotation(Any)
+    assert len(annotation.arg_annotations) == 2
+    key_ann, value_ann = annotation.arg_annotations
 
     return {
         context.serialize(k, key_ann): context.serialize(v, value_ann)
