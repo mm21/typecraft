@@ -32,8 +32,8 @@ __all__ = [
 ]
 
 
-type SerializerFuncType[T] = Callable[[T], Any] | Callable[
-    [T, Annotation, SerializationContext], Any
+type SerializerFuncType[SourceT] = Callable[[SourceT], Any] | Callable[
+    [SourceT, Annotation, SerializationContext], Any
 ]
 """
 Function which serializes the given object from a specific source type and generally
@@ -44,7 +44,7 @@ objects (e.g. elements of custom collections).
 """
 
 
-class TypedSerializer[T]:
+class TypedSerializer[SourceT]:
     """
     Encapsulates serialization parameters from a source annotation.
     """
@@ -65,10 +65,10 @@ class TypedSerializer[T]:
     @overload
     def __init__(
         self,
-        source_annotation: type[T],
+        source_annotation: type[SourceT],
         /,
         *,
-        func: SerializerFuncType[T],
+        func: SerializerFuncType[SourceT],
         variance: VarianceType = "contravariant",
     ): ...
 
@@ -106,10 +106,10 @@ class TypedSerializer[T]:
     @classmethod
     def from_func(
         cls,
-        func: SerializerFuncType[T],
+        func: SerializerFuncType[SourceT],
         *,
         variance: VarianceType = "contravariant",
-    ) -> TypedSerializer[T]:
+    ) -> TypedSerializer[SourceT]:
         """
         Create a TypedSerializer from a function by inspecting its signature.
         """

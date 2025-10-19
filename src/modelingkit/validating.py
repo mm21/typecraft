@@ -37,8 +37,8 @@ __all__ = [
 ]
 
 
-type ValidatorFuncType[T] = Callable[[Any], T] | Callable[
-    [Any, Annotation, ValidationContext], T
+type ValidatorFuncType[TargetT] = Callable[[Any], TargetT] | Callable[
+    [Any, Annotation, ValidationContext], TargetT
 ]
 """
 Function which validates the given object and returns an object of the
@@ -49,7 +49,7 @@ objects (e.g. elements of custom collections).
 """
 
 
-class TypedValidator[T]:
+class TypedValidator[TargetT]:
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
@@ -65,7 +65,7 @@ class TypedValidator[T]:
     Annotation specifying type to convert to.
     """
 
-    __func: ValidatorFuncType[T] | None
+    __func: ValidatorFuncType[TargetT] | None
     """
     Callable returning an instance of target type. Must take exactly one
     positional argument of the type given in `source_annotation`. May be the
@@ -78,10 +78,10 @@ class TypedValidator[T]:
     def __init__(
         self,
         source_annotation: Annotation | Any,
-        target_annotation: type[T],
+        target_annotation: type[TargetT],
         /,
         *,
-        func: ValidatorFuncType[T] | None = None,
+        func: ValidatorFuncType[TargetT] | None = None,
         variance: VarianceType = "contravariant",
     ): ...
 
@@ -128,11 +128,11 @@ class TypedValidator[T]:
     @classmethod
     def from_func(
         cls,
-        func: ValidatorFuncType[T],
+        func: ValidatorFuncType[TargetT],
         /,
         *,
         variance: VarianceType = "contravariant",
-    ) -> TypedValidator[T]:
+    ) -> TypedValidator[TargetT]:
         """
         Create a TypedValidator from a function by inspecting its signature.
         """
@@ -150,7 +150,7 @@ class TypedValidator[T]:
         target_annotation: Annotation,
         context: ValidationContext,
         /,
-    ) -> T:
+    ) -> TargetT:
         """
         Convert object or raise `ValueError`.
 
@@ -178,7 +178,7 @@ class TypedValidator[T]:
             else:
                 # direct object construction
                 concrete_type = cast(
-                    Callable[[Any], T], self.__target_annotation.concrete_type
+                    Callable[[Any], TargetT], self.__target_annotation.concrete_type
                 )
                 new_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
