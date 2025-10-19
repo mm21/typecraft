@@ -347,7 +347,9 @@ def serialize(
     Handles nested parameterized types like list[MyClass] by recursively
     applying serialization at each level.
     """
-    registry = normalize_to_registry(TypedSerializer, TypedSerializerRegistry, *serializers_or_registry)
+    registry = normalize_to_registry(
+        TypedSerializer, TypedSerializerRegistry, *serializers_or_registry
+    )
     context = SerializationContext(registry=registry)
     return context.serialize(obj, source_type)
 

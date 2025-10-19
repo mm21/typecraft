@@ -72,7 +72,9 @@ def normalize_to_registry[ConverterT, RegistryT](
     """
     Take converters or registry and return a registry.
     """
-    if len(converters_or_registry) == 1 and isinstance(converters_or_registry[0], registry_cls):
+    if len(converters_or_registry) == 1 and isinstance(
+        converters_or_registry[0], registry_cls
+    ):
         registry = cast(RegistryT, converters_or_registry[0])
     else:
         assert all(isinstance(v, converter_cls) for v in converters_or_registry)

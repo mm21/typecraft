@@ -5,7 +5,7 @@ Tests for `Annotation` class.
 from collections.abc import Callable
 from typing import Any, Literal, Sequence, Union
 
-from modelingkit.inspecting import Annotation, is_instance, is_subclass
+from modelingkit.inspecting import Annotation, is_instance, is_subtype
 
 type ListAlias = list[int]
 
@@ -47,8 +47,8 @@ def test_is_subclass():
     assert not a2.is_subclass(a1)
 
     # same but with alias
-    assert is_subclass(ListAlias, list[Any])
-    assert not is_subclass(list[Any], ListAlias)
+    assert is_subtype(ListAlias, list[Any])
+    assert not is_subtype(list[Any], ListAlias)
 
     a1 = Annotation(list[int])
     a2 = Annotation(list[float])

@@ -10,7 +10,7 @@ from modelingkit.inspecting import (
     flatten_union,
     get_concrete_type,
     is_instance,
-    is_subclass,
+    is_subtype,
     is_union,
     normalize_annotation,
     split_annotated,
@@ -29,14 +29,14 @@ type DeepAlias = Annotated[Union[int, str], "constraint"]
 
 def test_is_subclass():
     # verify all overloads
-    assert is_subclass(Annotation(int), Annotation(Any))
-    assert is_subclass(Annotation(int), Any)
-    assert is_subclass(int, Annotation(Any))
-    assert is_subclass(int, Any)
+    assert is_subtype(Annotation(int), Annotation(Any))
+    assert is_subtype(Annotation(int), Any)
+    assert is_subtype(int, Annotation(Any))
+    assert is_subtype(int, Any)
 
     # verify with alias
-    assert is_subclass(SimpleAlias, UnionAlias)
-    assert is_subclass(ListAlias, AnnotatedListAlias)
+    assert is_subtype(SimpleAlias, UnionAlias)
+    assert is_subtype(ListAlias, AnnotatedListAlias)
 
 
 def test_is_instance():

@@ -27,7 +27,7 @@ __all__ = [
     "Annotation",
     "ParameterInfo",
     "FunctionSignatureInfo",
-    "is_subclass",
+    "is_subtype",
     "is_instance",
     "is_union",
     "unwrap_alias",
@@ -448,22 +448,34 @@ class FunctionSignatureInfo:
         return f"{self.func.__name__}({self.params}) -> {self.return_annotation}"
 
 
-def is_subclass(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
+def is_subtype(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
     """
-    Return whether annotation is a "subclass" of other annotation.
+    Check whether an annotation is a subtype of another annotation.
 
     Accommodates generic types and fully resolves type aliases, unions, and
     `Annotated`.
+
+    Example:
+
+    ```python
+    assert is_subtype(list[int], list[int | str])
+    ```
     """
     return Annotation._normalize(annotation).is_subclass(other)
 
 
 def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:
     """
-    Return whether an object is an "instance" of an annotation.
+    Check whether an object is an "instance" of an annotation.
 
     Accommodates generic types and fully resolves type aliases, unions, and
     `Annotated`.
+
+    Example:
+
+    ```python
+    assert is_instance([1, 2, "3"], list[int | str])
+    ```
     """
     return Annotation._normalize(annotation).is_type(obj)
 
