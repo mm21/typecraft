@@ -458,7 +458,7 @@ def _dispatch_validation(
         return _convert(obj, annotation, context)
 
     # if type is a builtin collection, recurse
-    if issubclass(annotation.concrete_type, (list, tuple, set, dict)):
+    if issubclass(annotation.concrete_type, (list, tuple, set, frozenset, dict)):
         assert isinstance(obj, COLLECTION_TYPES)
         return _validate_collection(obj, annotation, context)
 
@@ -503,7 +503,7 @@ def _validate_collection(
 
     assert len(
         annotation.arg_annotations
-    ), f"Collection has no type parameter: {obj} ({annotation})"
+    ), f"Collection annotation has no type parameter: {annotation}"
 
     type_ = annotation.concrete_type
 
@@ -519,7 +519,7 @@ def _validate_collection(
     elif issubclass(type_, tuple):
         return _validate_tuple(obj, annotation, context)
     else:
-        assert issubclass(type_, set)
+        assert issubclass(type_, (set, frozenset))
         return _validate_set(obj, annotation, context)
 
 
@@ -584,9 +584,9 @@ def _validate_set(
     obj: ValueCollectionType,
     annotation: Annotation,
     context: ValidationContext,
-) -> set[Any]:
+) -> set[Any] | frozenset[Any]:
     type_ = annotation.concrete_type
-    assert issubclass(type_, set)
+    assert issubclass(type_, (set, frozenset))
     assert len(annotation.arg_annotations) == 1
 
     item_ann = annotation.arg_annotations[0]
@@ -656,6 +656,7 @@ BUILTIN_REGISTRY = TypedValidatorRegistry(
     TypedValidator(Union[VALUE_COLLECTION_TYPES], list, func=_validate_list),
     TypedValidator(Union[VALUE_COLLECTION_TYPES], tuple, func=_validate_tuple),
     TypedValidator(Union[VALUE_COLLECTION_TYPES], set, func=_validate_set),
+    TypedValidator(Union[VALUE_COLLECTION_TYPES], frozenset, func=_validate_set),
     TypedValidator(Mapping, dict, func=_validate_dict),
 )
 """
