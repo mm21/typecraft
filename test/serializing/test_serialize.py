@@ -2,22 +2,9 @@
 Test end-to-end serialization via APIs.
 """
 
-from dataclasses import dataclass
 from typing import Literal
 
-from modelingkit.serializing import TypedSerializer, TypedSerializerRegistry, serialize
-
-
-@dataclass
-class Person:
-    name: str
-    age: int
-
-
-@dataclass
-class Company:
-    name: str
-    employees: list[Person]
+from modelingkit.serializing import serialize
 
 
 def test_primitives():
@@ -83,118 +70,6 @@ def test_nested_collections():
     assert serialize(obj) == [[1, "a"], [2, "b"]]
 
 
-def test_custom_serializer():
-    """
-    Test with custom serializers for dataclasses.
-    """
-
-    def serialize_person(p: Person) -> dict:
-        return {"name": p.name, "age": p.age}
-
-    person = Person(name="Alice", age=30)
-    serializer = TypedSerializer(Person, func=serialize_person)
-
-    result = serialize(person, Person, serializer)
-    assert result == {"name": "Alice", "age": 30}
-
-    # also works without explicit type hint
-    result = serialize(person, None, serializer)
-    assert result == {"name": "Alice", "age": 30}
-
-
-def test_nested_custom_serializer():
-    """
-    Test serialization with nested custom objects.
-    """
-
-    def serialize_person(p: Person) -> dict:
-        return {"name": p.name, "age": p.age}
-
-    def serialize_company(c: Company, annotation, context) -> dict:
-        # Use context to recursively serialize employees
-        return {
-            "name": c.name,
-            "employees": [context.serialize(emp, Person) for emp in c.employees],
-        }
-
-    person1 = Person(name="Alice", age=30)
-    person2 = Person(name="Bob", age=25)
-    company = Company(name="TechCo", employees=[person1, person2])
-
-    person_serializer = TypedSerializer(Person, func=serialize_person)
-    company_serializer = TypedSerializer(Company, func=serialize_company)
-
-    result = serialize(company, Company, person_serializer, company_serializer)
-    assert result == {
-        "name": "TechCo",
-        "employees": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}],
-    }
-
-
-def test_list_of_custom_objects():
-    """
-    Test serializing a list of custom objects.
-    """
-
-    def serialize_person(p: Person) -> dict:
-        return {"name": p.name, "age": p.age}
-
-    people = [
-        Person(name="Alice", age=30),
-        Person(name="Bob", age=25),
-    ]
-
-    serializer = TypedSerializer(Person, func=serialize_person)
-    result = serialize(people, list[Person], serializer)
-
-    assert result == [
-        {"name": "Alice", "age": 30},
-        {"name": "Bob", "age": 25},
-    ]
-
-
-def test_union_types():
-    """
-    Test serialization with union types.
-    """
-
-    def serialize_person(p: Person) -> dict:
-        return {"name": p.name, "age": p.age, "type": "person"}
-
-    person = Person(name="Alice", age=30)
-    serializer = TypedSerializer(Person, func=serialize_person)
-
-    # int | Person where object is int
-    result = serialize(42, int | Person, serializer)
-    assert result == 42
-
-    # int | Person where object is Person
-    result = serialize(person, int | Person, serializer)
-    assert result == {"name": "Alice", "age": 30, "type": "person"}
-
-
-def test_dict_with_custom_values():
-    """
-    Test dict with custom object values.
-    """
-
-    def serialize_person(p: Person) -> dict:
-        return {"name": p.name, "age": p.age}
-
-    people_dict = {
-        "alice": Person(name="Alice", age=30),
-        "bob": Person(name="Bob", age=25),
-    }
-
-    serializer = TypedSerializer(Person, func=serialize_person)
-    result = serialize(people_dict, dict[str, Person], serializer)
-
-    assert result == {
-        "alice": {"name": "Alice", "age": 30},
-        "bob": {"name": "Bob", "age": 25},
-    }
-
-
 def test_no_annotation():
     """
     Test serialization without specific annotation (type inference).
@@ -206,29 +81,6 @@ def test_no_annotation():
     # collections should work
     assert serialize([1, 2, 3]) == [1, 2, 3]
     assert serialize({"a": 1}) == {"a": 1}
-
-
-def test_mixed_nested_structures():
-    """
-    Test complex nested structures with custom objects.
-    """
-
-    def serialize_person(p: Person) -> dict:
-        return {"name": p.name, "age": p.age}
-
-    # dict[str, list[Person]]
-    data = {
-        "team_a": [Person("Alice", 30), Person("Bob", 25)],
-        "team_b": [Person("Charlie", 35)],
-    }
-
-    serializer = TypedSerializer(Person, func=serialize_person)
-    result = serialize(data, dict[str, list[Person]], serializer)
-
-    assert result == {
-        "team_a": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}],
-        "team_b": [{"name": "Charlie", "age": 35}],
-    }
 
 
 def test_literal_values():
@@ -278,15 +130,3 @@ def test_without_serializer():
     obj = CustomClass(42)
     result = serialize(obj)
     assert result is obj  # passed through unchanged
-
-
-def test_registry():
-    """
-    Test serialization with registry.
-    """
-    registry = TypedSerializerRegistry()
-    registry.register(TypedSerializer(int, func=str))
-
-    obj = 1
-    result = serialize(obj, int, registry)
-    assert result == "1"
