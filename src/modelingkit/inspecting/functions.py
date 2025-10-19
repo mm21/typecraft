@@ -33,7 +33,7 @@ class ParameterInfo:
     Parameter from `inspect` module.
     """
 
-    annotation: Annotation
+    annotation: Annotation | None
     """
     Annotation as extracted by `get_type_hints()`, resolving any stringized annotations.
     """
@@ -54,7 +54,7 @@ class SignatureInfo:
     Mapping of parameter name to info.
     """
 
-    return_annotation: Annotation
+    return_annotation: Annotation | None
     """
     Return annotation.
     """
@@ -72,27 +72,34 @@ class SignatureInfo:
             ) from e
 
         # set return annotation
-        if "return" not in type_hints:
-            raise ValueError(f"Function {func} has no return type annotation")
-        self.return_annotation = Annotation(type_hints["return"])
-
-        # get signature of function
-        sig = inspect.signature(func)
-
-        # check for parameters with missing type hints
-        missing_type_hints = [p for p in sig.parameters if p not in type_hints]
-        if len(missing_type_hints):
-            raise ValueError(
-                f"Parameters of {func} have no type annotation: {missing_type_hints}"
-            )
+        self.return_annotation = (
+            Annotation(type_hints["return"]) if "return" in type_hints else None
+        )
 
         # set param annotations
+        sig = inspect.signature(func)
         self.params = MappingProxyType(
             {
-                name: ParameterInfo(param, Annotation(type_hints[name]))
+                name: ParameterInfo(
+                    param, Annotation(type_hints[name]) if name in type_hints else None
+                )
                 for name, param in sig.parameters.items()
             }
         )
 
     def __repr__(self) -> str:
         return f"{self.func.__name__}({self.params}) -> {self.return_annotation}"
+
+    def get_params_by_annotation(
+        self, annotation: Annotation, /
+    ) -> MappingProxyType[str, ParameterInfo]:
+        """
+        Get params with the given annotation, or a subtype thereof.
+        """
+        return MappingProxyType(
+            {
+                name: param
+                for name, param in self.params.items()
+                if param.annotation and param.annotation.is_subtype(annotation)
+            }
+        )

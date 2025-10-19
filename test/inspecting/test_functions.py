@@ -19,23 +19,23 @@ def test_basic_function():
     def func(x: int, y: str) -> bool:
         return True
 
-    sig_info = SignatureInfo(func)
+    sig = SignatureInfo(func)
 
-    assert sig_info.func is func
-    assert isinstance(sig_info.return_annotation, Annotation)
-    assert sig_info.return_annotation == Annotation(bool)
-    assert len(sig_info.params) == 2
+    assert sig.func is func
+    assert isinstance(sig.return_annotation, Annotation)
+    assert sig.return_annotation == Annotation(bool)
+    assert len(sig.params) == 2
 
     # check first parameter
-    assert "x" in sig_info.params
-    param_x = sig_info.params["x"]
+    assert "x" in sig.params
+    param_x = sig.params["x"]
     assert isinstance(param_x, ParameterInfo)
     assert param_x.annotation == Annotation(int)
     assert param_x.parameter.name == "x"
 
     # check second parameter
-    assert "y" in sig_info.params
-    param_y = sig_info.params["y"]
+    assert "y" in sig.params
+    param_y = sig.params["y"]
     assert param_y.annotation == Annotation(str)
     assert param_y.parameter.name == "y"
 
@@ -48,34 +48,24 @@ def test_no_parameters():
     def func() -> int:
         return 42
 
-    sig_info = SignatureInfo(func)
+    sig = SignatureInfo(func)
 
-    assert sig_info.return_annotation == Annotation(int)
-    assert len(sig_info.params) == 0
+    assert sig.return_annotation == Annotation(int)
+    assert len(sig.params) == 0
 
 
-def test_missing_return_annotation():
+def test_missing_annotations():
     """
-    Test that missing return annotation raises ValueError.
+    Test function with missing parameter and return annotations.
     """
 
-    def func(x: int):
+    def func(x):
         return x
 
-    with pytest.raises(ValueError, match="has no return type annotation"):
-        SignatureInfo(func)
-
-
-def test_missing_parameter_annotation():
-    """
-    Test that missing parameter annotation raises ValueError.
-    """
-
-    def func(x: int, y) -> bool:
-        return True
-
-    with pytest.raises(ValueError, match="have no type annotation"):
-        SignatureInfo(func)
+    sig = SignatureInfo(func)
+    assert len(sig.params) == 1
+    assert sig.params["x"].annotation is None
+    assert sig.return_annotation is None
 
 
 def test_stringized_annotations():
@@ -86,11 +76,11 @@ def test_stringized_annotations():
     def func(x: "int", y: "str") -> "bool":
         return True
 
-    sig_info = SignatureInfo(func)
+    sig = SignatureInfo(func)
 
-    assert sig_info.params["x"].annotation == Annotation(int)
-    assert sig_info.params["y"].annotation == Annotation(str)
-    assert sig_info.return_annotation == Annotation(bool)
+    assert sig.params["x"].annotation == Annotation(int)
+    assert sig.params["y"].annotation == Annotation(str)
+    assert sig.return_annotation == Annotation(bool)
 
 
 def test_forward_reference_error():
@@ -109,11 +99,11 @@ def test_lambda():
     """
     Test extracting signature from lambda.
     """
-    func = lambda x: x + 1
 
-    # lambda without annotations should fail
-    with pytest.raises(ValueError, match="has no return type annotation"):
-        SignatureInfo(func)
+    sig = SignatureInfo(lambda x: x + 1)
+
+    assert sig.return_annotation is None
+    assert sig.params["x"].annotation is None
 
 
 def test_variadic_args():
@@ -124,12 +114,12 @@ def test_variadic_args():
     def func(x: int, *args: str, **kwargs: Any) -> bool:
         return True
 
-    sig_info = SignatureInfo(func)
+    sig = SignatureInfo(func)
 
-    assert len(sig_info.params) == 3
-    assert sig_info.params["x"].annotation == Annotation(int)
-    assert sig_info.params["args"].annotation == Annotation(str)
-    assert sig_info.params["kwargs"].annotation == Annotation(Any)
+    assert len(sig.params) == 3
+    assert sig.params["x"].annotation == Annotation(int)
+    assert sig.params["args"].annotation == Annotation(str)
+    assert sig.params["kwargs"].annotation == Annotation(Any)
 
 
 def test_parameter_inspection():
@@ -141,33 +131,33 @@ def test_parameter_inspection():
     def func1(x: int, y: str, /) -> bool:
         return True
 
-    sig_info = SignatureInfo(func1)
+    sig = SignatureInfo(func1)
 
-    assert len(sig_info.params) == 2
-    assert sig_info.params["x"].parameter.kind == Parameter.POSITIONAL_ONLY
-    assert sig_info.params["y"].parameter.kind == Parameter.POSITIONAL_ONLY
+    assert len(sig.params) == 2
+    assert sig.params["x"].parameter.kind == Parameter.POSITIONAL_ONLY
+    assert sig.params["y"].parameter.kind == Parameter.POSITIONAL_ONLY
 
     def func2(x: int, *, y: str, z: bool) -> None:
         pass
 
     # keyword-only
-    sig_info = SignatureInfo(func2)
+    sig = SignatureInfo(func2)
 
-    assert len(sig_info.params) == 3
-    assert sig_info.params["x"].parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
-    assert sig_info.params["y"].parameter.kind == Parameter.KEYWORD_ONLY
-    assert sig_info.params["z"].parameter.kind == Parameter.KEYWORD_ONLY
+    assert len(sig.params) == 3
+    assert sig.params["x"].parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
+    assert sig.params["y"].parameter.kind == Parameter.KEYWORD_ONLY
+    assert sig.params["z"].parameter.kind == Parameter.KEYWORD_ONLY
 
     # default values
     def func3(x: int, y: str = "default", z: Optional[bool] = None) -> int:
         return x
 
-    sig_info = SignatureInfo(func3)
+    sig = SignatureInfo(func3)
 
-    assert len(sig_info.params) == 3
-    assert sig_info.params["x"].parameter.default == Parameter.empty
-    assert sig_info.params["y"].parameter.default == "default"
-    assert sig_info.params["z"].parameter.default is None
+    assert len(sig.params) == 3
+    assert sig.params["x"].parameter.default == Parameter.empty
+    assert sig.params["y"].parameter.default == "default"
+    assert sig.params["z"].parameter.default is None
 
 
 def test_bound_method():
@@ -180,13 +170,13 @@ def test_bound_method():
             return True
 
     obj = MyClass()
-    sig_info = SignatureInfo(obj.method)
+    sig = SignatureInfo(obj.method)
 
     # bound method should not include 'self'
-    assert len(sig_info.params) == 2
-    assert sig_info.params["x"].annotation == Annotation(int)
-    assert sig_info.params["y"].annotation == Annotation(str)
-    assert "self" not in sig_info.params
+    assert len(sig.params) == 2
+    assert sig.params["x"].annotation == Annotation(int)
+    assert sig.params["y"].annotation == Annotation(str)
+    assert "self" not in sig.params
 
 
 def test_class_method():
@@ -199,13 +189,13 @@ def test_class_method():
         def method(cls, x: int, y: str) -> bool:
             return True
 
-    sig_info = SignatureInfo(MyClass.method)
+    sig = SignatureInfo(MyClass.method)
 
     # classmethod should not include 'cls'
-    assert len(sig_info.params) == 2
-    assert sig_info.params["x"].annotation == Annotation(int)
-    assert sig_info.params["y"].annotation == Annotation(str)
-    assert "cls" not in sig_info.params
+    assert len(sig.params) == 2
+    assert sig.params["x"].annotation == Annotation(int)
+    assert sig.params["y"].annotation == Annotation(str)
+    assert "cls" not in sig.params
 
 
 def test_static_method():
@@ -218,8 +208,8 @@ def test_static_method():
         def method(x: int, y: str) -> bool:
             return True
 
-    sig_info = SignatureInfo(MyClass.method)
+    sig = SignatureInfo(MyClass.method)
 
-    assert len(sig_info.params) == 2
-    assert sig_info.params["x"].annotation == Annotation(int)
-    assert sig_info.params["y"].annotation == Annotation(str)
+    assert len(sig.params) == 2
+    assert sig.params["x"].annotation == Annotation(int)
+    assert sig.params["y"].annotation == Annotation(str)
