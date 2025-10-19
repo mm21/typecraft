@@ -5,7 +5,7 @@ Tests for `Annotation` class.
 from collections.abc import Callable
 from typing import Any, Literal, Sequence, Union
 
-from modelingkit.inspecting import Annotation, is_instance, is_subtype
+from modelingkit.inspecting.annotations import Annotation, is_instance, is_subtype
 
 type ListAlias = list[int]
 

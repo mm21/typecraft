@@ -24,7 +24,7 @@ from typing import (
     overload,
 )
 
-from .inspecting import Annotation
+from .inspecting.annotations import Annotation
 from .validating import TypedValidator, ValidationContext, validate
 
 __all__ = [

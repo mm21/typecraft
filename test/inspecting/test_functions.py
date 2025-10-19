@@ -7,7 +7,8 @@ from typing import Any, Optional
 
 import pytest
 
-from modelingkit.inspecting import Annotation, FunctionSignatureInfo, ParameterInfo
+from modelingkit.inspecting.annotations import Annotation
+from modelingkit.inspecting.functions import ParameterInfo, SignatureInfo
 
 
 def test_basic_function():
@@ -18,7 +19,7 @@ def test_basic_function():
     def func(x: int, y: str) -> bool:
         return True
 
-    sig_info = FunctionSignatureInfo(func)
+    sig_info = SignatureInfo(func)
 
     assert sig_info.func is func
     assert isinstance(sig_info.return_annotation, Annotation)
@@ -47,7 +48,7 @@ def test_no_parameters():
     def func() -> int:
         return 42
 
-    sig_info = FunctionSignatureInfo(func)
+    sig_info = SignatureInfo(func)
 
     assert sig_info.return_annotation == Annotation(int)
     assert len(sig_info.params) == 0
@@ -62,7 +63,7 @@ def test_missing_return_annotation():
         return x
 
     with pytest.raises(ValueError, match="has no return type annotation"):
-        FunctionSignatureInfo(func)
+        SignatureInfo(func)
 
 
 def test_missing_parameter_annotation():
@@ -74,7 +75,7 @@ def test_missing_parameter_annotation():
         return True
 
     with pytest.raises(ValueError, match="have no type annotation"):
-        FunctionSignatureInfo(func)
+        SignatureInfo(func)
 
 
 def test_stringized_annotations():
@@ -85,7 +86,7 @@ def test_stringized_annotations():
     def func(x: "int", y: "str") -> "bool":
         return True
 
-    sig_info = FunctionSignatureInfo(func)
+    sig_info = SignatureInfo(func)
 
     assert sig_info.params["x"].annotation == Annotation(int)
     assert sig_info.params["y"].annotation == Annotation(str)
@@ -101,7 +102,7 @@ def test_forward_reference_error():
         return 1
 
     with pytest.raises(ValueError, match="Failed to resolve type hints"):
-        FunctionSignatureInfo(func)
+        SignatureInfo(func)
 
 
 def test_lambda():
@@ -112,7 +113,7 @@ def test_lambda():
 
     # lambda without annotations should fail
     with pytest.raises(ValueError, match="has no return type annotation"):
-        FunctionSignatureInfo(func)
+        SignatureInfo(func)
 
 
 def test_variadic_args():
@@ -123,7 +124,7 @@ def test_variadic_args():
     def func(x: int, *args: str, **kwargs: Any) -> bool:
         return True
 
-    sig_info = FunctionSignatureInfo(func)
+    sig_info = SignatureInfo(func)
 
     assert len(sig_info.params) == 3
     assert sig_info.params["x"].annotation == Annotation(int)
@@ -140,7 +141,7 @@ def test_parameter_inspection():
     def func1(x: int, y: str, /) -> bool:
         return True
 
-    sig_info = FunctionSignatureInfo(func1)
+    sig_info = SignatureInfo(func1)
 
     assert len(sig_info.params) == 2
     assert sig_info.params["x"].parameter.kind == Parameter.POSITIONAL_ONLY
@@ -150,7 +151,7 @@ def test_parameter_inspection():
         pass
 
     # keyword-only
-    sig_info = FunctionSignatureInfo(func2)
+    sig_info = SignatureInfo(func2)
 
     assert len(sig_info.params) == 3
     assert sig_info.params["x"].parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
@@ -161,7 +162,7 @@ def test_parameter_inspection():
     def func3(x: int, y: str = "default", z: Optional[bool] = None) -> int:
         return x
 
-    sig_info = FunctionSignatureInfo(func3)
+    sig_info = SignatureInfo(func3)
 
     assert len(sig_info.params) == 3
     assert sig_info.params["x"].parameter.default == Parameter.empty
@@ -179,7 +180,7 @@ def test_bound_method():
             return True
 
     obj = MyClass()
-    sig_info = FunctionSignatureInfo(obj.method)
+    sig_info = SignatureInfo(obj.method)
 
     # bound method should not include 'self'
     assert len(sig_info.params) == 2
@@ -198,7 +199,7 @@ def test_class_method():
         def method(cls, x: int, y: str) -> bool:
             return True
 
-    sig_info = FunctionSignatureInfo(MyClass.method)
+    sig_info = SignatureInfo(MyClass.method)
 
     # classmethod should not include 'cls'
     assert len(sig_info.params) == 2
@@ -217,7 +218,7 @@ def test_static_method():
         def method(x: int, y: str) -> bool:
             return True
 
-    sig_info = FunctionSignatureInfo(MyClass.method)
+    sig_info = SignatureInfo(MyClass.method)
 
     assert len(sig_info.params) == 2
     assert sig_info.params["x"].annotation == Annotation(int)

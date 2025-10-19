@@ -4,7 +4,7 @@ Test low-level validation via `TypedValidator` instances.
 
 from typing import Any
 
-from modelingkit.inspecting import Annotation
+from modelingkit.inspecting.annotations import Annotation
 from modelingkit.validating import (
     TypedValidator,
     TypedValidatorRegistry,

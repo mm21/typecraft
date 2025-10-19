@@ -10,7 +10,7 @@ from typing import (
     Literal,
 )
 
-from .inspecting import flatten_union
+from .inspecting.annotations import flatten_union
 
 __all__ = [
     "VarianceType",

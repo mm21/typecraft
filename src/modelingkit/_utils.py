@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from inspect import Parameter
 from typing import Any, cast
 
-from .inspecting import Annotation, FunctionSignatureInfo, ParameterInfo
+from .inspecting.annotations import Annotation
+from .inspecting.functions import ParameterInfo, SignatureInfo
 
 
 @dataclass
@@ -23,7 +24,7 @@ class ConverterSignature:
     First parameter, the object to be validated/serialized.
     """
 
-    sig_info: FunctionSignatureInfo
+    sig_info: SignatureInfo
     """
     Function signature.
     """
@@ -32,7 +33,7 @@ class ConverterSignature:
     def from_func(
         cls, func: Callable[..., Any], context_cls: type[Any]
     ) -> ConverterSignature:
-        sig_info = FunctionSignatureInfo(func)
+        sig_info = SignatureInfo(func)
 
         if not len(sig_info.params) in {1, 3}:
             raise TypeError(

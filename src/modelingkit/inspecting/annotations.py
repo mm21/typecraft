@@ -1,32 +1,26 @@
 """
-Utilities to inspect annotations.
+Utilities to inspect type annotations.
 """
 
 from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from dataclasses import dataclass
 from inspect import Parameter
-from types import EllipsisType, MappingProxyType, NoneType, UnionType
+from types import EllipsisType, NoneType, UnionType
 from typing import (
     Annotated,
     Any,
     Literal,
     TypeAliasType,
-    TypeVar,
     Union,
-    cast,
     get_args,
     get_origin,
-    get_type_hints,
-    overload,
 )
 
 __all__ = [
+    "ANY",
     "Annotation",
-    "ParameterInfo",
-    "FunctionSignatureInfo",
     "is_subtype",
     "is_instance",
     "is_union",
@@ -35,7 +29,6 @@ __all__ = [
     "normalize_annotation",
     "flatten_union",
     "get_concrete_type",
-    "get_type_param",
 ]
 
 
@@ -196,7 +189,7 @@ class Annotation:
         # - no need to pad if other has more args; my args will always be a
         # subset of Any
         if len(self.arg_annotations) < len(other_args):
-            my_args = list(self.arg_annotations) + [ANY_ANNOTATION] * (
+            my_args = list(self.arg_annotations) + [ANY] * (
                 len(other_args) - len(self.arg_annotations)
             )
         else:
@@ -348,7 +341,7 @@ class Annotation:
 
     def _check_list_or_set(self, obj: list[Any] | set[Any]) -> bool:
         assert len(self.arg_annotations) in {0, 1}
-        ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY_ANNOTATION
+        ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY
 
         return all(ann.is_type(o) for o in obj)
 
@@ -359,93 +352,17 @@ class Annotation:
         else:
             # homogeneous tuple like tuple[int, ...]
             assert len(self.arg_annotations) in {0, 2}
-            ann = (
-                self.arg_annotations[0] if len(self.arg_annotations) else ANY_ANNOTATION
-            )
+            ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY
 
             return all(ann.is_type(o) for o in obj)
 
     def _check_dict(self, obj: dict[Any, Any]) -> bool:
         assert len(self.arg_annotations) in {0, 2}
         key_ann, value_ann = (
-            self.arg_annotations
-            if len(self.arg_annotations) == 2
-            else (ANY_ANNOTATION, ANY_ANNOTATION)
+            self.arg_annotations if len(self.arg_annotations) == 2 else (ANY, ANY)
         )
 
         return all(key_ann.is_type(k) and value_ann.is_type(v) for k, v in obj.items())
-
-
-@dataclass
-class ParameterInfo:
-    parameter: Parameter
-    """
-    Parameter from `inspect` module.
-    """
-
-    annotation: Annotation
-    """
-    Annotation from `get_type_hints()`, resolving any stringized annotations.
-    """
-
-
-class FunctionSignatureInfo:
-    """
-    Encapsulates information extracted from a function signature.
-    """
-
-    func: Callable[..., Any]
-    """
-    Function passed in.
-    """
-
-    params: MappingProxyType[str, ParameterInfo]
-    """
-    Mapping of parameter name to info.
-    """
-
-    return_annotation: Annotation
-    """
-    Return annotation.
-    """
-
-    def __init__(self, func: Callable[..., Any], /):
-        self.func = func
-
-        # get type hints to handle stringized annotations from __future__ import
-        try:
-            type_hints = get_type_hints(func)
-        except (NameError, AttributeError) as e:
-            raise ValueError(
-                f"Failed to resolve type hints for {func.__name__}: {e}. "
-                "Ensure all types are imported or defined."
-            ) from e
-
-        # set return annotation
-        if "return" not in type_hints:
-            raise ValueError(f"Function {func} has no return type annotation")
-        self.return_annotation = Annotation(type_hints["return"])
-
-        # get signature of function
-        sig = inspect.signature(func)
-
-        # check for parameters with missing type hints
-        missing_type_hints = [p for p in sig.parameters if p not in type_hints]
-        if len(missing_type_hints):
-            raise ValueError(
-                f"Parameters of {func} have no type annotation: {missing_type_hints}"
-            )
-
-        # set param annotations
-        self.params = MappingProxyType(
-            {
-                name: ParameterInfo(param, Annotation(type_hints[name]))
-                for name, param in sig.parameters.items()
-            }
-        )
-
-    def __repr__(self) -> str:
-        return f"{self.func.__name__}({self.params}) -> {self.return_annotation}"
 
 
 def is_subtype(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
@@ -557,71 +474,6 @@ def get_concrete_type(annotation: Any, /) -> type:
     return concrete_type
 
 
-@overload
-def get_type_param[BaseT](cls: type[Any], base_cls: type[BaseT]) -> type | None: ...
-
-
-@overload
-def get_type_param[BaseT, ParamT](
-    cls: type[Any], base_cls: type[BaseT], param_base_cls: type[ParamT]
-) -> type[ParamT] | None: ...
-
-
-# TODO: pass index of desired param to differentiate multiple type params of the
-# same type
-def get_type_param[BaseT, ParamT](
-    cls: type[Any], base_cls: type[BaseT], param_base_cls: type[ParamT] | None = None
-) -> type[ParamT] | type | None:
-    """
-    Extract the concrete type param from the given base class. If `base_cls` can be
-    parameterized with multiple types, it's recommend to also pass `param_base_cls`
-    to get the desired type param.
-    """
-
-    def check_origin(origin: Any) -> bool:
-        return (
-            origin is not None
-            and isinstance(origin, type)
-            and issubclass(origin, base_cls)
-        )
-
-    def check_arg(arg: Any) -> bool:
-        if arg is None or not isinstance(arg, type):
-            return False
-        elif param_base_cls and not issubclass(arg, param_base_cls):
-            return False
-        else:
-            return True
-
-    def get_bases(cls: type, attr: str) -> list[type]:
-        return list(cast(tuple[type], getattr(cls, attr, ())))
-
-    def get_arg(cls: type) -> type[ParamT] | type | None:
-        # check pydantic metadata if applicable
-        if metadata := getattr(cls, "__pydantic_generic_metadata__", None):
-            origin, args = metadata["origin"], metadata["args"]
-        else:
-            origin, args = get_origin(cls), get_args(cls)
-
-        if check_origin(origin):
-            for arg in args:
-                # TODO: check TypeVar bound, but prioritize concrete type?
-                if isinstance(arg, TypeVar):
-                    continue
-
-                if check_arg(arg):
-                    return arg
-
-        # not found, recurse into bases
-        for base in get_bases(cls, "__orig_bases__") + get_bases(cls, "__bases__"):
-            if param := get_arg(base):
-                return param
-
-        return None
-
-    return get_arg(cls)
-
-
 def _recurse_union(annotation: Any, /, *, preserve_extras: bool) -> list[Any]:
     args: list[Any] = []
     annotation_ = normalize_annotation(annotation, preserve_extras=preserve_extras)
@@ -635,7 +487,7 @@ def _recurse_union(annotation: Any, /, *, preserve_extras: bool) -> list[Any]:
     return args
 
 
-ANY_ANNOTATION = Annotation(Any)
+ANY = Annotation(Any)
 """
 Annotation encapsulating `Any`.
 """

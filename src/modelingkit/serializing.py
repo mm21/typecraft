@@ -16,7 +16,7 @@ from typing import (
 )
 
 from ._utils import ConverterSignature, normalize_to_registry
-from .inspecting import Annotation
+from .inspecting.annotations import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
     CollectionType,

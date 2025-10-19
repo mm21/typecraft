@@ -4,7 +4,7 @@ Test end-to-end serialization via APIs.
 
 from dataclasses import dataclass
 
-from modelingkit.inspecting import Annotation
+from modelingkit.inspecting.annotations import Annotation
 from modelingkit.serializing import (
     SerializationContext,
     TypedSerializer,
