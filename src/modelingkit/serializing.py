@@ -177,7 +177,7 @@ class TypedSerializer[T]:
         else:
             # contravariant (default): annotation must be a subclass of
             # self.__source_annotation
-            if not source_ann.is_subclass(self.__source_annotation):
+            if not source_ann.is_subtype(self.__source_annotation):
                 return False
 
         # check that object matches source annotation

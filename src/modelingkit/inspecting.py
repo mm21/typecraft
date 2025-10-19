@@ -134,7 +134,7 @@ class Annotation:
     def __eq__(self, other: Any, /) -> bool:
         if not isinstance(other, Annotation):
             return False
-        return self.is_subclass(other) and other.is_subclass(self)
+        return self.is_subtype(other) and other.is_subtype(self)
 
     @property
     def is_union(self) -> bool:
@@ -148,27 +148,27 @@ class Annotation:
     def is_callable(self) -> bool:
         return self.origin is Callable
 
-    def is_subclass(self, other: Annotation | Any, /) -> bool:
+    def is_subtype(self, other: Annotation | Any, /) -> bool:
         """
-        Check if this annotation is a "subclass" of other annotation; loosely
+        Check if this annotation is a subtype of other annotation; loosely
         equivalent to `issubclass(annotation, other)`.
 
         Examples:
 
-        - `Annotation(int).is_subclass(Annotation(Any))` returns `True`
-        - `Annotation(list[int]).is_subclass(list[Any])` returns `True`
-        - `Annotation(list[int]).is_subclass(list[str])` returns `False`
-        - `Annotation(int).is_subclass(Callable[[Any], int])` returns `True`
+        - `Annotation(int).is_subtype(Annotation(Any))` returns `True`
+        - `Annotation(list[int]).is_subtype(list[Any])` returns `True`
+        - `Annotation(list[int]).is_subtype(list[str])` returns `False`
+        - `Annotation(int).is_subtype(Callable[[Any], int])` returns `True`
         """
         other_ann = Annotation._normalize(other)
 
         # handle union for self
         if self.is_union:
-            return all(a.is_subclass(other_ann) for a in self.arg_annotations)
+            return all(a.is_subtype(other_ann) for a in self.arg_annotations)
 
         # handle union for other
         if other_ann.is_union:
-            return any(self.is_subclass(a) for a in other_ann.arg_annotations)
+            return any(self.is_subtype(a) for a in other_ann.arg_annotations)
 
         # handle literal for self
         if self.is_literal:
@@ -182,8 +182,8 @@ class Annotation:
         if self.is_callable or other_ann.is_callable:
             if not self.is_callable and other_ann.is_callable:
                 # callable type (e.g., int, str) being compared to Callable
-                return self._is_subclass_callable_type(other_ann)
-            return self._is_subclass_callable(other_ann)
+                return self._is_subtype_callable_type(other_ann)
+            return self._is_subtype_callable(other_ann)
 
         # check concrete type
         if not issubclass(self.concrete_type, other_ann.concrete_type):
@@ -204,7 +204,7 @@ class Annotation:
 
         # recurse into args
         for my_arg, other_arg in zip(my_args, other_args):
-            if not my_arg.is_subclass(other_arg):
+            if not my_arg.is_subtype(other_arg):
                 return False
 
         return True
@@ -242,7 +242,7 @@ class Annotation:
     def _normalize(cls, obj: Annotation | Any) -> Annotation:
         return obj if isinstance(obj, Annotation) else Annotation(obj)
 
-    def _is_subclass_callable(self, other: Annotation) -> bool:
+    def _is_subtype_callable(self, other: Annotation) -> bool:
         """
         Check if this callable is a subclass of another callable.
 
@@ -255,7 +255,7 @@ class Annotation:
         # handle ... parameters (any parameters acceptable)
         if other.param_annotations is None:
             # other accepts any params, check return type only
-            return self.return_annotation.is_subclass(other.return_annotation)
+            return self.return_annotation.is_subtype(other.return_annotation)
 
         if self.param_annotations is None:
             # we accept any params, but other doesn't - not a subclass
@@ -269,12 +269,12 @@ class Annotation:
         for my_param, other_param in zip(
             self.param_annotations, other.param_annotations
         ):
-            if not other_param.is_subclass(my_param):
+            if not other_param.is_subtype(my_param):
                 return False
 
-        return self.return_annotation.is_subclass(other.return_annotation)
+        return self.return_annotation.is_subtype(other.return_annotation)
 
-    def _is_subclass_callable_type(self, other: Annotation) -> bool:
+    def _is_subtype_callable_type(self, other: Annotation) -> bool:
         """
         Check if this type annotation (e.g., type[int], type[str]) is a subclass of a
         Callable annotation. Treats self as Callable[..., X] where X is the type
@@ -300,7 +300,7 @@ class Annotation:
 
         # with ... parameters, we accept any parameters, so contravariance always
         # satisfied
-        return return_ann.is_subclass(other.return_annotation)
+        return return_ann.is_subtype(other.return_annotation)
 
     def _check_callable(self, obj: Any) -> bool:
         """
@@ -461,7 +461,7 @@ def is_subtype(annotation: Annotation | Any, other: Annotation | Any, /) -> bool
     assert is_subtype(list[int], list[int | str])
     ```
     """
-    return Annotation._normalize(annotation).is_subclass(other)
+    return Annotation._normalize(annotation).is_subtype(other)
 
 
 def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:

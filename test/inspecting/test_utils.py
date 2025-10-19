@@ -27,7 +27,7 @@ type UnionWithAnnotatedAlias = Union[Annotated[int, "positive"], str]
 type DeepAlias = Annotated[Union[int, str], "constraint"]
 
 
-def test_is_subclass():
+def test_is_subtype():
     # verify all overloads
     assert is_subtype(Annotation(int), Annotation(Any))
     assert is_subtype(Annotation(int), Any)

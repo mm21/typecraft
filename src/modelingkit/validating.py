@@ -209,7 +209,7 @@ class TypedValidator[T]:
             # self.__target_annotation
             # - for example, a validator configured with target BaseModel can also
             # validate UserModel
-            if not target_ann.is_subclass(self.__target_annotation):
+            if not target_ann.is_subtype(self.__target_annotation):
                 return False
 
         # check source

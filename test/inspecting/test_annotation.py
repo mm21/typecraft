@@ -31,20 +31,20 @@ def test_union():
     assert a.is_union
 
 
-def test_is_subclass():
+def test_is_subtype():
     """
-    Test `is_subclass` / `Annotation.is_subclass()` checks.
+    Test `is_subtype` / `Annotation.is_subtype()` checks.
     """
     a1 = Annotation(int)
     a2 = Annotation(Any)
-    assert a1.is_subclass(a2)
-    assert a1.is_subclass(Any)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert a1.is_subtype(Any)
+    assert not a2.is_subtype(a1)
 
     a1 = Annotation(list[int])
     a2 = Annotation(list[Any])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # same but with alias
     assert is_subtype(ListAlias, list[Any])
@@ -52,57 +52,57 @@ def test_is_subclass():
 
     a1 = Annotation(list[int])
     a2 = Annotation(list[float])
-    assert not a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert not a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     a1 = Annotation(list[list[bool]])
     a2 = Annotation(list[list[int]])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # list is assumed to be list[Any]
     a1 = Annotation(list[int])
     a2 = Annotation(list)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     a1 = Annotation(list[Any])
     a2 = Annotation(list)
-    assert a1.is_subclass(a2)
-    assert a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert a2.is_subtype(a1)
 
     # unions
     a1 = Annotation(int)
     a2 = Annotation(int | str)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     a1 = Annotation(int | str)
     a2 = Annotation(int | str | float)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     a1 = Annotation(list[int | str])
     a2 = Annotation(list)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # literals
     a1 = Annotation(Literal["a"])
     a2 = Annotation(Literal["a", "b"])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     a2 = Annotation(str)
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     a3 = Annotation(Literal["a", "b"] | int)
     a4 = Annotation(int)
-    assert a1.is_subclass(a3)
-    assert a4.is_subclass(a3)
-    assert not a3.is_subclass(a1)
-    assert not a3.is_subclass(a4)
+    assert a1.is_subtype(a3)
+    assert a4.is_subtype(a3)
+    assert not a3.is_subtype(a1)
+    assert not a3.is_subtype(a4)
 
 
 def test_is_instance():
@@ -236,75 +236,75 @@ def test_callable():
     assert a.return_annotation.raw is str
 
 
-def test_callable_is_subclass():
+def test_callable_is_subtype():
     """
-    Test is_subclass for callables.
+    Test is_subtype for callables.
 
     Callables are contravariant in parameters and covariant in return type.
     """
     # same signature
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[int], str])
-    assert a1.is_subclass(a2)
-    assert a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert a2.is_subtype(a1)
 
     # covariant return type (bool is subclass of int)
     a1 = Annotation(Callable[[int], bool])
     a2 = Annotation(Callable[[int], int])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # contravariant parameters (bool is subclass of int)
     # - Callable[[int], str] accepts any int, including bool
     # so it's a subtype of Callable[[bool], str]
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[bool], str])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # different parameter count
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[int, int], str])
-    assert not a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert not a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # Callable[..., T] accepts any parameters
     a1 = Annotation(Callable[[int, str], bool])
     a2 = Annotation(Callable[..., bool])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # return type still matters with ...
     a1 = Annotation(Callable[..., bool])
     a2 = Annotation(Callable[..., int])
-    assert a1.is_subclass(a2)  # bool is subclass of int
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)  # bool is subclass of int
+    assert not a2.is_subtype(a1)
 
     # Callable with Any
     a1 = Annotation(Callable[[int], Any])
     a2 = Annotation(Callable[[int], str])
-    assert a2.is_subclass(a1)  # str is subclass of Any
-    assert not a1.is_subclass(a2)
+    assert a2.is_subtype(a1)  # str is subclass of Any
+    assert not a1.is_subtype(a2)
 
     # multiple parameters with contravariance
     a1 = Annotation(Callable[[int, str], bool])
     a2 = Annotation(Callable[[bool, str], bool])
-    assert a1.is_subclass(a2)
-    assert not a2.is_subclass(a1)
+    assert a1.is_subtype(a2)
+    assert not a2.is_subtype(a1)
 
     # complex nested types
     a1 = Annotation(Callable[[list[int]], str])
     a2 = Annotation(Callable[[list[bool]], str])
     a3 = Annotation(Callable[[tuple[int]], str])
     a4 = Annotation(Callable[[Sequence[int]], str])
-    assert a1.is_subclass(a2)  # list[int] accepts list[bool]
-    assert not a2.is_subclass(a1)
-    assert not a1.is_subclass(a3)
-    assert not a1.is_subclass(a4)
-    assert a4.is_subclass(a1)
+    assert a1.is_subtype(a2)  # list[int] accepts list[bool]
+    assert not a2.is_subtype(a1)
+    assert not a1.is_subtype(a3)
+    assert not a1.is_subtype(a4)
+    assert a4.is_subtype(a1)
 
 
-def test_callable_type_is_subclass():
+def test_callable_type_is_subtype():
     """
     Test that type annotations (type[int], type[str], etc.) are recognized as callables.
 
@@ -314,53 +314,53 @@ def test_callable_type_is_subclass():
     # type[int] is like Callable[..., int]
     a1 = Annotation(type[int])
     a2 = Annotation(Callable[[Any], int])
-    assert a1.is_subclass(a2)
+    assert a1.is_subtype(a2)
 
     # type[int] is also a subclass of Callable[..., int]
     a2 = Annotation(Callable[..., int])
-    assert a1.is_subclass(a2)
+    assert a1.is_subtype(a2)
 
     # type[int] is a subclass of Callable[[str], int] (broader params)
     a2 = Annotation(Callable[[str], int])
-    assert a1.is_subclass(a2)
+    assert a1.is_subtype(a2)
 
     # type[int] is NOT a subclass of Callable[[Any], bool] (wrong return type)
     a2 = Annotation(Callable[[Any], bool])
-    assert not a1.is_subclass(a2)
+    assert not a1.is_subtype(a2)
 
     # type[int] is NOT a subclass of Callable[[Any], str] (wrong return type)
     a2 = Annotation(Callable[[Any], str])
-    assert not a1.is_subclass(a2)
+    assert not a1.is_subtype(a2)
 
     # type[str] is like Callable[..., str]
     a1 = Annotation(type[str])
     a2 = Annotation(Callable[[Any], str])
-    assert a1.is_subclass(a2)
+    assert a1.is_subtype(a2)
 
     # type[list] is like Callable[..., list]
     a1 = Annotation(type[list])
     a2 = Annotation(Callable[[Any], list])
-    assert a1.is_subclass(a2)
+    assert a1.is_subtype(a2)
 
     # more complex: type[int] with union in Callable
     a1 = Annotation(type[int])
     a2 = Annotation(Callable[[int | str], int])
-    assert a1.is_subclass(a2)
+    assert a1.is_subtype(a2)
 
     # test with multiple parameters
     a1 = Annotation(type[int])
     a2 = Annotation(Callable[[Any, Any], int])
-    assert a1.is_subclass(a2)  # type[int] accepts any number of args
+    assert a1.is_subtype(a2)  # type[int] accepts any number of args
 
     # but Callable[[Any], int] is NOT a subclass of type[int]
     a1 = Annotation(Callable[[Any], int])
     a2 = Annotation(type[int])
-    assert not a1.is_subclass(a2)
+    assert not a1.is_subtype(a2)
 
     # verify that plain `int` is NOT treated as callable
     a1 = Annotation(int)
     a2 = Annotation(Callable[[Any], int])
-    assert not a1.is_subclass(a2)  # int instances are not callable
+    assert not a1.is_subtype(a2)  # int instances are not callable
 
 
 def test_callable_is_instance():
