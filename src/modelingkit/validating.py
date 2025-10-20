@@ -4,19 +4,23 @@ Validation capability.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Mapping
 from typing import (
     Any,
     Callable,
     Generator,
-    Sequence,
     Union,
     cast,
     overload,
 )
 
-from .converting import ConverterFunction, normalize_to_registry
+from .converting import (
+    BaseConversionContext,
+    BaseConverterRegistry,
+    BaseTypedConverter,
+    ConverterFunction,
+    normalize_to_registry,
+)
 from .inspecting.annotations import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -50,28 +54,11 @@ objects (e.g. elements of custom collections).
 """
 
 
-class TypedValidator[TargetT]:
+class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
     """
-
-    __source_annotation: Annotation
-    """
-    Annotation specifying type to convert from.
-    """
-
-    __target_annotation: Annotation
-    """
-    Annotation specifying type to convert to.
-    """
-
-    __func: ConverterFunction | None
-    """
-    Function taking source type and returning an instance of target type.
-    """
-
-    __variance: VarianceType
 
     @overload
     def __init__(
@@ -104,27 +91,12 @@ class TypedValidator[TargetT]:
         func: ValidatorFuncType[Any] | None = None,
         variance: VarianceType = "contravariant",
     ):
-        self.__source_annotation = Annotation._normalize(source_annotation)
-        self.__target_annotation = Annotation._normalize(target_annotation)
-        self.__func = (
-            ConverterFunction.from_func(func, ValidationContext) if func else None
+        super().__init__(
+            source_annotation, target_annotation, func=func, variance=variance
         )
-        self.__variance = variance
 
     def __repr__(self) -> str:
-        return f"TypedValidator(source={self.__source_annotation}, target={self.__target_annotation}, func={self.__func}), variance={self.__variance}"
-
-    @property
-    def source_annotation(self) -> Annotation:
-        return self.__source_annotation
-
-    @property
-    def target_annotation(self) -> Annotation:
-        return self.__target_annotation
-
-    @property
-    def variance(self) -> VarianceType:
-        return self.__variance
+        return f"TypedValidator(source={self._source_annotation}, target={self._target_annotation}, func={self._func}, variance={self._variance})"
 
     @classmethod
     def from_func(
@@ -137,7 +109,7 @@ class TypedValidator[TargetT]:
         """
         Create a TypedValidator from a function by inspecting its signature.
         """
-        sig = ConverterFunction.from_func(func, ValidationContext)
+        sig = ConverterFunction(func, ValidationContext)
 
         # validate sig: must take source type and return target type
         assert sig.obj_param.annotation
@@ -165,16 +137,16 @@ class TypedValidator[TargetT]:
         MyList[T] would invoke conversion to type T on each item.
         """
         # should be checked by the caller
-        assert self.can_validate(obj, target_annotation)
+        assert self.can_convert(obj, target_annotation)
 
         try:
-            if func := self.__func:
+            if func := self._func:
                 # provided validation function
                 validated_obj = func.invoke(obj, target_annotation, context)
             else:
                 # direct object construction
                 concrete_type = cast(
-                    Callable[[Any], TargetT], self.__target_annotation.concrete_type
+                    Callable[[Any], TargetT], self._target_annotation.concrete_type
                 )
                 validated_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
@@ -182,37 +154,30 @@ class TypedValidator[TargetT]:
                 f"TypedValidator {self} failed to validate {obj} ({type(obj)}): {e}"
             ) from None
 
-        if not isinstance(validated_obj, self.__target_annotation.concrete_type):
+        if not isinstance(validated_obj, self._target_annotation.concrete_type):
             raise ValueError(
                 f"TypedValidator {self} failed to validate {obj} ({type(obj)}), got {validated_obj} ({type(validated_obj)})"
             )
 
         return validated_obj
 
-    def can_validate(self, obj: Any, target_annotation: Annotation | Any, /) -> bool:
+    def can_convert(self, obj: Any, annotation: Annotation | Any, /) -> bool:
         """
         Check if this validator can convert the given object to the given
-        annotation.
+        target annotation.
         """
-        target_ann = Annotation._normalize(target_annotation)
+        target_ann = Annotation._normalize(annotation)
 
-        if self.__variance == "invariant":
-            # exact match only
-            if not target_ann == self.__target_annotation:
-                return False
-        else:
-            # contravariant (default): annotation must be a subclass of
-            # self.__target_annotation
-            # - for example, a validator configured with target BaseModel can also
-            # validate UserModel
-            if not target_ann.is_subtype(self.__target_annotation):
-                return False
+        if not self._check_variance_match(target_ann, self._target_annotation):
+            return False
 
-        # check source
-        return self.__source_annotation.is_type(obj)
+        return self._source_annotation.is_type(obj)
+
+    def _get_context_cls(self) -> type[Any]:
+        return ValidationContext
 
 
-class TypedValidatorRegistry:
+class TypedValidatorRegistry(BaseConverterRegistry[TypedValidator]):
     """
     Registry for managing type validators.
 
@@ -220,34 +185,21 @@ class TypedValidatorRegistry:
     and target annotation.
     """
 
-    __validator_map: dict[type, list[TypedValidator]]
-    """
-    Validators grouped by concrete target type for efficiency.
-    """
-
-    __validators: list[TypedValidator] = []
-    """
-    List of all validators for fallback/contravariant matching.
-    """
-
-    def __init__(self, *validators: TypedValidator):
-        self.__validator_map = defaultdict(list)
-        self.__validators = []
-        self.extend(validators)
-
     def __repr__(self) -> str:
-        return f"TypedValidatorRegistry(validators={self.__validators})"
-
-    def __len__(self) -> int:
-        """Return the number of registered validators."""
-        return len(self.__validators)
+        return f"TypedValidatorRegistry(validators={self._converters})"
 
     @property
     def validators(self) -> list[TypedValidator]:
         """
         Get validators currently registered.
         """
-        return self.__validators
+        return self._converters
+
+    def _get_map_key_type(self, converter: TypedValidator) -> type:
+        """
+        Get the target type to use as key in the validator map.
+        """
+        return converter.target_annotation.concrete_type
 
     @overload
     def register(self, validator: TypedValidator, /): ...
@@ -272,49 +224,15 @@ class TypedValidatorRegistry:
             if isinstance(validator_or_func, TypedValidator)
             else TypedValidator.from_func(validator_or_func, variance=variance)
         )
-        target_type = validator.target_annotation.concrete_type
-        self.__validator_map[target_type].append(validator)
-        self.__validators.append(validator)
-
-    def find(self, obj: Any, target_annotation: Annotation) -> TypedValidator | None:
-        """
-        Find the first validator that can handle the conversion.
-
-        Searches in order:
-        1. Exact target type matches
-        2. All validators (for contravariant matching)
-        """
-        target_type = target_annotation.concrete_type
-
-        # first try validators registered for the exact target type
-        if target_type in self.__validator_map:
-            for validator in self.__validator_map[target_type]:
-                if validator.can_validate(obj, target_annotation):
-                    return validator
-
-        # then try all validators (handles contravariant, generic cases)
-        for validator in self.__validators:
-            if validator not in self.__validator_map.get(target_type, []):
-                if validator.can_validate(obj, target_annotation):
-                    return validator
-
-        return None
-
-    def extend(self, validators: Sequence[TypedValidator]):
-        """
-        Register multiple validators.
-        """
-        for validator in validators:
-            self.register(validator)
+        self._register_converter(validator)
 
 
-class ValidationContext:
+class ValidationContext(BaseConversionContext[TypedValidatorRegistry]):
     """
     Encapsulates conversion parameters, propagated throughout the conversion process.
     """
 
-    __registry: TypedValidatorRegistry
-    __lenient: bool = False
+    _lenient: bool
 
     def __init__(
         self,
@@ -322,21 +240,18 @@ class ValidationContext:
         registry: TypedValidatorRegistry | None = None,
         lenient: bool = False,
     ):
-        self.__registry = registry or TypedValidatorRegistry()
-        self.__lenient = lenient
+        super().__init__(registry=registry)
+        self._lenient = lenient
 
     def __repr__(self) -> str:
-        return (
-            f"ValidationContext(registry={self.__registry}, lenient={self.__lenient})"
-        )
+        return f"ValidationContext(registry={self._registry}, lenient={self._lenient})"
 
-    @property
-    def registry(self) -> TypedValidatorRegistry:
-        return self.__registry
+    def _create_default_registry(self) -> TypedValidatorRegistry:
+        return TypedValidatorRegistry()
 
     @property
     def lenient(self) -> bool:
-        return self.__lenient
+        return self._lenient
 
     @overload
     def validate[T](self, obj: Any, target_type: type[T], /) -> T: ...

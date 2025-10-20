@@ -4,17 +4,21 @@ Serialization capability.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from types import EllipsisType
 from typing import (
     Any,
     Callable,
-    Sequence,
     cast,
     overload,
 )
 
-from .converting import ConverterFunction, normalize_to_registry
+from .converting import (
+    BaseConversionContext,
+    BaseConverterRegistry,
+    BaseTypedConverter,
+    ConverterFunction,
+    normalize_to_registry,
+)
 from .inspecting.annotations import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -43,27 +47,10 @@ objects (e.g. elements of custom collections).
 """
 
 
-class TypedSerializer[SourceT]:
+class TypedSerializer[SourceT](BaseTypedConverter[SerializerFuncType[SourceT]]):
     """
     Encapsulates serialization parameters from a source annotation.
     """
-
-    __source_annotation: Annotation
-    """
-    Annotation specifying type to serialize from.
-    """
-
-    __target_annotation: Annotation
-    """
-    Annotation specifying type to serialize to.
-    """
-
-    __func: ConverterFunction | None
-    """
-    Function taking source type and returning an instance of target type.
-    """
-
-    __variance: VarianceType
 
     @overload
     def __init__(
@@ -96,23 +83,12 @@ class TypedSerializer[SourceT]:
         func: SerializerFuncType | None = None,
         variance: VarianceType = "contravariant",
     ):
-        self.__source_annotation = Annotation._normalize(source_annotation)
-        self.__target_annotation = Annotation._normalize(target_annotation)
-        self.__func = (
-            ConverterFunction.from_func(func, SerializationContext) if func else None
+        super().__init__(
+            source_annotation, target_annotation, func=func, variance=variance
         )
-        self.__variance = variance
 
     def __repr__(self) -> str:
-        return f"TypedSerializer(source={self.__source_annotation}, func={self.__func}, variance={self.__variance})"
-
-    @property
-    def source_annotation(self) -> Annotation:
-        return self.__source_annotation
-
-    @property
-    def variance(self) -> VarianceType:
-        return self.__variance
+        return f"TypedSerializer(source={self._source_annotation}, func={self._func}, variance={self._variance})"
 
     @classmethod
     def from_func(
@@ -124,7 +100,7 @@ class TypedSerializer[SourceT]:
         """
         Create a TypedSerializer from a function by inspecting its signature.
         """
-        sig = ConverterFunction.from_func(func, SerializationContext)
+        sig = ConverterFunction(func, SerializationContext)
 
         # validate sig: must take source type
         assert sig.obj_param.annotation
@@ -145,17 +121,17 @@ class TypedSerializer[SourceT]:
         to recurse into items of collections.
         """
         # should be checked by the caller
-        assert self.can_serialize(obj, source_annotation)
+        assert self.can_convert(obj, source_annotation)
 
         # invoke serialization function
         try:
-            if func := self.__func:
+            if func := self._func:
                 # provided validation function
                 serialized_obj = func.invoke(obj, source_annotation, context)
             else:
                 # direct object construction
                 concrete_type = cast(
-                    Callable[[SourceT], Any], self.__target_annotation.concrete_type
+                    Callable[[SourceT], Any], self._target_annotation.concrete_type
                 )
                 serialized_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
@@ -165,28 +141,23 @@ class TypedSerializer[SourceT]:
 
         return serialized_obj
 
-    def can_serialize(self, obj: Any, source_annotation: Annotation | Any, /) -> bool:
+    def can_convert(self, obj: Any, annotation: Annotation, /) -> bool:
         """
-        Check if this serializer can serialize the given object with the given
-        annotation.
+        Check if this serializer can serialize the given object from the given
+        source annotation.
         """
-        source_ann = Annotation._normalize(source_annotation)
+        source_ann = Annotation._normalize(annotation)
 
-        if self.__variance == "invariant":
-            # exact match only
-            if not source_ann == self.__source_annotation:
-                return False
-        else:
-            # contravariant (default): annotation must be a subclass of
-            # self.__source_annotation
-            if not source_ann.is_subtype(self.__source_annotation):
-                return False
+        if not self._check_variance_match(source_ann, self._source_annotation):
+            return False
 
-        # check that object matches source annotation
         return source_ann.is_type(obj)
 
+    def _get_context_cls(self) -> type[Any]:
+        return SerializationContext
 
-class TypedSerializerRegistry:
+
+class TypedSerializerRegistry(BaseConverterRegistry[TypedSerializer]):
     """
     Registry for managing type serializers.
 
@@ -194,34 +165,21 @@ class TypedSerializerRegistry:
     and source annotation.
     """
 
-    __serializer_map: dict[type, list[TypedSerializer]]
-    """
-    Serializers grouped by concrete source type for efficiency.
-    """
-
-    __serializers: list[TypedSerializer] = []
-    """
-    List of all serializers for fallback/contravariant matching.
-    """
-
-    def __init__(self, *serializers: TypedSerializer):
-        self.__serializer_map = defaultdict(list)
-        self.__serializers = []
-        self.extend(serializers)
-
     def __repr__(self) -> str:
-        return f"TypedSerializerRegistry(serializers={self.__serializers})"
-
-    def __len__(self) -> int:
-        """Return the number of registered serializers."""
-        return len(self.__serializers)
+        return f"TypedSerializerRegistry(serializers={self._converters})"
 
     @property
     def serializers(self) -> list[TypedSerializer]:
         """
         Get serializers currently registered.
         """
-        return self.__serializers
+        return self._converters
+
+    def _get_map_key_type(self, converter: TypedSerializer) -> type:
+        """
+        Get the source type to use as key in the serializer map.
+        """
+        return converter.source_annotation.concrete_type
 
     @overload
     def register(self, serializer: TypedSerializer, /): ...
@@ -246,63 +204,20 @@ class TypedSerializerRegistry:
             if isinstance(serializer_or_func, TypedSerializer)
             else TypedSerializer.from_func(serializer_or_func, variance=variance)
         )
-        source_type = serializer.source_annotation.concrete_type
-        self.__serializer_map[source_type].append(serializer)
-        self.__serializers.append(serializer)
-
-    def find(self, obj: Any, source_annotation: Annotation) -> TypedSerializer | None:
-        """
-        Find the first serializer that can handle the serialization.
-
-        Searches in order:
-        1. Exact source type matches
-        2. All serializers (for contravariant matching)
-        """
-        source_type = source_annotation.concrete_type
-
-        # first try serializers registered for the exact source type
-        if source_type in self.__serializer_map:
-            for serializer in self.__serializer_map[source_type]:
-                if serializer.can_serialize(obj, source_annotation):
-                    return serializer
-
-        # then try all serializers (handles contravariant, generic cases)
-        for serializer in self.__serializers:
-            if serializer not in self.__serializer_map.get(source_type, []):
-                if serializer.can_serialize(obj, source_annotation):
-                    return serializer
-
-        return None
-
-    def extend(self, serializers: Sequence[TypedSerializer]):
-        """
-        Register multiple serializers.
-        """
-        for serializer in serializers:
-            self.register(serializer)
+        self._register_converter(serializer)
 
 
-class SerializationContext:
+class SerializationContext(BaseConversionContext[TypedSerializerRegistry]):
     """
     Encapsulates serialization parameters, propagated throughout the
     serialization process.
     """
 
-    __registry: TypedSerializerRegistry
-
-    def __init__(
-        self,
-        *,
-        registry: TypedSerializerRegistry | None = None,
-    ):
-        self.__registry = registry or TypedSerializerRegistry()
-
     def __repr__(self) -> str:
-        return f"SerializationContext(registry={self.__registry})"
+        return f"SerializationContext(registry={self._registry})"
 
-    @property
-    def registry(self) -> TypedSerializerRegistry:
-        return self.__registry
+    def _create_default_registry(self) -> TypedSerializerRegistry:
+        return TypedSerializerRegistry()
 
     def serialize(self, obj: Any, source_type: Annotation | Any, /) -> Any:
         """

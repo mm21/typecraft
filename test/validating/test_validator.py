@@ -33,11 +33,11 @@ def test_any():
     converter1 = TypedValidator(Any, Any, func=func1)
     converter2 = TypedValidator(Any, Any, func=func2)
 
-    assert converter1.can_validate(obj, Annotation(Any))
+    assert converter1.can_convert(obj, Annotation(Any))
     conv_obj = converter1.validate(obj, Annotation(Any), ValidationContext())
     assert conv_obj == -1
 
-    assert converter2.can_validate(obj, Annotation(Any))
+    assert converter2.can_convert(obj, Annotation(Any))
     conv_obj = converter2.validate(obj, Annotation(Any), ValidationContext())
     assert conv_obj == -2
 
@@ -53,10 +53,10 @@ def test_generic():
     converter = TypedValidator(list[int], list[str], func=func)
     obj = [123]
 
-    assert converter.can_validate(obj, list[str])
-    assert not converter.can_validate(obj, list[float])
-    assert not converter.can_validate(obj, list[Any])
-    assert not converter.can_validate(obj, list)
+    assert converter.can_convert(obj, list[str])
+    assert not converter.can_convert(obj, list[float])
+    assert not converter.can_convert(obj, list[Any])
+    assert not converter.can_convert(obj, list)
 
     conv_obj = converter.validate(obj, Annotation(list[str]), ValidationContext())
     assert conv_obj == ["123"]
@@ -72,12 +72,12 @@ def test_invariant():
     obj = "123"
 
     # contravariant converter can convert to bool since it's a subclass of int
-    assert converter_contra.can_validate(obj, int)
-    assert converter_contra.can_validate(obj, bool)
+    assert converter_contra.can_convert(obj, int)
+    assert converter_contra.can_convert(obj, bool)
 
     # invariant convert cannot convert to bool, strictly int
-    assert converter_inv.can_validate(obj, int)
-    assert not converter_inv.can_validate(obj, bool)
+    assert converter_inv.can_convert(obj, int)
+    assert not converter_inv.can_convert(obj, bool)
 
 
 def test_registry():
