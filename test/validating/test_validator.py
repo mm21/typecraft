@@ -94,7 +94,6 @@ def test_registry():
     def str_to_int(
         s: str,
         annotation: Annotation,
-        context: ValidationContext,
     ) -> int:
         """
         Convert string to integer, also encompassing bool.

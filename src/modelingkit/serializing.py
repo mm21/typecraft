@@ -4,7 +4,6 @@ Serialization capability.
 
 from __future__ import annotations
 
-import inspect
 from collections import defaultdict
 from types import EllipsisType
 from typing import (
@@ -15,7 +14,7 @@ from typing import (
     overload,
 )
 
-from ._utils import ConverterSignature, normalize_to_registry
+from .converting import ConverterFunction, normalize_to_registry
 from .inspecting.annotations import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -54,10 +53,14 @@ class TypedSerializer[SourceT]:
     Annotation specifying type to serialize from.
     """
 
-    __func: SerializerFuncType
+    __target_annotation: Annotation
     """
-    Callable returning a serializable object. Must take exactly one positional
-    argument of the type given in `source_annotation`.
+    Annotation specifying type to serialize to.
+    """
+
+    __func: ConverterFunction | None
+    """
+    Function taking source type and returning an instance of target type.
     """
 
     __variance: VarianceType
@@ -66,9 +69,10 @@ class TypedSerializer[SourceT]:
     def __init__(
         self,
         source_annotation: type[SourceT],
+        target_annotation: Annotation | Any = Any,
         /,
         *,
-        func: SerializerFuncType[SourceT],
+        func: SerializerFuncType[SourceT] | None = None,
         variance: VarianceType = "contravariant",
     ): ...
 
@@ -76,20 +80,27 @@ class TypedSerializer[SourceT]:
     def __init__(
         self,
         source_annotation: Annotation | Any,
+        target_annotation: Annotation | Any = Any,
         /,
         *,
-        func: SerializerFuncType,
+        func: SerializerFuncType | None = None,
         variance: VarianceType = "contravariant",
     ): ...
 
     def __init__(
         self,
         source_annotation: Any,
-        func: SerializerFuncType,
+        target_annotation: Annotation | Any = Any,
+        /,
+        *,
+        func: SerializerFuncType | None = None,
         variance: VarianceType = "contravariant",
     ):
         self.__source_annotation = Annotation._normalize(source_annotation)
-        self.__func = func
+        self.__target_annotation = Annotation._normalize(target_annotation)
+        self.__func = (
+            ConverterFunction.from_func(func, SerializationContext) if func else None
+        )
         self.__variance = variance
 
     def __repr__(self) -> str:
@@ -113,7 +124,11 @@ class TypedSerializer[SourceT]:
         """
         Create a TypedSerializer from a function by inspecting its signature.
         """
-        sig = ConverterSignature.from_func(func, SerializationContext)
+        sig = ConverterFunction.from_func(func, SerializationContext)
+
+        # validate sig: must take source type
+        assert sig.obj_param.annotation
+
         return TypedSerializer(sig.obj_param.annotation, func=func, variance=variance)
 
     def serialize(
@@ -132,36 +147,23 @@ class TypedSerializer[SourceT]:
         # should be checked by the caller
         assert self.can_serialize(obj, source_annotation)
 
-        # attempt to get number of parameters from signature
-        try:
-            sig = inspect.signature(self.__func)
-        except ValueError:
-            # could be a builtin type, no signature available; assume it takes
-            # one arg
-            param_count = 1
-        else:
-            param_count = len(sig.parameters)
-
         # invoke serialization function
         try:
-            if param_count == 1:
-                # function taking object only
-                func = cast(Callable[[Any], Any], self.__func)
-                serialized = func(obj)
+            if func := self.__func:
+                # provided validation function
+                serialized_obj = func.invoke(obj, source_annotation, context)
             else:
-                # function taking object, annotation, context
-                assert param_count == 3
-                func = cast(
-                    Callable[[Any, Annotation, SerializationContext], Any],
-                    self.__func,
+                # direct object construction
+                concrete_type = cast(
+                    Callable[[SourceT], Any], self.__target_annotation.concrete_type
                 )
-                serialized = func(obj, source_annotation, context)
+                serialized_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
             raise ValueError(
                 f"TypedSerializer {self} failed to serialize {obj} ({type(obj)}): {e}"
             ) from None
 
-        return serialized
+        return serialized_obj
 
     def can_serialize(self, obj: Any, source_annotation: Annotation | Any, /) -> bool:
         """

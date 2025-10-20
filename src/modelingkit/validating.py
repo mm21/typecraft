@@ -4,7 +4,6 @@ Validation capability.
 
 from __future__ import annotations
 
-import inspect
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import (
@@ -17,7 +16,7 @@ from typing import (
     overload,
 )
 
-from ._utils import ConverterSignature, normalize_to_registry
+from .converting import ConverterFunction, normalize_to_registry
 from .inspecting.annotations import Annotation
 from .typedefs import (
     COLLECTION_TYPES,
@@ -38,6 +37,8 @@ __all__ = [
 
 
 type ValidatorFuncType[TargetT] = Callable[[Any], TargetT] | Callable[
+    [Any, Annotation], TargetT
+] | Callable[[Any, ValidationContext], TargetT] | Callable[
     [Any, Annotation, ValidationContext], TargetT
 ]
 """
@@ -65,11 +66,9 @@ class TypedValidator[TargetT]:
     Annotation specifying type to convert to.
     """
 
-    __func: ValidatorFuncType[TargetT] | None
+    __func: ConverterFunction | None
     """
-    Callable returning an instance of target type. Must take exactly one
-    positional argument of the type given in `source_annotation`. May be the
-    target type itself if its constructor takes exactly one positional argument.
+    Function taking source type and returning an instance of target type.
     """
 
     __variance: VarianceType
@@ -107,7 +106,9 @@ class TypedValidator[TargetT]:
     ):
         self.__source_annotation = Annotation._normalize(source_annotation)
         self.__target_annotation = Annotation._normalize(target_annotation)
-        self.__func = func
+        self.__func = (
+            ConverterFunction.from_func(func, ValidationContext) if func else None
+        )
         self.__variance = variance
 
     def __repr__(self) -> str:
@@ -136,7 +137,12 @@ class TypedValidator[TargetT]:
         """
         Create a TypedValidator from a function by inspecting its signature.
         """
-        sig = ConverterSignature.from_func(func, ValidationContext)
+        sig = ConverterFunction.from_func(func, ValidationContext)
+
+        # validate sig: must take source type and return target type
+        assert sig.obj_param.annotation
+        assert sig.sig_info.return_annotation
+
         return TypedValidator(
             sig.obj_param.annotation,
             sig.sig_info.return_annotation,
@@ -162,36 +168,26 @@ class TypedValidator[TargetT]:
         assert self.can_validate(obj, target_annotation)
 
         try:
-            if self.__func:
+            if func := self.__func:
                 # provided validation function
-                sig = inspect.signature(self.__func)
-                if len(sig.parameters) == 1:
-                    # function taking object only
-                    func = cast(Callable[[Any], Any], self.__func)
-                    new_obj = func(obj)
-                else:
-                    # function taking object, annotation, context
-                    func = cast(
-                        Callable[[Any, Annotation, ValidationContext], Any], self.__func
-                    )
-                    new_obj = func(obj, target_annotation, context)
+                validated_obj = func.invoke(obj, target_annotation, context)
             else:
                 # direct object construction
                 concrete_type = cast(
                     Callable[[Any], TargetT], self.__target_annotation.concrete_type
                 )
-                new_obj = concrete_type(obj)
+                validated_obj = concrete_type(obj)
         except (ValueError, TypeError) as e:
             raise ValueError(
                 f"TypedValidator {self} failed to validate {obj} ({type(obj)}): {e}"
             ) from None
 
-        if not isinstance(new_obj, self.__target_annotation.concrete_type):
+        if not isinstance(validated_obj, self.__target_annotation.concrete_type):
             raise ValueError(
-                f"TypedValidator {self} failed to validate {obj} ({type(obj)}), got {new_obj} ({type(new_obj)})"
+                f"TypedValidator {self} failed to validate {obj} ({type(obj)}), got {validated_obj} ({type(validated_obj)})"
             )
 
-        return new_obj
+        return validated_obj
 
     def can_validate(self, obj: Any, target_annotation: Annotation | Any, /) -> bool:
         """

@@ -166,7 +166,7 @@ def test_custom_serializer_for_builtin():
     Test that custom serializers work for builtin types.
     """
     # int -> str
-    serializer = TypedSerializer(int, func=str)
+    serializer = TypedSerializer(int, str)
     assert serialize(42, int, serializer) == "42"
 
     # float -> int (truncate)
@@ -210,7 +210,7 @@ def test_registry():
     Test serialization with registry.
     """
     registry = TypedSerializerRegistry()
-    registry.register(TypedSerializer(int, func=str))
+    registry.register(TypedSerializer(int, str))
 
     obj = 1
     result = serialize(obj, int, registry)
