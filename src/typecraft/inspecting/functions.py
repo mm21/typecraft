@@ -40,6 +40,11 @@ class ParameterInfo:
     Annotation as extracted by `get_type_hints()`, resolving any stringized annotations.
     """
 
+    index: int
+    """
+    Index of this parameter, e.g. 0 for first parameter.
+    """
+
 
 class SignatureInfo:
     """
@@ -83,9 +88,13 @@ class SignatureInfo:
         self.params = MappingProxyType(
             {
                 name: ParameterInfo(
-                    param, Annotation(type_hints[name]) if name in type_hints else None
+                    parameter=param,
+                    annotation=(
+                        Annotation(type_hints[name]) if name in type_hints else None
+                    ),
+                    index=index,
                 )
-                for name, param in sig.parameters.items()
+                for index, (name, param) in enumerate(sig.parameters.items())
             }
         )
 

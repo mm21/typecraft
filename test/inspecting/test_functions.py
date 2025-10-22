@@ -32,12 +32,14 @@ def test_basic_function():
     assert isinstance(param_x, ParameterInfo)
     assert param_x.annotation == Annotation(int)
     assert param_x.parameter.name == "x"
+    assert param_x.index == 0
 
     # check second parameter
     assert "y" in sig.params
     param_y = sig.params["y"]
     assert param_y.annotation == Annotation(str)
     assert param_y.parameter.name == "y"
+    assert param_y.index == 1
 
 
 def test_no_parameters():
@@ -137,6 +139,10 @@ def test_parameter_inspection():
     assert sig.params["x"].parameter.kind == Parameter.POSITIONAL_ONLY
     assert sig.params["y"].parameter.kind == Parameter.POSITIONAL_ONLY
 
+    params = list(sig.get_params(annotation=int, positional_only=True))
+    assert len(params) == 1
+    assert params[0].index == 0
+
     def func2(x: int, *, y: str, z: bool) -> None:
         pass
 
@@ -147,6 +153,11 @@ def test_parameter_inspection():
     assert sig.params["x"].parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
     assert sig.params["y"].parameter.kind == Parameter.KEYWORD_ONLY
     assert sig.params["z"].parameter.kind == Parameter.KEYWORD_ONLY
+
+    params = list(sig.get_params(keyword_only=True))
+    assert len(params) == 2
+    assert params[0] is sig.params["y"]
+    assert params[1] is sig.params["z"]
 
     # default values
     def func3(x: int, y: str = "default", z: Optional[bool] = None) -> int:
