@@ -4,8 +4,8 @@ Test end-to-end serialization via APIs.
 
 from dataclasses import dataclass
 
-from modelingkit.inspecting.annotations import Annotation
-from modelingkit.serializing import (
+from typecraft.inspecting.annotations import Annotation
+from typecraft.serializing import (
     SerializationContext,
     TypedSerializer,
     TypedSerializerRegistry,

@@ -4,8 +4,8 @@ Test low-level validation via `TypedValidator` instances.
 
 from typing import Any
 
-from modelingkit.inspecting.annotations import Annotation
-from modelingkit.validating import (
+from typecraft.inspecting.annotations import Annotation
+from typecraft.validating import (
     TypedValidator,
     TypedValidatorRegistry,
     ValidationContext,

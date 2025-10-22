@@ -7,7 +7,7 @@ from typing import Annotated, Generator, Literal
 
 from pytest import raises
 
-from modelingkit.validating import (
+from typecraft.validating import (
     TypedValidator,
     TypedValidatorRegistry,
     normalize_to_list,

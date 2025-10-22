@@ -4,7 +4,7 @@ Test end-to-end serialization via APIs.
 
 from typing import Any, Literal
 
-from modelingkit.serializing import serialize
+from typecraft.serializing import serialize
 
 
 def test_primitives():

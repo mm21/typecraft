@@ -4,7 +4,7 @@ Tests for class inspection utilities.
 
 from typing import Any, TypeVar
 
-from modelingkit.inspecting.classes import extract_type_param
+from typecraft.inspecting.classes import extract_type_param
 
 
 class BaseContainer[T]:

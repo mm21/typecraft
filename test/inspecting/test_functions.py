@@ -7,8 +7,8 @@ from typing import Any, Optional
 
 import pytest
 
-from modelingkit.inspecting.annotations import Annotation
-from modelingkit.inspecting.functions import ParameterInfo, SignatureInfo
+from typecraft.inspecting.annotations import Annotation
+from typecraft.inspecting.functions import ParameterInfo, SignatureInfo
 
 
 def test_basic_function():

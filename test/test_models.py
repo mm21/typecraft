@@ -2,7 +2,7 @@ from typing import Any
 
 from pytest import raises
 
-from modelingkit.models import (
+from typecraft.models import (
     BaseModel,
     Field,
     FieldInfo,

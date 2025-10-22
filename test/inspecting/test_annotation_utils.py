@@ -5,7 +5,7 @@ Tests for low-level annotation utilities.
 from types import EllipsisType, NoneType, UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
-from modelingkit.inspecting.annotations import (
+from typecraft.inspecting.annotations import (
     Annotation,
     flatten_union,
     get_concrete_type,
