@@ -19,27 +19,31 @@ __all__ = [
 
 
 @overload
-def extract_type_param(cls: type[Any], base_cls: type[Any], /) -> type | None: ...
+def extract_type_param(
+    cls: type[Any], base_cls: type[Any], name: str, /
+) -> type | None: ...
 
 
 @overload
 def extract_type_param[ParamT](
-    cls: type[Any], base_cls: type[Any], param_base_cls: type[ParamT], /
+    cls: type[Any], base_cls: type[Any], name: str, param_base_cls: type[ParamT], /
 ) -> type[ParamT] | None: ...
 
 
-# TODO: pass index of desired param to differentiate multiple type params of the
-# same type
 def extract_type_param[ParamT](
-    cls: type[Any], base_cls: type[Any], param_base_cls: type[ParamT] | None = None, /
+    cls: type[Any],
+    base_cls: type[Any],
+    name: str,
+    param_base_cls: type[ParamT] | None = None,
+    /,
 ) -> type | type[ParamT] | None:
     """
-    Extract the concrete type param of `cls` as passed to `base_cls`. If `base_cls` can
-    be parameterized with multiple types, it's recommend to also pass `param_base_cls`
-    to get the desired type param.
+    Extract from `cls` the type parameter that was passed to `base_cls` for its
+    parameter named `name`, optionally checking it's a subclass of `param_base_cls`.
     """
 
     def check_arg(arg: Any) -> bool:
+        # validate against param_base_cls if given
         if param_base_cls:
             if not isinstance(arg, type) or not issubclass(arg, param_base_cls):
                 return False
@@ -78,16 +82,28 @@ def extract_type_param[ParamT](
                 type_var_map = new_type_var_map
 
         if origin is base_cls:
-            for arg in args:
-                # resolve TypeVar to concrete type if we have a substitution
-                if isinstance(arg, TypeVar):
-                    if arg in type_var_map:
-                        arg = type_var_map[arg]
-                    else:
-                        # TODO: check TypeVar bound, but prioritize concrete type?
-                        continue
+            # get type parameters of base_cls to find the one with matching name
+            base_type_params = getattr(base_cls, "__parameters__", ())
 
-                if check_arg(arg):
+            assert len(base_type_params) == len(
+                args
+            ), f"Type parameters of {origin} mismatched with args: parameters={base_type_params}, args={args}"
+
+            for type_param, arg in zip(base_type_params, args):
+                if isinstance(type_param, TypeVar) and type_param.__name__ == name:
+                    # resolve TypeVar to concrete type if we have a substitution
+                    if isinstance(arg, TypeVar):
+                        if arg in type_var_map:
+                            arg = type_var_map[arg]
+                        else:
+                            continue
+
+                    if not check_arg(arg):
+                        raise TypeError(
+                            f"Type parameter {name} is {arg}, which does not match "
+                            f"required base class {param_base_cls}"
+                        )
+
                     return arg
 
         # recurse into bases - use origin's bases if we have a generic alias

@@ -118,7 +118,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
         """
         Get corresponding tomlkit class.
         """
-        tomlkit_cls = extract_type_param(cls, BaseTomlWrapper)
+        tomlkit_cls = extract_type_param(cls, BaseTomlWrapper, "TomlkitT")
         assert tomlkit_cls, f"Could not get type param for {cls}"
         return tomlkit_cls
 
