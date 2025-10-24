@@ -13,13 +13,21 @@ from .inspecting.annotations import Annotation
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import VarianceType
 
+type ConverterFuncType[SourceT, TargetT, InfoT] = Callable[
+    [SourceT], TargetT
+] | Callable[[SourceT, InfoT], TargetT]
+"""
+Function which converts an object. Can take the source object by itself or
+source object with info.
+"""
 
-class ConverterFunction:
+
+class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
     """
     Encapsulates a validator or serializer function.
     """
 
-    func: Callable[..., Any]
+    func: ConverterFuncType[SourceT, TargetT, InfoT]
     """
     Converter function.
     """
@@ -34,19 +42,12 @@ class ConverterFunction:
     Parameter for object to be validated/serialized, must be positional.
     """
 
-    annotation_param: ParameterInfo | None
+    info_param: ParameterInfo | None
     """
-    Parameter for annotation, must be keyword.
-    """
-
-    context_param: ParameterInfo | None
-    """
-    Parameter for context, must be keyword.
+    Parameter for additional info, must be positional.
     """
 
-    def __init__(
-        self, func: Callable[..., Any], context_cls: type[BaseConversionContext]
-    ):
+    def __init__(self, func: Callable[..., Any]):
         sig_info = SignatureInfo(func)
 
         # get object parameter
@@ -58,46 +59,30 @@ class ConverterFunction:
             obj_param
         ), f"Function {func} does not take any positional params, must take obj as positional"
 
-        # get annotation parameter
-        annotation_param = next(
-            (p for p in sig_info.get_params(annotation=Annotation, keyword=True)),
-            None,
-        )
-
-        # get context parameter
-        context_param = next(
-            (p for p in sig_info.get_params(annotation=context_cls, keyword=True)),
-            None,
-        )
-
-        expected_param_count = sum(
-            int(p is not None) for p in (obj_param, annotation_param, context_param)
-        )
-        if expected_param_count != len(sig_info.params):
-            raise TypeError(
-                f"Unexpected param count: expected {expected_param_count}, got {len(sig_info.params)}"
-            )
+        # get info parameter
+        info_param = sig_info.get_param("info")
+        if info_param:
+            assert (
+                info_param.index == 1
+            ), f"Function {func} must take info as second positional argument"
 
         self.func = func
         self.sig_info = sig_info
         self.obj_param = obj_param
-        self.annotation_param = annotation_param
-        self.context_param = context_param
+        self.info_param = info_param
 
-    def invoke(
-        self, obj: Any, annotation: Annotation, context: BaseConversionContext
-    ) -> Any:
-        kwargs: dict[str, Any] = {}
-
-        if param := self.annotation_param:
-            kwargs[param.parameter.name] = annotation
-        if param := self.context_param:
-            kwargs[param.parameter.name] = context
-
-        return self.func(obj, **kwargs)
+    def invoke(self, obj: SourceT, info: InfoT) -> TargetT:
+        if self.info_param:
+            # invoke with info
+            func = cast(Callable[[SourceT, InfoT], TargetT], self.func)
+            return func(obj, info)
+        else:
+            # invoke without info
+            func = cast(Callable[[SourceT], TargetT], self.func)
+            return func(obj)
 
 
-class BaseTypedConverter[ConverterFuncT: Callable[..., Any]](ABC):
+class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
     """
     Base class for typed converters (validators and serializers).
 
@@ -115,7 +100,7 @@ class BaseTypedConverter[ConverterFuncT: Callable[..., Any]](ABC):
     Annotation specifying type to convert to.
     """
 
-    _func: ConverterFunction | None
+    _func: ConverterFunctionWrapper[SourceT, TargetT, InfoT] | None
     """
     Function taking source type and returning an instance of target type.
     """
@@ -132,12 +117,12 @@ class BaseTypedConverter[ConverterFuncT: Callable[..., Any]](ABC):
         target_annotation: Any,
         /,
         *,
-        func: ConverterFuncT | None = None,
+        func: ConverterFuncType[SourceT, TargetT, InfoT] | None = None,
         variance: VarianceType = "contravariant",
     ):
         self._source_annotation = Annotation._normalize(source_annotation)
         self._target_annotation = Annotation._normalize(target_annotation)
-        self._func = ConverterFunction(func, self._get_context_cls()) if func else None
+        self._func = ConverterFunctionWrapper(func) if func else None
         self._variance = variance
 
     @property

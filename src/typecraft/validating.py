@@ -5,6 +5,7 @@ Validation capability.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -18,7 +19,8 @@ from .converting import (
     BaseConversionContext,
     BaseConverterRegistry,
     BaseTypedConverter,
-    ConverterFunction,
+    ConverterFunctionWrapper,
+    ConverterFuncType,
     normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
@@ -40,21 +42,24 @@ __all__ = [
 ]
 
 
-type ValidatorFuncType[TargetT] = Callable[[Any], TargetT] | Callable[
-    [Any, Annotation], TargetT
-] | Callable[[Any, ValidationContext], TargetT] | Callable[
-    [Any, Annotation, ValidationContext], TargetT
-]
+type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT, ValidationInfo]
 """
 Function which validates the given object and returns an object of the
-parameterized type.
-
-Can optionally take the annotation and context, generally used to propagate to nested
-objects (e.g. elements of custom collections).
+specified type. Can optionally take `ValidationInfo` as the second argument.
 """
 
 
-class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
+@dataclass
+class ValidationInfo:
+    """
+    Info passed to a validation function.
+    """
+
+    target_annotation: Annotation
+    context: ValidationContext
+
+
+class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT, ValidationInfo]):
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
@@ -78,7 +83,7 @@ class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
         target_annotation: Annotation | Any,
         /,
         *,
-        func: ValidatorFuncType[Any] | None = None,
+        func: ValidatorFuncType[TargetT] | None = None,
         variance: VarianceType = "contravariant",
     ): ...
 
@@ -88,7 +93,7 @@ class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
         target_annotation: Any,
         /,
         *,
-        func: ValidatorFuncType[Any] | None = None,
+        func: ValidatorFuncType[TargetT] | None = None,
         variance: VarianceType = "contravariant",
     ):
         super().__init__(
@@ -109,26 +114,20 @@ class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
         """
         Create a TypedValidator from a function by inspecting its signature.
         """
-        sig = ConverterFunction(func, ValidationContext)
+        func_wrapper = ConverterFunctionWrapper[Any, TargetT, ValidationContext](func)
 
         # validate sig: must take source type and return target type
-        assert sig.obj_param.annotation
-        assert sig.sig_info.return_annotation
+        assert func_wrapper.obj_param.annotation
+        assert func_wrapper.sig_info.return_annotation
 
         return TypedValidator(
-            sig.obj_param.annotation,
-            sig.sig_info.return_annotation,
+            func_wrapper.obj_param.annotation,
+            func_wrapper.sig_info.return_annotation,
             func=func,
             variance=variance,
         )
 
-    def validate(
-        self,
-        obj: Any,
-        target_annotation: Annotation,
-        context: ValidationContext,
-        /,
-    ) -> TargetT:
+    def validate(self, obj: Any, info: ValidationInfo, /) -> TargetT:
         """
         Convert object or raise `ValueError`.
 
@@ -136,13 +135,11 @@ class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
         to recurse into items of collections. For example, a validator to
         MyList[T] would invoke conversion to type T on each item.
         """
-        # should be checked by the caller
-        assert self.can_convert(obj, target_annotation)
 
         try:
             if func := self._func:
                 # provided validation function
-                validated_obj = func.invoke(obj, target_annotation, context)
+                validated_obj = func.invoke(obj, info)
             else:
                 # direct object construction
                 concrete_type = cast(
@@ -154,7 +151,7 @@ class TypedValidator[TargetT](BaseTypedConverter[ValidatorFuncType[TargetT]]):
                 f"TypedValidator {self} failed to validate {obj} ({type(obj)}): {e}"
             ) from None
 
-        if not isinstance(validated_obj, self._target_annotation.concrete_type):
+        if not self._target_annotation.is_type(validated_obj):
             raise ValueError(
                 f"TypedValidator {self} failed to validate {obj} ({type(obj)}), got {validated_obj} ({type(validated_obj)})"
             )
@@ -206,12 +203,16 @@ class TypedValidatorRegistry(BaseConverterRegistry[TypedValidator]):
 
     @overload
     def register(
-        self, func: ValidatorFuncType, /, *, variance: VarianceType = "contravariant"
+        self,
+        func: ValidatorFuncType[Any],
+        /,
+        *,
+        variance: VarianceType = "contravariant",
     ): ...
 
     def register(
         self,
-        validator_or_func: TypedValidator | ValidatorFuncType,
+        validator_or_func: TypedValidator[Any] | ValidatorFuncType[Any],
         /,
         *,
         variance: VarianceType = "contravariant",
@@ -263,8 +264,9 @@ class ValidationContext(BaseConversionContext[TypedValidatorRegistry]):
         """
         Validate object using registered typed validators.
         """
-        target_ann = Annotation._normalize(target_type)
-        return _dispatch_validation(obj, target_ann, self)
+        target_annotation = Annotation._normalize(target_type)
+        info = ValidationInfo(target_annotation, self)
+        return _dispatch_validation(obj, info)
 
 
 @overload
@@ -348,48 +350,49 @@ def normalize_to_list[T](
     else:
         objs = [obj_or_objs]
 
+    registry = normalize_to_registry(
+        TypedValidator, TypedValidatorRegistry, *validators
+    )
+    context = ValidationContext(registry=registry, lenient=lenient)
+
     # validate each object and place in a new list
-    return [validate(o, target_type, *validators, lenient=lenient) for o in objs]
+    return [context.validate(o, target_type) for o in objs]
 
 
-def _dispatch_validation(
-    obj: Any,
-    annotation: Annotation,
-    context: ValidationContext,
-) -> Any:
+def _dispatch_validation(obj: Any, info: ValidationInfo) -> Any:
 
     # handle union type
-    if annotation.is_union:
-        return _validate_union(obj, annotation, context)
+    if info.target_annotation.is_union:
+        return _validate_union(obj, info)
 
     # if object does not satisfy annotation, attempt conversion
     # - validators (custom and lenient conversions) are assumed to always recurse if
     # applicable
-    if not _check_valid(obj, annotation):
-        return _convert(obj, annotation, context)
+    if not _check_valid(obj, info.target_annotation):
+        return _convert(obj, info)
 
     # if type is a builtin collection, recurse
-    if issubclass(annotation.concrete_type, (list, tuple, set, frozenset, dict)):
+    if issubclass(
+        info.target_annotation.concrete_type, (list, tuple, set, frozenset, dict)
+    ):
         assert isinstance(obj, COLLECTION_TYPES)
-        return _validate_collection(obj, annotation, context)
+        return _validate_collection(obj, info)
 
     # have the expected type and it's not a collection
     return obj
 
 
-def _validate_union(
-    obj: Any, annotation: Annotation, context: ValidationContext
-) -> Any:
+def _validate_union(obj: Any, info: ValidationInfo) -> Any:
     """
     Validate constituent types of union.
     """
-    for arg in annotation.arg_annotations:
+    for arg in info.target_annotation.arg_annotations:
         try:
-            return _dispatch_validation(obj, arg, context)
+            return _dispatch_validation(obj, ValidationInfo(arg, info.context))
         except (ValueError, TypeError):
             continue
     raise ValueError(
-        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {annotation}"
+        f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {info.target_annotation}"
     )
 
 
@@ -403,47 +406,42 @@ def _check_valid(obj: Any, annotation: Annotation) -> bool:
         return isinstance(obj, annotation.concrete_type)
 
 
-def _validate_collection(
-    obj: CollectionType,
-    annotation: Annotation,
-    context: ValidationContext,
-) -> Any:
+def _validate_collection(obj: CollectionType, info: ValidationInfo) -> Any:
     """
     Validate collection of objects.
     """
+    ann = info.target_annotation
 
     assert len(
-        annotation.arg_annotations
-    ), f"Collection annotation has no type parameter: {annotation}"
+        ann.arg_annotations
+    ), f"Collection annotation has no type parameter: {ann}"
 
-    type_ = annotation.concrete_type
+    type_ = ann.concrete_type
 
     # handle conversion from mappings
     if issubclass(type_, dict):
         assert isinstance(obj, Mapping)
-        return _validate_dict(obj, annotation, context)
+        return _validate_dict(obj, info)
 
     # handle conversion from value collections
     assert not isinstance(obj, Mapping)
     if issubclass(type_, list):
-        return _validate_list(obj, annotation, context)
+        return _validate_list(obj, info)
     elif issubclass(type_, tuple):
-        return _validate_tuple(obj, annotation, context)
+        return _validate_tuple(obj, info)
     else:
         assert issubclass(type_, (set, frozenset))
-        return _validate_set(obj, annotation, context)
+        return _validate_set(obj, info)
 
 
-def _validate_list(
-    obj: ValueCollectionType,
-    annotation: Annotation,
-    context: ValidationContext,
-) -> list[Any]:
-    type_ = annotation.concrete_type
+def _validate_list(obj: ValueCollectionType, info: ValidationInfo) -> list[Any]:
+    ann, context = info.target_annotation, info.context
+
+    type_ = ann.concrete_type
     assert issubclass(type_, list)
-    assert len(annotation.arg_annotations) == 1
+    assert len(ann.arg_annotations) == 1
 
-    item_ann = annotation.arg_annotations[0]
+    item_ann = ann.arg_annotations[0]
     validated_objs = [context.validate(o, item_ann) for o in obj]
 
     if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
@@ -453,11 +451,9 @@ def _validate_list(
     return type_(validated_objs)
 
 
-def _validate_tuple(
-    obj: ValueCollectionType,
-    ann: Annotation,
-    context: ValidationContext,
-) -> tuple[Any]:
+def _validate_tuple(obj: ValueCollectionType, info: ValidationInfo) -> tuple[Any]:
+    ann, context = info.target_annotation, info.context
+
     type_ = ann.concrete_type
     assert issubclass(type_, tuple)
 
@@ -492,15 +488,15 @@ def _validate_tuple(
 
 
 def _validate_set(
-    obj: ValueCollectionType,
-    annotation: Annotation,
-    context: ValidationContext,
+    obj: ValueCollectionType, info: ValidationInfo
 ) -> set[Any] | frozenset[Any]:
-    type_ = annotation.concrete_type
-    assert issubclass(type_, (set, frozenset))
-    assert len(annotation.arg_annotations) == 1
+    ann, context = info.target_annotation, info.context
 
-    item_ann = annotation.arg_annotations[0]
+    type_ = ann.concrete_type
+    assert issubclass(type_, (set, frozenset))
+    assert len(ann.arg_annotations) == 1
+
+    item_ann = ann.arg_annotations[0]
     validated_objs = {context.validate(o, item_ann) for o in obj}
 
     if isinstance(obj, type_):
@@ -512,15 +508,13 @@ def _validate_set(
     return type_(validated_objs)
 
 
-def _validate_dict(
-    obj: Mapping,
-    annotation: Annotation,
-    context: ValidationContext,
-) -> dict:
-    type_ = annotation.concrete_type
+def _validate_dict(obj: Mapping, info: ValidationInfo) -> dict:
+    ann, context = info.target_annotation, info.context
+
+    type_ = ann.concrete_type
     assert issubclass(type_, dict)
-    assert len(annotation.arg_annotations) == 2
-    key_ann, value_ann = annotation.arg_annotations
+    assert len(ann.arg_annotations) == 2
+    key_ann, value_ann = ann.arg_annotations
 
     validated_objs = {
         context.validate(k, key_ann): context.validate(v, value_ann)
@@ -537,29 +531,27 @@ def _validate_dict(
     return type_(**validated_objs)
 
 
-def _convert(
-    obj: Any, target_annotation: Annotation, context: ValidationContext
-) -> Any:
+def _convert(obj: Any, info: ValidationInfo) -> Any:
     """
     Convert object by invoking validators and built-in handling, raising
     `ValueError` if it could not be converted.
     """
     # try user-provided validators from registry
-    if validator := context.registry.find(obj, target_annotation):
-        return validator.validate(obj, target_annotation, context)
+    if validator := info.context.registry.find(obj, info.target_annotation):
+        return validator.validate(obj, info)
 
     # if lenient, keep trying
-    if context.lenient:
+    if info.context.lenient:
         # try built-in validators
-        validator = BUILTIN_REGISTRY.find(obj, target_annotation)
+        validator = BUILTIN_REGISTRY.find(obj, info.target_annotation)
         if validator:
-            return validator.validate(obj, target_annotation, context)
+            return validator.validate(obj, info)
 
         # try direct object construction
-        return target_annotation.concrete_type(obj)
+        return info.target_annotation.concrete_type(obj)
 
     raise ValueError(
-        f"Object '{obj}' ({type(obj)}) could not be converted to {target_annotation}"
+        f"Object '{obj}' ({type(obj)}) could not be converted to {info.target_annotation}"
     )
 
 

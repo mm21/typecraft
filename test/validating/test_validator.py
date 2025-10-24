@@ -9,6 +9,7 @@ from typecraft.validating import (
     TypedValidator,
     TypedValidatorRegistry,
     ValidationContext,
+    ValidationInfo,
 )
 
 
@@ -21,10 +22,10 @@ def test_any():
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, annotation: Annotation, context: ValidationContext) -> Any:
+    def func2(obj: Any, info: ValidationInfo) -> Any:
         assert isinstance(obj, int)
-        assert annotation.concrete_type is object
-        assert not context.lenient
+        assert info.target_annotation.concrete_type is object
+        assert not info.context.lenient
         return -2 * obj
 
     obj = 1
@@ -34,11 +35,15 @@ def test_any():
     converter2 = TypedValidator(Any, Any, func=func2)
 
     assert converter1.can_convert(obj, Annotation(Any))
-    conv_obj = converter1.validate(obj, Annotation(Any), ValidationContext())
+    conv_obj = converter1.validate(
+        obj, ValidationInfo(Annotation(Any), ValidationContext())
+    )
     assert conv_obj == -1
 
     assert converter2.can_convert(obj, Annotation(Any))
-    conv_obj = converter2.validate(obj, Annotation(Any), ValidationContext())
+    conv_obj = converter2.validate(
+        obj, ValidationInfo(Annotation(Any), ValidationContext())
+    )
     assert conv_obj == -2
 
 
@@ -58,7 +63,9 @@ def test_generic():
     assert not converter.can_convert(obj, list[Any])
     assert not converter.can_convert(obj, list)
 
-    conv_obj = converter.validate(obj, Annotation(list[str]), ValidationContext())
+    conv_obj = converter.validate(
+        obj, ValidationInfo(Annotation(list[str]), ValidationContext())
+    )
     assert conv_obj == ["123"]
 
 
@@ -91,14 +98,11 @@ def test_registry():
         """
         return int(s)
 
-    def str_to_int(
-        s: str,
-        annotation: Annotation,
-    ) -> int:
+    def str_to_int(s: str, info: ValidationInfo) -> int:
         """
         Convert string to integer, also encompassing bool.
         """
-        return annotation.concrete_type(s)
+        return info.target_annotation.concrete_type(s)
 
     # register converters
     registry = TypedValidatorRegistry()
@@ -111,9 +115,15 @@ def test_registry():
     converter = registry.find(obj, Annotation(int))
     assert converter
     assert converter.variance == "invariant"
-    assert converter.validate(obj, Annotation(int), ValidationContext()) == 42
+    assert (
+        converter.validate(obj, ValidationInfo(Annotation(int), ValidationContext()))
+        == 42
+    )
 
     converter = registry.find(obj, Annotation(bool))
     assert converter
     assert converter.variance == "contravariant"
-    assert converter.validate(obj, Annotation(bool), ValidationContext()) is True
+    assert (
+        converter.validate(obj, ValidationInfo(Annotation(bool), ValidationContext()))
+        is True
+    )

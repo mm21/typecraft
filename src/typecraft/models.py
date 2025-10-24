@@ -25,7 +25,7 @@ from typing import (
 )
 
 from .inspecting.annotations import Annotation
-from .validating import TypedValidator, ValidationContext, validate
+from .validating import TypedValidator, ValidationInfo, validate
 
 __all__ = [
     "Field",
@@ -326,19 +326,17 @@ class BaseModel:
         """
         # add converter for nested dataclasses at end in case user passes a
         # converter for a subclass
-        return (*self.model_get_converters(), MODEL_CONVERTER)
+        return (*self.model_get_converters(), MODEL_VALIDATOR)
 
 
-def convert_model(
-    obj: Any, annotation_info: Annotation, _: ValidationContext
-) -> BaseModel:
-    type_ = annotation_info.concrete_type
+def validate_model(obj: Any, info: ValidationInfo) -> BaseModel:
+    type_ = info.target_annotation.concrete_type
     assert issubclass(type_, BaseModel)
     assert isinstance(obj, Mapping)
     return type_(**obj)
 
 
-MODEL_CONVERTER = TypedValidator(Mapping, BaseModel, func=convert_model)
+MODEL_VALIDATOR = TypedValidator(Mapping, BaseModel, func=validate_model)
 """
 Converts a mapping (e.g. dict) to a model.
 """

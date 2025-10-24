@@ -4,6 +4,7 @@ Serialization capability.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import EllipsisType
 from typing import (
     Any,
@@ -16,7 +17,8 @@ from .converting import (
     BaseConversionContext,
     BaseConverterRegistry,
     BaseTypedConverter,
-    ConverterFunction,
+    ConverterFunctionWrapper,
+    ConverterFuncType,
     normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
@@ -35,19 +37,25 @@ __all__ = [
 ]
 
 
-type SerializerFuncType[SourceT] = Callable[[SourceT], Any] | Callable[
-    [SourceT, Annotation, SerializationContext], Any
-]
+type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationInfo]
 """
 Function which serializes the given object from a specific source type and generally
-returns an object of built-in Python types.
-
-Can optionally take the annotation and context, generally used to propagate to nested
-objects (e.g. elements of custom collections).
+returns an object of built-in Python type. Can optionally take
+`SerializationInfo` as the second argument.
 """
 
 
-class TypedSerializer[SourceT](BaseTypedConverter[SerializerFuncType[SourceT]]):
+@dataclass
+class SerializationInfo:
+    """
+    Info passed to a serialization function.
+    """
+
+    source_annotation: Annotation
+    context: SerializationContext
+
+
+class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationInfo]):
     """
     Encapsulates serialization parameters from a source annotation.
     """
@@ -100,34 +108,26 @@ class TypedSerializer[SourceT](BaseTypedConverter[SerializerFuncType[SourceT]]):
         """
         Create a TypedSerializer from a function by inspecting its signature.
         """
-        sig = ConverterFunction(func, SerializationContext)
+        sig = ConverterFunctionWrapper[SourceT, Any, SerializationContext](func)
 
         # validate sig: must take source type
         assert sig.obj_param.annotation
 
         return TypedSerializer(sig.obj_param.annotation, func=func, variance=variance)
 
-    def serialize(
-        self,
-        obj: Any,
-        source_annotation: Annotation,
-        context: SerializationContext,
-        /,
-    ) -> Any:
+    def serialize(self, obj: Any, info: SerializationInfo, /) -> Any:
         """
         Serialize object or raise `ValueError`.
 
         `source_annotation` is required because some serializers may inspect it
         to recurse into items of collections.
         """
-        # should be checked by the caller
-        assert self.can_convert(obj, source_annotation)
 
         # invoke serialization function
         try:
             if func := self._func:
                 # provided validation function
-                serialized_obj = func.invoke(obj, source_annotation, context)
+                serialized_obj = func.invoke(obj, info)
             else:
                 # direct object construction
                 concrete_type = cast(
@@ -227,6 +227,9 @@ class SerializationContext(BaseConversionContext[TypedSerializerRegistry]):
         invoking type-based serializers when they match.
         """
         source_ann = Annotation._normalize(source_type)
+
+        # TODO: create SerializationInfo
+        SerializationInfo(source_type, self)
         return _dispatch_serialization(obj, source_ann, self)
 
 
@@ -286,7 +289,7 @@ def _dispatch_serialization(
 
     # try user-provided serializers first (even for primitives/collections)
     if serializer := context.registry.find(obj, annotation):
-        return serializer.serialize(obj, annotation, context)
+        return serializer.serialize(obj, SerializationInfo(annotation, context))
 
     # handle builtin collections
     if issubclass(annotation.concrete_type, COLLECTION_TYPES):

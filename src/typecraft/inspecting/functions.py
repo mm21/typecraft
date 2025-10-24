@@ -101,6 +101,12 @@ class SignatureInfo:
     def __repr__(self) -> str:
         return f"{self.func.__name__}({self.params}) -> {self.return_annotation}"
 
+    def get_param(self, name: str, /) -> ParameterInfo | None:
+        """
+        Get parameter by name.
+        """
+        return next((p for n, p in self.params.items() if n == name), None)
+
     @overload
     def get_params(
         self,
