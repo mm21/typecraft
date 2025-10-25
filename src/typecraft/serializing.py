@@ -227,10 +227,8 @@ class SerializationContext(BaseConversionContext[TypedSerializerRegistry]):
         invoking type-based serializers when they match.
         """
         source_ann = Annotation._normalize(source_type)
-
-        # TODO: create SerializationInfo
-        SerializationInfo(source_type, self)
-        return _dispatch_serialization(obj, source_ann, self)
+        info = SerializationInfo(source_ann, self)
+        return _dispatch_serialization(obj, info)
 
 
 @overload
@@ -272,8 +270,7 @@ def serialize(
 
 def _dispatch_serialization(
     obj: Any,
-    annotation: Annotation,
-    context: SerializationContext,
+    info: SerializationInfo,
 ) -> Any:
     """
     Main serialization dispatcher.
@@ -284,132 +281,133 @@ def _dispatch_serialization(
         return None
 
     # handle union type
-    if annotation.is_union:
-        return _serialize_union(obj, annotation, context)
+    if info.source_annotation.is_union:
+        return _serialize_union(obj, info)
 
     # try user-provided serializers first (even for primitives/collections)
-    if serializer := context.registry.find(obj, annotation):
-        return serializer.serialize(obj, SerializationInfo(annotation, context))
+    if serializer := info.context.registry.find(obj, info.source_annotation):
+        return serializer.serialize(obj, info)
 
     # handle builtin collections
-    if issubclass(annotation.concrete_type, COLLECTION_TYPES):
-        return _serialize_collection(obj, annotation, context)
+    if issubclass(info.source_annotation.concrete_type, COLLECTION_TYPES):
+        return _serialize_collection(obj, info)
 
     # no serializer found, return as-is
     return obj
 
 
-def _serialize_union(
-    obj: Any, annotation: Annotation, context: SerializationContext
-) -> Any:
+def _serialize_union(obj: Any, info: SerializationInfo) -> Any:
     """
     Serialize union types by finding the matching constituent type.
     """
-    for arg in annotation.arg_annotations:
+    for arg in info.source_annotation.arg_annotations:
         if arg.is_type(obj):
-            return _dispatch_serialization(obj, arg, context)
+            return _dispatch_serialization(obj, SerializationInfo(arg, info.context))
 
     # no matching union member, serialize with inferred type
-    return _dispatch_serialization(obj, Annotation(type(obj)), context)
+    return _dispatch_serialization(
+        obj, SerializationInfo(Annotation(type(obj)), info.context)
+    )
 
 
 def _serialize_collection(
     obj: CollectionType,
-    annotation: Annotation,
-    context: SerializationContext,
+    info: SerializationInfo,
 ) -> Any:
     """
     Serialize collection of objects.
     """
 
     assert len(
-        annotation.arg_annotations
-    ), f"Collection annotation has no type parameter: {annotation}"
+        info.source_annotation.arg_annotations
+    ), f"Collection annotation has no type parameter: {info.source_annotation}"
 
-    type_ = annotation.concrete_type
+    type_ = info.source_annotation.concrete_type
 
     # handle conversion from mappings
     if issubclass(type_, dict):
         assert isinstance(obj, type_)
-        return _serialize_dict(obj, annotation, context)
+        return _serialize_dict(obj, info)
 
     # handle conversion from value collections
     if issubclass(type_, list):
         assert isinstance(obj, type_)
-        return _serialize_list(obj, annotation, context)
+        return _serialize_list(obj, info)
     elif issubclass(type_, tuple):
         assert isinstance(obj, type_)
-        return _serialize_tuple(obj, annotation, context)
+        return _serialize_tuple(obj, info)
     else:
         assert issubclass(type_, (set, frozenset))
         assert isinstance(obj, type_)
-        return _serialize_set(obj, annotation, context)
+        return _serialize_set(obj, info)
 
 
 def _serialize_list(
     obj: list[Any],
-    annotation: Annotation,
-    context: SerializationContext,
+    info: SerializationInfo,
 ) -> list[Any]:
     """
     Serialize list to a list.
     """
-    assert len(annotation.arg_annotations) >= 1
-    item_ann = annotation.arg_annotations[0]
+    ann, context = info.source_annotation, info.context
+
+    assert len(ann.arg_annotations) >= 1
+    item_ann = ann.arg_annotations[0]
 
     return [context.serialize(o, item_ann) for o in obj]
 
 
 def _serialize_tuple(
     obj: tuple[Any],
-    annotation: Annotation,
-    context: SerializationContext,
+    info: SerializationInfo,
 ) -> list[Any]:
     """
     Serialize tuple to a list.
     """
-    assert len(annotation.arg_annotations) >= 1
+    ann, context = info.source_annotation, info.context
+
+    assert len(ann.arg_annotations) >= 1
 
     # check for Ellipsis (tuple[T, ...])
-    if annotation.arg_annotations[-1].concrete_type is EllipsisType:
+    if ann.arg_annotations[-1].concrete_type is EllipsisType:
         # variable-length tuple: use first annotation for all items
-        item_ann = annotation.arg_annotations[0]
+        item_ann = ann.arg_annotations[0]
         return [context.serialize(o, item_ann) for o in obj]
     else:
         # fixed-length tuple: match annotations to items
-        assert len(annotation.arg_annotations) == len(obj), (
-            f"Tuple length mismatch: expected {len(annotation.arg_annotations)} items, "
+        assert len(ann.arg_annotations) == len(obj), (
+            f"Tuple length mismatch: expected {len(ann.arg_annotations)} items, "
             f"got {len(obj)}"
         )
-        return [
-            context.serialize(o, ann) for o, ann in zip(obj, annotation.arg_annotations)
-        ]
+        return [context.serialize(o, ann) for o, ann in zip(obj, ann.arg_annotations)]
 
 
 def _serialize_set(
     obj: set[Any] | frozenset[Any],
-    annotation: Annotation,
-    context: SerializationContext,
+    info: SerializationInfo,
 ) -> list[Any]:
     """
     Serialize set to a list (sets aren't JSON-serializable).
     """
-    assert len(annotation.arg_annotations) == 1
-    item_ann = annotation.arg_annotations[0]
+    ann, context = info.source_annotation, info.context
+
+    assert len(ann.arg_annotations) == 1
+    item_ann = ann.arg_annotations[0]
 
     return [context.serialize(o, item_ann) for o in obj]
 
 
 def _serialize_dict(
     obj: dict[Any, Any],
-    annotation: Annotation,
-    context: SerializationContext,
+    info: SerializationInfo,
 ) -> dict[Any, Any]:
     """
     Serialize dict.
     """
-    assert len(annotation.arg_annotations) == 2
-    key_ann, value_ann = annotation.arg_annotations
+    ann, context = info.source_annotation, info.context
+
+    assert len(ann.arg_annotations) == 2
+    key_ann, value_ann = ann.arg_annotations
 
     return {
         context.serialize(k, key_ann): context.serialize(v, value_ann)
