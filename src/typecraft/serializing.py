@@ -14,7 +14,7 @@ from typing import (
 )
 
 from .converting import (
-    BaseConversionContext,
+    BaseConversionEngine,
     BaseConverterRegistry,
     BaseTypedConverter,
     ConverterFunctionWrapper,
@@ -153,9 +153,6 @@ class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationInf
 
         return source_ann.is_type(obj)
 
-    def _get_context_cls(self) -> type[Any]:
-        return SerializationContext
-
 
 class TypedSerializerRegistry(BaseConverterRegistry[TypedSerializer]):
     """
@@ -174,12 +171,6 @@ class TypedSerializerRegistry(BaseConverterRegistry[TypedSerializer]):
         Get serializers currently registered.
         """
         return self._converters
-
-    def _get_map_key_type(self, converter: TypedSerializer) -> type:
-        """
-        Get the source type to use as key in the serializer map.
-        """
-        return converter.source_annotation.concrete_type
 
     @overload
     def register(self, serializer: TypedSerializer, /): ...
@@ -207,17 +198,10 @@ class TypedSerializerRegistry(BaseConverterRegistry[TypedSerializer]):
         self._register_converter(serializer)
 
 
-class SerializationContext(BaseConversionContext[TypedSerializerRegistry]):
+class SerializationContext(BaseConversionEngine[TypedSerializerRegistry]):
     """
-    Encapsulates serialization parameters, propagated throughout the
-    serialization process.
+    Orchestrates serialization process. Not exposed to user.
     """
-
-    def __repr__(self) -> str:
-        return f"SerializationContext(registry={self._registry})"
-
-    def _create_default_registry(self) -> TypedSerializerRegistry:
-        return TypedSerializerRegistry()
 
     def serialize(self, obj: Any, source_type: Annotation | Any, /) -> Any:
         """

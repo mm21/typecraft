@@ -5,17 +5,18 @@ Low-level conversion capability, agnostic of validation vs serialization.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections import defaultdict
 from collections.abc import Callable, Sequence
-from typing import Any, cast
+from functools import cached_property
+from typing import Any, Self, cast
 
 from .inspecting.annotations import Annotation
+from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import VarianceType
 
-type ConverterFuncType[SourceT, TargetT, InfoT] = Callable[
+type ConverterFuncType[SourceT, TargetT, FrameT] = Callable[
     [SourceT], TargetT
-] | Callable[[SourceT, InfoT], TargetT]
+] | Callable[[SourceT, FrameT], TargetT]
 """
 Function which converts an object. Can take the source object by itself or
 source object with info.
@@ -42,6 +43,7 @@ class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
     Parameter for object to be validated/serialized, must be positional.
     """
 
+    # TODO: context_param, check type if annotation given
     info_param: ParameterInfo | None
     """
     Parameter for additional info, must be positional.
@@ -147,11 +149,29 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
         - For serializers: source annotation (converting FROM)
         """
 
-    @abstractmethod
-    def _get_context_cls(self) -> type[BaseConversionContext]:
+    @classmethod
+    def from_func(
+        cls,
+        func: ConverterFuncType[SourceT, TargetT, InfoT],
+        /,
+        *,
+        variance: VarianceType = "contravariant",
+    ) -> Self:
         """
-        Get the context class for this converter.
+        Create a TypedValidator from a function by inspecting its signature.
         """
+        func_wrapper = ConverterFunctionWrapper[Any, TargetT, InfoT](func)
+
+        # validate sig: input and return types must be annotated
+        assert func_wrapper.obj_param.annotation
+        assert func_wrapper.sig_info.return_annotation
+
+        return cls(
+            func_wrapper.obj_param.annotation,
+            func_wrapper.sig_info.return_annotation,
+            func=func,
+            variance=variance,
+        )
 
     def _check_variance_match(
         self,
@@ -167,6 +187,7 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
             return annotation.is_subtype(reference_annotation)
 
 
+# TODO: take BaseConverter, can be user-defined subclass (not based on type)
 class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
     """
     Base class for converter registries.
@@ -176,53 +197,25 @@ class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
     sequential search for contravariant matching.
     """
 
-    _converter_map: dict[type, list[ConverterT]]
-    """
-    Converters grouped by key type for efficiency.
-    """
-
     _converters: list[ConverterT]
     """
     List of all converters for fallback/contravariant matching.
     """
 
     def __init__(self, *converters: ConverterT):
-        self._converter_map = defaultdict(list)
         self._converters = []
         self.extend(converters)
 
     def __len__(self) -> int:
         return len(self._converters)
 
-    @property
-    def converters(self) -> list[ConverterT]:
-        """
-        Get converters currently registered.
-        """
-        return self._converters
-
     def find(self, obj: Any, annotation: Annotation) -> ConverterT | None:
         """
         Find the first converter that can handle the conversion.
-
-        Searches in order:
-        1. Exact key type matches
-        2. All converters (for contravariant matching)
         """
-        key_type = annotation.concrete_type
-
-        # first try converters registered for the exact key type
-        if key_type in self._converter_map:
-            for converter in self._converter_map[key_type]:
-                if converter.can_convert(obj, annotation):
-                    return converter
-
-        # then try all converters (handles contravariant, generic cases)
         for converter in self._converters:
-            if converter not in self._converter_map.get(key_type, []):
-                if converter.can_convert(obj, annotation):
-                    return converter
-
+            if converter.can_convert(obj, annotation):
+                return converter
         return None
 
     def extend(self, converters: Sequence[ConverterT]):
@@ -232,25 +225,21 @@ class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
         for converter in converters:
             self._register_converter(converter)
 
-    @abstractmethod
-    def _get_map_key_type(self, converter: ConverterT) -> type:
-        """
-        Get the type to use as key in the converter map for this converter.
-
-        - For validators: target type
-        - For serializers: source type
-        """
-
     def _register_converter(self, converter: ConverterT):
         """
         Register a converter object.
         """
-        map_key = self._get_map_key_type(converter)
-        self._converter_map[map_key].append(converter)
         self._converters.append(converter)
 
+    @cached_property
+    def _converter_cls(self) -> type[ConverterT]:
+        converter_cls = extract_type_param(
+            type(self), BaseConverterRegistry, "ConverterT", BaseTypedConverter
+        )
+        return cast(type[ConverterT], converter_cls)
 
-class BaseConversionContext[RegistryT: BaseConverterRegistry](ABC):
+
+class BaseConversionEngine[RegistryT: BaseConverterRegistry, ParamsT: Any](ABC):
     """
     Base class for conversion contexts.
 
@@ -258,20 +247,25 @@ class BaseConversionContext[RegistryT: BaseConverterRegistry](ABC):
     registry, propagated throughout the conversion process.
     """
 
-    _registry: RegistryT
+    __registry: RegistryT
 
     def __init__(self, *, registry: RegistryT | None = None):
-        self._registry = registry or self._create_default_registry()
+        self.__registry = registry or self.__registry_cls()
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(registry={self.__registry})"
 
     @property
     def registry(self) -> RegistryT:
-        return self._registry
+        return self.__registry
 
-    @abstractmethod
-    def _create_default_registry(self) -> RegistryT:
-        """
-        Create a default registry.
-        """
+    @property
+    def __registry_cls(self) -> type[RegistryT]:
+        registry_cls = extract_type_param(
+            type(self), BaseConversionEngine, "RegistryT", BaseConverterRegistry
+        )
+        assert registry_cls
+        return cast(type[RegistryT], registry_cls)
 
 
 def normalize_to_registry[ConverterT, RegistryT](

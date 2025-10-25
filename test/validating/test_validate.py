@@ -9,7 +9,7 @@ from pytest import raises
 
 from typecraft.validating import (
     TypedValidator,
-    TypedValidatorRegistry,
+    ValidatorRegistry,
     normalize_to_list,
     validate,
 )
@@ -141,7 +141,7 @@ def test_registry():
     """
     Test validation with registry.
     """
-    registry = TypedValidatorRegistry()
+    registry = ValidatorRegistry()
     registry.register(TypedValidator(str, int))
 
     obj = "1"

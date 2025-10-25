@@ -7,9 +7,9 @@ from typing import Any
 from typecraft.inspecting.annotations import Annotation
 from typecraft.validating import (
     TypedValidator,
-    TypedValidatorRegistry,
-    ValidationContext,
-    ValidationInfo,
+    ValidationEngine,
+    ValidationFrame,
+    ValidatorRegistry,
 )
 
 
@@ -22,7 +22,7 @@ def test_any():
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, info: ValidationInfo) -> Any:
+    def func2(obj: Any, info: ValidationFrame) -> Any:
         assert isinstance(obj, int)
         assert info.target_annotation.concrete_type is object
         assert not info.context.lenient
@@ -36,13 +36,13 @@ def test_any():
 
     assert converter1.can_convert(obj, Annotation(Any))
     conv_obj = converter1.validate(
-        obj, ValidationInfo(Annotation(Any), ValidationContext())
+        obj, ValidationFrame(Annotation(Any), ValidationEngine())
     )
     assert conv_obj == -1
 
     assert converter2.can_convert(obj, Annotation(Any))
     conv_obj = converter2.validate(
-        obj, ValidationInfo(Annotation(Any), ValidationContext())
+        obj, ValidationFrame(Annotation(Any), ValidationEngine())
     )
     assert conv_obj == -2
 
@@ -64,7 +64,7 @@ def test_generic():
     assert not converter.can_convert(obj, list)
 
     conv_obj = converter.validate(
-        obj, ValidationInfo(Annotation(list[str]), ValidationContext())
+        obj, ValidationFrame(Annotation(list[str]), ValidationEngine())
     )
     assert conv_obj == ["123"]
 
@@ -98,14 +98,14 @@ def test_registry():
         """
         return int(s)
 
-    def str_to_int(s: str, info: ValidationInfo) -> int:
+    def str_to_int(s: str, info: ValidationFrame) -> int:
         """
         Convert string to integer, also encompassing bool.
         """
         return info.target_annotation.concrete_type(s)
 
     # register converters
-    registry = TypedValidatorRegistry()
+    registry = ValidatorRegistry()
     registry.register(str_to_int_inv, variance="invariant")
     registry.register(str_to_int)
 
@@ -116,7 +116,7 @@ def test_registry():
     assert converter
     assert converter.variance == "invariant"
     assert (
-        converter.validate(obj, ValidationInfo(Annotation(int), ValidationContext()))
+        converter.validate(obj, ValidationFrame(Annotation(int), ValidationEngine()))
         == 42
     )
 
@@ -124,6 +124,6 @@ def test_registry():
     assert converter
     assert converter.variance == "contravariant"
     assert (
-        converter.validate(obj, ValidationInfo(Annotation(bool), ValidationContext()))
+        converter.validate(obj, ValidationFrame(Annotation(bool), ValidationEngine()))
         is True
     )

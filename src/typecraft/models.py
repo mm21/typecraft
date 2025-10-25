@@ -25,7 +25,7 @@ from typing import (
 )
 
 from .inspecting.annotations import Annotation
-from .validating import TypedValidator, ValidationInfo, validate
+from .validating import TypedValidator, ValidationFrame, validate
 
 __all__ = [
     "Field",
@@ -329,7 +329,7 @@ class BaseModel:
         return (*self.model_get_converters(), MODEL_VALIDATOR)
 
 
-def validate_model(obj: Any, info: ValidationInfo) -> BaseModel:
+def validate_model(obj: Any, info: ValidationFrame) -> BaseModel:
     type_ = info.target_annotation.concrete_type
     assert issubclass(type_, BaseModel)
     assert isinstance(obj, Mapping)

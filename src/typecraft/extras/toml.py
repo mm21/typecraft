@@ -42,7 +42,7 @@ from tomlkit.items import (
 from ..inspecting.annotations import Annotation
 from ..inspecting.classes import extract_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
-from ..validating import TypedValidator, ValidationContext, ValidationInfo
+from ..validating import TypedValidator, ValidationEngine, ValidationFrame
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -326,7 +326,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
         cls,
         tomlkit_obj: TomlkitT,
         annotation: Annotation,
-        context: ValidationContext,
+        context: ValidationEngine,
     ) -> Self:
         assert len(annotation.arg_annotations) == 1
         item_type = annotation.arg_annotations[0]
@@ -405,14 +405,14 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def validate_table(
-    obj: Any, info: ValidationInfo
+    obj: Any, info: ValidationFrame
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
     type_ = info.target_annotation.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
     return type_._from_tomlkit_obj(obj)
 
 
-def validate_array(obj: Any, info: ValidationInfo) -> ArrayWrapper | TableArrayWrapper:
+def validate_array(obj: Any, info: ValidationFrame) -> ArrayWrapper | TableArrayWrapper:
     type_ = info.target_annotation.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
     return type_._from_tomlkit_obj_with_annotation(
