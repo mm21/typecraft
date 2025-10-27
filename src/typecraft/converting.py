@@ -14,21 +14,21 @@ from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import VarianceType
 
-type ConverterFuncType[SourceT, TargetT, FrameT] = Callable[
+type ConverterFuncType[SourceT, TargetT, HandleT] = Callable[
     [SourceT], TargetT
-] | Callable[[SourceT, FrameT], TargetT]
+] | Callable[[SourceT, HandleT], TargetT]
 """
 Function which converts an object. Can take the source object by itself or
 source object with info.
 """
 
 
-class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
+class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
     """
     Encapsulates a validator or serializer function.
     """
 
-    func: ConverterFuncType[SourceT, TargetT, InfoT]
+    func: ConverterFuncType[SourceT, TargetT, HandleT]
     """
     Converter function.
     """
@@ -43,8 +43,7 @@ class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
     Parameter for object to be validated/serialized, must be positional.
     """
 
-    # TODO: context_param, check type if annotation given
-    info_param: ParameterInfo | None
+    handle_param: ParameterInfo | None
     """
     Parameter for additional info, must be positional.
     """
@@ -61,30 +60,30 @@ class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
             obj_param
         ), f"Function {func} does not take any positional params, must take obj as positional"
 
-        # get info parameter
-        info_param = sig_info.get_param("info")
-        if info_param:
+        # get handle parameter
+        handle_param = sig_info.get_param("handle")
+        if handle_param:
             assert (
-                info_param.index == 1
-            ), f"Function {func} must take info as second positional argument"
+                handle_param.index == 1
+            ), f"Function {func} must take handle as second positional argument, got index {handle_param.index}"
 
         self.func = func
         self.sig_info = sig_info
         self.obj_param = obj_param
-        self.info_param = info_param
+        self.handle_param = handle_param
 
-    def invoke(self, obj: SourceT, info: InfoT) -> TargetT:
-        if self.info_param:
+    def invoke(self, obj: SourceT, handle: HandleT) -> TargetT:
+        if self.handle_param:
             # invoke with info
-            func = cast(Callable[[SourceT, InfoT], TargetT], self.func)
-            return func(obj, info)
+            func = cast(Callable[[SourceT, HandleT], TargetT], self.func)
+            return func(obj, handle)
         else:
             # invoke without info
             func = cast(Callable[[SourceT], TargetT], self.func)
             return func(obj)
 
 
-class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
+class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
     """
     Base class for typed converters (validators and serializers).
 
@@ -102,7 +101,7 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
     Annotation specifying type to convert to.
     """
 
-    _func: ConverterFunctionWrapper[SourceT, TargetT, InfoT] | None
+    _func: ConverterFunctionWrapper[SourceT, TargetT, HandleT] | None
     """
     Function taking source type and returning an instance of target type.
     """
@@ -119,7 +118,7 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
         target_annotation: Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, InfoT] | None = None,
+        func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
         variance: VarianceType = "contravariant",
     ):
         self._source_annotation = Annotation._normalize(source_annotation)
@@ -152,7 +151,7 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
     @classmethod
     def from_func(
         cls,
-        func: ConverterFuncType[SourceT, TargetT, InfoT],
+        func: ConverterFuncType[SourceT, TargetT, HandleT],
         /,
         *,
         variance: VarianceType = "contravariant",
@@ -160,7 +159,7 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
         """
         Create a TypedValidator from a function by inspecting its signature.
         """
-        func_wrapper = ConverterFunctionWrapper[Any, TargetT, InfoT](func)
+        func_wrapper = ConverterFunctionWrapper[Any, TargetT, HandleT](func)
 
         # validate sig: input and return types must be annotated
         assert func_wrapper.obj_param.annotation
@@ -239,7 +238,7 @@ class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
         return cast(type[ConverterT], converter_cls)
 
 
-class BaseConversionEngine[RegistryT: BaseConverterRegistry, ParamsT: Any](ABC):
+class BaseConversionEngine[RegistryT: BaseConverterRegistry](ABC):
     """
     Base class for conversion contexts.
 

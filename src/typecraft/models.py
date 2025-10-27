@@ -25,7 +25,7 @@ from typing import (
 )
 
 from .inspecting.annotations import Annotation
-from .validating import TypedValidator, ValidationFrame, validate
+from .validating import TypedValidator, ValidationHandle, validate
 
 __all__ = [
     "Field",
@@ -111,7 +111,7 @@ class FieldInfo:
     Dataclass field.
     """
 
-    annotation_info: Annotation
+    annotation: Annotation
     """
     Annotation info.
     """
@@ -151,9 +151,7 @@ class FieldInfo:
         metadata = field.metadata.get("metadata") or FieldMetadata()
         assert isinstance(metadata, FieldMetadata)
 
-        return FieldInfo(
-            field=field, annotation_info=annotation_info, metadata=metadata
-        )
+        return FieldInfo(field=field, annotation=annotation_info, metadata=metadata)
 
 
 @dataclass(kw_only=True)
@@ -231,7 +229,7 @@ class BaseModel:
             value_ = self.model_pre_validate(field_info, value)
             value_ = validate(
                 value_,
-                field_info.annotation_info.raw,
+                field_info.annotation.raw,
                 *self.__converters,
                 lenient=self.model_config.lenient,
             )
@@ -280,7 +278,7 @@ class BaseModel:
             value = getattr(self, name)
 
             # recurse if this is a nested model
-            if issubclass(field_info.annotation_info.concrete_type, BaseModel):
+            if issubclass(field_info.annotation.concrete_type, BaseModel):
                 assert isinstance(value, BaseModel)
                 value = value.model_dump()
 
@@ -329,8 +327,8 @@ class BaseModel:
         return (*self.model_get_converters(), MODEL_VALIDATOR)
 
 
-def validate_model(obj: Any, info: ValidationFrame) -> BaseModel:
-    type_ = info.target_annotation.concrete_type
+def validate_model(obj: Mapping[Any, Any], handle: ValidationHandle) -> BaseModel:
+    type_ = handle.target_annotation.concrete_type
     assert issubclass(type_, BaseModel)
     assert isinstance(obj, Mapping)
     return type_(**obj)

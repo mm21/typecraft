@@ -39,10 +39,9 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..inspecting.annotations import Annotation
 from ..inspecting.classes import extract_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
-from ..validating import TypedValidator, ValidationEngine, ValidationFrame
+from ..validating import TypedValidator, ValidationHandle
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -322,18 +321,17 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
         ...
 
     @classmethod
-    def _from_tomlkit_obj_with_annotation(
+    def _from_tomlkit_obj_with_handle(
         cls,
         tomlkit_obj: TomlkitT,
-        annotation: Annotation,
-        context: ValidationEngine,
+        handle: ValidationHandle,
     ) -> Self:
-        assert len(annotation.arg_annotations) == 1
-        item_type = annotation.arg_annotations[0]
+        assert len(handle.target_annotation.arg_annotations) == 1
+        item_type = handle.target_annotation.arg_annotations[0]
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
-        validated_items = [context.validate(o, item_type) for o in items]
+        validated_items = [handle.recurse(o, item_type, i) for i, o in enumerate(items)]
 
         obj = cls(validated_items)
         return cls._finalize_obj(tomlkit_obj, obj)
@@ -405,19 +403,19 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def validate_table(
-    obj: Any, info: ValidationFrame
+    obj: Any, handle: ValidationHandle
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
-    type_ = info.target_annotation.concrete_type
+    type_ = handle.target_annotation.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
     return type_._from_tomlkit_obj(obj)
 
 
-def validate_array(obj: Any, info: ValidationFrame) -> ArrayWrapper | TableArrayWrapper:
-    type_ = info.target_annotation.concrete_type
+def validate_array(
+    obj: Any, handle: ValidationHandle
+) -> ArrayWrapper | TableArrayWrapper:
+    type_ = handle.target_annotation.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
-    return type_._from_tomlkit_obj_with_annotation(
-        obj, info.target_annotation, info.context
-    )
+    return type_._from_tomlkit_obj_with_handle(obj, handle)
 
 
 VALIDATORS = (
