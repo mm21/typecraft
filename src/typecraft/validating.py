@@ -153,10 +153,7 @@ class ValidationHandle:
 
     _frame: ValidationFrame
 
-    def __init__(
-        self,
-        frame: ValidationFrame,
-    ):
+    def __init__(self, frame: ValidationFrame):
         self._frame = frame
 
     @property

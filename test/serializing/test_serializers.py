@@ -4,10 +4,11 @@ Test end-to-end serialization via APIs.
 
 from dataclasses import dataclass
 
+from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
-    SerializationInfo,
+    SerializationHandle,
+    SerializerRegistry,
     TypedSerializer,
-    TypedSerializerRegistry,
     serialize,
 )
 
@@ -50,11 +51,14 @@ def test_nested_custom_serializer():
     def serialize_person(p: Person) -> dict:
         return {"name": p.name, "age": p.age}
 
-    def serialize_company(c: Company, info: SerializationInfo) -> dict:
+    def serialize_company(c: Company, handle: SerializationHandle) -> dict:
         # use context to recursively serialize employees
         return {
             "name": c.name,
-            "employees": [info.context.serialize(emp, Person) for emp in c.employees],
+            "employees": [
+                handle.recurse(emp, Annotation(Person), i)
+                for i, emp in enumerate(c.employees)
+            ],
         }
 
     person1 = Person(name="Alice", age=30)
@@ -206,7 +210,7 @@ def test_registry():
     """
     Test serialization with registry.
     """
-    registry = TypedSerializerRegistry()
+    registry = SerializerRegistry()
     registry.register(TypedSerializer(int, str))
 
     obj = 1
