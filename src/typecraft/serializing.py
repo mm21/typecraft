@@ -5,10 +5,10 @@ Serialization capability.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from types import EllipsisType
 from typing import (
     Any,
     Callable,
+    Literal,
     cast,
     overload,
 )
@@ -20,10 +20,8 @@ from .converting import (
     ConverterFuncType,
     normalize_to_registry,
 )
-from .inspecting.annotations import Annotation
+from .inspecting.annotations import ANY, Annotation
 from .typedefs import (
-    COLLECTION_TYPES,
-    CollectionType,
     VarianceType,
 )
 
@@ -50,7 +48,12 @@ class SerializationParams:
     Serialization params as passed by user.
     """
 
-    pass  # placeholder for future parameters
+    mode: Literal["plain", "json"] = "plain"
+    """
+    Serialization mode:
+    - "plain": serialize without special handling
+    - "json": apply converters to ensure JSON-serializable output
+    """
 
 
 @dataclass(kw_only=True)
@@ -59,9 +62,10 @@ class SerializationFrame:
     Internal recursion state. A new object is created for each recursion level.
     """
 
-    source_annotation: Annotation
+    source_annotation: Annotation | None
     """
-    Source type we're serializing from.
+    Optional source type annotation for type-specific serialization.
+    If None, type is inferred from the object.
     """
 
     params: SerializationParams
@@ -87,8 +91,8 @@ class SerializationFrame:
     def recurse(
         self,
         obj: Any,
-        source_annotation: Annotation,
         path_name: str | int,
+        source_annotation: Annotation | None = None,
         context: Any | None = None,
     ) -> Any:
         next_frame = SerializationFrame(
@@ -103,7 +107,7 @@ class SerializationFrame:
     @classmethod
     def _new(
         cls,
-        source_annotation: Annotation,
+        source_annotation: Annotation | None,
         params: SerializationParams,
         context: Any,
         engine: SerializationEngine,
@@ -112,8 +116,8 @@ class SerializationFrame:
             source_annotation=source_annotation,
             params=params,
             context=context,
-            path=(),
             engine=engine,
+            path=(),
         )
 
     def _with_annotation(self, annotation: Annotation) -> SerializationFrame:
@@ -141,7 +145,7 @@ class SerializationHandle:
         self._frame = frame
 
     @property
-    def source_annotation(self) -> Annotation:
+    def source_annotation(self) -> Annotation | None:
         return self._frame.source_annotation
 
     @property
@@ -155,16 +159,16 @@ class SerializationHandle:
     def recurse(
         self,
         obj: Any,
-        source_annotation: Annotation,
         path_name: str | int,
         /,
         *,
+        source_annotation: Annotation | None = None,
         context: Any | None = None,
     ) -> Any:
         """
-        Recurse into serialization, overriding context if passed.
+        Recurse into serialization, optionally overriding source annotation and context.
         """
-        return self._frame.recurse(obj, source_annotation, path_name, context)
+        return self._frame.recurse(obj, path_name, source_annotation, context)
 
 
 class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHandle]):
@@ -221,7 +225,7 @@ class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHan
         # invoke serialization function
         try:
             if func := self._func:
-                # provided validation function
+                # provided function
                 serialized_obj = func.invoke(obj, handle)
             else:
                 # direct object construction
@@ -298,7 +302,7 @@ class SerializerRegistry(BaseConverterRegistry[TypedSerializer]):
         self._register_converter(serializer)
 
 
-class SerializationEngine(BaseConversionEngine[SerializerRegistry]):
+class SerializationEngine(BaseConversionEngine[SerializerRegistry, SerializationFrame]):
     """
     Orchestrates serialization process. Not exposed to user.
     """
@@ -307,18 +311,157 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry]):
         """
         Serialize object using registered typed serializers.
 
-        Walks the object recursively in lockstep with the source annotation,
-        invoking type-based serializers when they match.
+        Walks the object recursively based on its actual type, invoking
+        type-based serializers when they match.
         """
-        return _dispatch_serialization(obj, frame)
+        return self._dispatch_conversion(obj, frame)
+
+    def _should_convert(self, obj: Any, frame: SerializationFrame) -> bool:
+        """
+        Check if serialization conversion is needed.
+
+        In JSON mode, convert non-JSON-serializable types.
+        Always try to apply user converters when available.
+        """
+        # always try user converters first
+        return True
+
+    def _get_ref_annotation(self, obj: Any, frame: SerializationFrame) -> Annotation:
+        """
+        Get annotation for finding converters.
+
+        Uses provided source_annotation if available, otherwise infers from object type.
+        """
+        if frame.source_annotation is not None and frame.source_annotation != ANY:
+            return frame.source_annotation
+        return Annotation(type(obj))
+
+    # TODO: generic converter.convert()
+    def _apply_converter(
+        self, converter: TypedSerializer, obj: Any, frame: SerializationFrame
+    ) -> Any:
+        """
+        Apply serializer to convert the object.
+        """
+        return converter.serialize(obj, SerializationHandle(frame))
+
+    def _convert_union(self, obj: Any, frame: SerializationFrame) -> Any:
+        """
+        Serialize union types by finding the matching constituent type.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        for ann in ref_annotation.arg_annotations:
+            if ann.is_type(obj):
+                # recurse with the matching union member type
+                return self.serialize(obj, frame._with_annotation(ann))
+
+        # no matching union member, serialize with inferred type
+        return self.serialize(obj, frame)
+
+    def _convert_list(self, obj: list[Any], frame: SerializationFrame) -> list[Any]:
+        """
+        Serialize list to a list by recursing into items.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        # extract item annotation if available
+        if len(ref_annotation.arg_annotations):
+            assert len(ref_annotation.arg_annotations) == 1
+            item_ann = ref_annotation.arg_annotations[0]
+        else:
+            item_ann = ANY
+
+        return [
+            frame.recurse(o, i, source_annotation=item_ann) for i, o in enumerate(obj)
+        ]
+
+    def _convert_tuple(self, obj: tuple[Any], frame: SerializationFrame) -> list[Any]:
+        """
+        Serialize tuple to a list by recursing into items.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        # check if we have type annotations
+        if ref_annotation.arg_annotations:
+            # check for variable-length tuple (tuple[T, ...])
+            if (
+                len(ref_annotation.arg_annotations) == 2
+                and ref_annotation.arg_annotations[-1].raw is ...
+            ):
+                # variable-length: use first annotation for all items
+                item_ann = ref_annotation.arg_annotations[0]
+                return [
+                    frame.recurse(o, i, source_annotation=item_ann)
+                    for i, o in enumerate(obj)
+                ]
+            elif len(ref_annotation.arg_annotations) == len(obj):
+                # fixed-length: match annotations to items
+                return [
+                    frame.recurse(o, i, source_annotation=ann)
+                    for i, (o, ann) in enumerate(
+                        zip(obj, ref_annotation.arg_annotations)
+                    )
+                ]
+            else:
+                raise ValueError(
+                    f"Object {obj} does not have expected number of elements: expected {len(ref_annotation.arg_annotations)}, got {len(obj)}"
+                )
+
+        # no annotations, infer from objects
+        return [frame.recurse(o, i) for i, o in enumerate(obj)]
+
+    def _convert_set(
+        self, obj: set[Any] | frozenset[Any], frame: SerializationFrame
+    ) -> list[Any]:
+        """
+        Serialize set to a list by recursing into items.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        # extract item annotation if available
+        if len(ref_annotation.arg_annotations):
+            assert len(ref_annotation.arg_annotations) == 1
+            item_ann = ref_annotation.arg_annotations[0]
+        else:
+            item_ann = ANY
+
+        return [
+            frame.recurse(o, i, source_annotation=item_ann) for i, o in enumerate(obj)
+        ]
+
+    def _convert_dict(
+        self, obj: dict[Any, Any], frame: SerializationFrame
+    ) -> dict[Any, Any]:
+        """
+        Serialize dict by recursing into keys and values.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        # extract key and value annotations if available
+        if len(ref_annotation.arg_annotations):
+            assert len(ref_annotation.arg_annotations) == 2
+            key_ann = ref_annotation.arg_annotations[0]
+            value_ann = ref_annotation.arg_annotations[1]
+        else:
+            key_ann = ANY
+            value_ann = ANY
+
+        return {
+            frame.recurse(k, f"key[{i}]", source_annotation=key_ann): frame.recurse(
+                v, f"value[{i}]", source_annotation=value_ann
+            )
+            for i, (k, v) in enumerate(obj.items())
+        }
 
 
 @overload
 def serialize(
     obj: Any,
-    source_type: Annotation | Any,
     /,
     *serializers: TypedSerializer,
+    source_type: Annotation | Any | None = None,
+    mode: Literal["plain", "json"] = "plain",
     context: Any = None,
 ) -> Any: ...
 
@@ -326,176 +469,43 @@ def serialize(
 @overload
 def serialize(
     obj: Any,
-    source_type: Annotation | Any,
     registry: SerializerRegistry,
     /,
     *,
+    source_type: Annotation | Any | None = None,
+    mode: Literal["plain", "json"] = "plain",
     context: Any = None,
 ) -> Any: ...
 
 
 def serialize(
     obj: Any,
-    source_type: Annotation | Any,
     /,
     *serializers_or_registry: TypedSerializer | SerializerRegistry,
+    source_type: Annotation | Any | None = None,
+    mode: Literal["plain", "json"] = "plain",
     context: Any = None,
 ) -> Any:
     """
     Recursively serialize object by type, generally to built-in Python types.
 
-    Handles nested parameterized types like list[MyClass] by recursively
-    applying serialization at each level.
+    Handles nested parameterized types by recursively applying serialization
+    at each level based on the actual object types (or optionally specified source type).
+
+    Args:
+        obj: Object to serialize
+        source_type: Optional source type annotation for type-specific serialization.
+                    If None, type is inferred from the object.
+        mode: "plain" for basic serialization, "json" to ensure JSON-compatible output
+        context: User-defined context passed to serializers
     """
-    source_annotation = Annotation._normalize(source_type)
+    source_annotation = (
+        Annotation._normalize(source_type) if source_type is not None else None
+    )
     registry = normalize_to_registry(
         TypedSerializer, SerializerRegistry, *serializers_or_registry
     )
     engine = SerializationEngine(registry=registry)
-    params = SerializationParams()
+    params = SerializationParams(mode=mode)
     frame = SerializationFrame._new(source_annotation, params, context, engine)
     return engine.serialize(obj, frame)
-
-
-def _dispatch_serialization(
-    obj: Any,
-    frame: SerializationFrame,
-) -> Any:
-    """
-    Main serialization dispatcher.
-    """
-
-    # handle None
-    if obj is None:
-        return None
-
-    # handle union type
-    if frame.source_annotation.is_union:
-        return _serialize_union(obj, frame)
-
-    # try user-provided serializers first (even for primitives/collections)
-    if serializer := frame.engine.registry.find(obj, frame.source_annotation):
-        return serializer.serialize(obj, SerializationHandle(frame))
-
-    # handle builtin collections
-    if issubclass(frame.source_annotation.concrete_type, COLLECTION_TYPES):
-        return _serialize_collection(obj, frame)
-
-    # no serializer found, return as-is
-    return obj
-
-
-def _serialize_union(obj: Any, frame: SerializationFrame) -> Any:
-    """
-    Serialize union types by finding the matching constituent type.
-    """
-    for arg in frame.source_annotation.arg_annotations:
-        if arg.is_type(obj):
-            return frame.engine.serialize(obj, frame._with_annotation(arg))
-
-    # no matching union member, serialize with inferred type
-    return frame.engine.serialize(obj, frame._with_annotation(Annotation(type(obj))))
-
-
-def _serialize_collection(
-    obj: CollectionType,
-    frame: SerializationFrame,
-) -> Any:
-    """
-    Serialize collection of objects.
-    """
-
-    assert len(
-        frame.source_annotation.arg_annotations
-    ), f"Collection annotation has no type parameter: {frame.source_annotation}"
-
-    type_ = frame.source_annotation.concrete_type
-
-    # handle conversion from mappings
-    if issubclass(type_, dict):
-        assert isinstance(obj, type_)
-        return _serialize_dict(obj, frame)
-
-    # handle conversion from value collections
-    if issubclass(type_, list):
-        assert isinstance(obj, type_)
-        return _serialize_list(obj, frame)
-    elif issubclass(type_, tuple):
-        assert isinstance(obj, type_)
-        return _serialize_tuple(obj, frame)
-    else:
-        assert issubclass(type_, (set, frozenset))
-        assert isinstance(obj, type_)
-        return _serialize_set(obj, frame)
-
-
-def _serialize_list(
-    obj: list[Any],
-    frame: SerializationFrame,
-) -> list[Any]:
-    """
-    Serialize list to a list.
-    """
-    assert len(frame.source_annotation.arg_annotations) >= 1
-    item_ann = frame.source_annotation.arg_annotations[0]
-
-    return [frame.recurse(o, item_ann, i) for i, o in enumerate(obj)]
-
-
-def _serialize_tuple(
-    obj: tuple[Any],
-    frame: SerializationFrame,
-) -> list[Any]:
-    """
-    Serialize tuple to a list.
-    """
-    assert len(frame.source_annotation.arg_annotations) >= 1
-
-    # check for Ellipsis (tuple[T, ...])
-    if frame.source_annotation.arg_annotations[-1].concrete_type is EllipsisType:
-        # variable-length tuple: use first annotation for all items
-        item_ann = frame.source_annotation.arg_annotations[0]
-        return [frame.recurse(o, item_ann, i) for i, o in enumerate(obj)]
-    else:
-        # fixed-length tuple: match annotations to items
-        assert len(frame.source_annotation.arg_annotations) == len(obj), (
-            f"Tuple length mismatch: expected {len(frame.source_annotation.arg_annotations)} items, "
-            f"got {len(obj)}"
-        )
-        return [
-            frame.recurse(o, ann, i)
-            for i, (o, ann) in enumerate(
-                zip(obj, frame.source_annotation.arg_annotations)
-            )
-        ]
-
-
-def _serialize_set(
-    obj: set[Any] | frozenset[Any],
-    frame: SerializationFrame,
-) -> list[Any]:
-    """
-    Serialize set to a list (sets aren't JSON-serializable).
-    """
-    assert len(frame.source_annotation.arg_annotations) == 1
-    item_ann = frame.source_annotation.arg_annotations[0]
-
-    return [frame.recurse(o, item_ann, i) for i, o in enumerate(obj)]
-
-
-def _serialize_dict(
-    obj: dict[Any, Any],
-    frame: SerializationFrame,
-) -> dict[Any, Any]:
-    """
-    Serialize dict.
-    """
-    assert len(frame.source_annotation.arg_annotations) == 2
-    key_ann, value_ann = frame.source_annotation.arg_annotations
-
-    return {
-        frame.recurse(k, key_ann, f"key[{i}]"): frame.recurse(
-            v, value_ann, f"value[{i}]"
-        )
-        for i, (k, v) in enumerate(obj.items())
-    }

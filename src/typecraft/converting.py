@@ -12,7 +12,7 @@ from typing import Any, Self, cast
 from .inspecting.annotations import Annotation
 from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
-from .typedefs import VarianceType
+from .typedefs import COLLECTION_TYPES, VarianceType
 
 type ConverterFuncType[SourceT, TargetT, HandleT] = Callable[
     [SourceT], TargetT
@@ -175,15 +175,15 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
     def _check_variance_match(
         self,
         annotation: Annotation,
-        reference_annotation: Annotation,
+        ref_annotation: Annotation,
     ) -> bool:
         """Check if annotation matches reference based on variance."""
         if self._variance == "invariant":
             # exact match only
-            return annotation == reference_annotation
+            return annotation == ref_annotation
         else:
             # contravariant (default): annotation must be a subclass of reference
-            return annotation.is_subtype(reference_annotation)
+            return annotation.is_subtype(ref_annotation)
 
 
 # TODO: take BaseConverter, can be user-defined subclass (not based on type)
@@ -238,12 +238,13 @@ class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
         return cast(type[ConverterT], converter_cls)
 
 
-class BaseConversionEngine[RegistryT: BaseConverterRegistry](ABC):
+class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
     """
-    Base class for conversion contexts.
+    Base class for conversion engines.
 
     Encapsulates conversion parameters and provides access to the converter
-    registry, propagated throughout the conversion process.
+    registry, propagated throughout the conversion process. Contains common
+    recursion logic with abstract hooks for validation/serialization-specific behavior.
     """
 
     __registry: RegistryT
@@ -265,6 +266,97 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry](ABC):
         )
         assert registry_cls
         return cast(type[RegistryT], registry_cls)
+
+    @abstractmethod
+    def _should_convert(self, obj: Any, frame: FrameT) -> bool:
+        """
+        Check if conversion should be applied.
+
+        For validation: returns True if object type doesn't match target
+        For serialization: returns True if object needs JSON conversion
+        """
+
+    @abstractmethod
+    def _get_ref_annotation(self, obj: Any, frame: FrameT) -> Annotation:
+        """
+        Get the annotation to use for finding converters and recursion.
+
+        For validation: returns the target annotation
+        For serialization: returns annotation inferred from object type
+        """
+
+    @abstractmethod
+    def _apply_converter(self, converter: Any, obj: Any, frame: FrameT) -> Any:
+        """
+        Apply a converter to transform the object.
+        """
+        # TODO:
+        # return converter.convert(obj, SerializationHandle(frame))
+
+    def _dispatch_conversion(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Main conversion dispatcher with common logic.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        # handle union type
+        if ref_annotation.is_union:
+            return self._convert_union(obj, frame)
+
+        # check if conversion is needed and apply converter
+        if self._should_convert(obj, frame):
+            converter = self.registry.find(obj, ref_annotation)
+            if converter:
+                return self._apply_converter(converter, obj, frame)
+
+        # handle builtin collections by recursing into items
+        if issubclass(ref_annotation.concrete_type, COLLECTION_TYPES):
+            return self._convert_collection(obj, frame)
+
+        # no conversion needed, return as-is
+        return obj
+
+    @abstractmethod
+    def _convert_union(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Handle union type conversion.
+        """
+
+    def _convert_collection(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Convert collection by recursing into items.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+        type_ = ref_annotation.concrete_type
+
+        # convert from mappings
+        if issubclass(type_, dict):
+            return self._convert_dict(obj, frame)
+
+        # convert from value collections
+        if issubclass(type_, list):
+            return self._convert_list(obj, frame)
+        elif issubclass(type_, tuple):
+            return self._convert_tuple(obj, frame)
+        else:
+            assert issubclass(type_, (set, frozenset))
+            return self._convert_set(obj, frame)
+
+    @abstractmethod
+    def _convert_list(self, obj: Any, frame: FrameT) -> Any:
+        """Convert list by recursing into items."""
+
+    @abstractmethod
+    def _convert_tuple(self, obj: Any, frame: FrameT) -> Any:
+        """Convert tuple by recursing into items."""
+
+    @abstractmethod
+    def _convert_set(self, obj: Any, frame: FrameT) -> Any:
+        """Convert set by recursing into items."""
+
+    @abstractmethod
+    def _convert_dict(self, obj: Any, frame: FrameT) -> Any:
+        """Convert dict by recursing into keys and values."""
 
 
 def normalize_to_registry[ConverterT, RegistryT](
