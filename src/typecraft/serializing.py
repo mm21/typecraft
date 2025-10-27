@@ -48,7 +48,7 @@ class SerializationParams:
     Serialization params as passed by user.
     """
 
-    mode: Literal["plain", "json"] = "plain"
+    mode: Literal["json", "plain"] = "json"
     """
     Serialization mode:
     - "plain": serialize without special handling
@@ -102,7 +102,7 @@ class SerializationFrame:
             engine=self.engine,
             path=tuple(list(self.path) + [path_name]),
         )
-        return self.engine.serialize(obj, next_frame)
+        return self.engine.process(obj, next_frame)
 
     @classmethod
     def _new(
@@ -307,24 +307,24 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
     Orchestrates serialization process. Not exposed to user.
     """
 
-    def serialize(self, obj: Any, frame: SerializationFrame, /) -> Any:
-        """
-        Serialize object using registered typed serializers.
-
-        Walks the object recursively based on its actual type, invoking
-        type-based serializers when they match.
-        """
-        return self._dispatch_conversion(obj, frame)
+    def _get_builtin_registries(
+        self, frame: SerializationFrame
+    ) -> tuple[SerializerRegistry, ...]:
+        return (JSON_REGISTRY,) if frame.params.mode == "json" else ()
 
     def _should_convert(self, obj: Any, frame: SerializationFrame) -> bool:
         """
         Check if serialization conversion is needed.
-
-        In JSON mode, convert non-JSON-serializable types.
-        Always try to apply user converters when available.
         """
-        # always try user converters first
+        # TODO: if mode == "json", check if json-serializable
+        # - generic mechanism based on possible source annotations of all registries
+        _ = obj, frame
         return True
+
+    def _handle_missing_converter(self, obj: Any, frame: SerializationFrame):
+        # TODO: if mode == "json", raise error
+        _ = frame
+        return obj
 
     def _get_ref_annotation(self, obj: Any, frame: SerializationFrame) -> Annotation:
         """
@@ -336,7 +336,6 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
             return frame.source_annotation
         return Annotation(type(obj))
 
-    # TODO: generic converter.convert()
     def _apply_converter(
         self, converter: TypedSerializer, obj: Any, frame: SerializationFrame
     ) -> Any:
@@ -354,10 +353,10 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         for ann in ref_annotation.arg_annotations:
             if ann.is_type(obj):
                 # recurse with the matching union member type
-                return self.serialize(obj, frame._with_annotation(ann))
+                return self.process(obj, frame._with_annotation(ann))
 
         # no matching union member, serialize with inferred type
-        return self.serialize(obj, frame)
+        return self.process(obj, frame)
 
     def _convert_list(self, obj: list[Any], frame: SerializationFrame) -> list[Any]:
         """
@@ -461,7 +460,7 @@ def serialize(
     /,
     *serializers: TypedSerializer,
     source_type: Annotation | Any | None = None,
-    mode: Literal["plain", "json"] = "plain",
+    mode: Literal["json", "plain"] = "json",
     context: Any = None,
 ) -> Any: ...
 
@@ -473,7 +472,7 @@ def serialize(
     /,
     *,
     source_type: Annotation | Any | None = None,
-    mode: Literal["plain", "json"] = "plain",
+    mode: Literal["json", "plain"] = "json",
     context: Any = None,
 ) -> Any: ...
 
@@ -483,7 +482,7 @@ def serialize(
     /,
     *serializers_or_registry: TypedSerializer | SerializerRegistry,
     source_type: Annotation | Any | None = None,
-    mode: Literal["plain", "json"] = "plain",
+    mode: Literal["json", "plain"] = "json",
     context: Any = None,
 ) -> Any:
     """
@@ -508,4 +507,11 @@ def serialize(
     engine = SerializationEngine(registry=registry)
     params = SerializationParams(mode=mode)
     frame = SerializationFrame._new(source_annotation, params, context, engine)
-    return engine.serialize(obj, frame)
+    return engine.process(obj, frame)
+
+
+# TODO
+JSON_REGISTRY = SerializerRegistry()
+"""
+Registry to use for json-mode serialization.
+"""

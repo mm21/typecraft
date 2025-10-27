@@ -24,7 +24,6 @@ from .converting import (
 )
 from .inspecting.annotations import Annotation
 from .typedefs import (
-    COLLECTION_TYPES,
     VALUE_COLLECTION_TYPES,
     ValueCollectionType,
     VarianceType,
@@ -60,6 +59,7 @@ class ValidationParams:
     """
 
 
+# TODO: BaseConversionFrame, parameterized: ParamsT, EngineT
 @dataclass(kw_only=True)
 class ValidationFrame:
     """
@@ -96,6 +96,7 @@ class ValidationFrame:
     Object ids for cycle detection.
     """
 
+    # TODO: implement in BaseConversionFrame
     def recurse(
         self,
         obj: Any,
@@ -111,7 +112,7 @@ class ValidationFrame:
             path=tuple(list(self.path) + [path_name]),
             seen=self.seen,
         )
-        return self.engine.validate(obj, next_frame)
+        return self.engine.process(obj, next_frame)
 
     @classmethod
     def _new(
@@ -316,51 +317,10 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
     Orchestrates validation process. Not exposed to user.
     """
 
-    def validate(self, obj: Any, frame: ValidationFrame) -> Any:
-        """
-        Validate object using registered typed validators.
-
-        Walks the object recursively based on the target annotation,
-        invoking type-based validators when conversion is needed.
-        """
-        return self._dispatch_conversion(obj, frame)
-
-    def _dispatch_conversion(self, obj: Any, frame: ValidationFrame) -> Any:
-        """
-        Override to handle validation-specific flow with lenient fallback.
-        """
-        ref_annotation = self._get_ref_annotation(obj, frame)
-
-        # handle union type
-        if ref_annotation.is_union:
-            return self._convert_union(obj, frame)
-
-        # if object doesn't satisfy annotation, attempt conversion
-        if self._should_convert(obj, frame):
-            # try user-provided validators from registry
-            if validator := self.registry.find(obj, ref_annotation):
-                return self._apply_converter(validator, obj, frame)
-
-            # if lenient, keep trying with built-in converters and direct construction
-            if frame.params.lenient:
-                # try built-in validators
-                validator = BUILTIN_REGISTRY.find(obj, ref_annotation)
-                if validator:
-                    return validator.validate(obj, ValidationHandle(frame))
-
-                # try direct object construction
-                return frame.target_annotation.concrete_type(obj)
-
-            raise ValueError(
-                f"Object '{obj}' ({type(obj)}) could not be converted to {frame.target_annotation}"
-            )
-
-        # handle builtin collections by recursing into items
-        if issubclass(ref_annotation.concrete_type, COLLECTION_TYPES):
-            return self._convert_collection(obj, frame)
-
-        # have the expected type and it's not a collection
-        return obj
+    def _get_builtin_registries(
+        self, frame: ValidationFrame
+    ) -> tuple[ValidatorRegistry, ...]:
+        return (BUILTIN_REGISTRY,) if frame.params.lenient else ()
 
     def _should_convert(self, obj: Any, frame: ValidationFrame) -> bool:
         """
@@ -369,6 +329,16 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         Returns True if object doesn't satisfy the target annotation.
         """
         return not _check_valid(obj, frame.target_annotation)
+
+    def _handle_missing_converter(self, obj: Any, frame: ValidationFrame):
+        if frame.params.lenient:
+            # try direct object construction
+            # TODO: create converter for each builtin type instead of blindly attempting
+            # object construction
+            return frame.target_annotation.concrete_type(obj)
+        raise ValueError(
+            f"Object '{obj}' ({type(obj)}) could not be converted to {frame.target_annotation}"
+        )
 
     def _get_ref_annotation(self, obj: Any, frame: ValidationFrame) -> Annotation:
         """
@@ -391,7 +361,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         """
         for ann in frame.target_annotation.arg_annotations:
             try:
-                return self.validate(obj, frame._with_annotation(ann))
+                return self.process(obj, frame._with_annotation(ann))
             except (ValueError, TypeError):
                 continue
         raise ValueError(
@@ -577,7 +547,7 @@ def validate(
     engine = ValidationEngine(registry=registry)
     params = ValidationParams(lenient=lenient)
     frame = ValidationFrame._new(target_annotation, params, context, engine)
-    return engine.validate(obj, frame)
+    return engine.process(obj, frame)
 
 
 # TODO: take validators_or_registry
@@ -609,7 +579,7 @@ def normalize_to_list[T](
     frame = ValidationFrame._new(target_annotation, params, context, engine)
 
     # validate each object and place in a new list
-    return [engine.validate(o, frame) for o in objs]
+    return [engine.process(o, frame) for o in objs]
 
 
 def _check_valid(obj: Any, annotation: Annotation) -> bool:

@@ -247,17 +247,17 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
     recursion logic with abstract hooks for validation/serialization-specific behavior.
     """
 
-    __registry: RegistryT
+    __user_registry: RegistryT
 
     def __init__(self, *, registry: RegistryT | None = None):
-        self.__registry = registry or self.__registry_cls()
+        self.__user_registry = registry or self.__registry_cls()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(registry={self.__registry})"
+        return f"{type(self).__name__}(registry={self.__user_registry})"
 
     @property
     def registry(self) -> RegistryT:
-        return self.__registry
+        return self.__user_registry
 
     @property
     def __registry_cls(self) -> type[RegistryT]:
@@ -267,13 +267,53 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
         assert registry_cls
         return cast(type[RegistryT], registry_cls)
 
+    def process(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Main conversion dispatcher with common logic.
+
+        Walks the object recursively based on reference annotation,
+        invoking type-based converters when conversion is needed.
+        """
+        ref_annotation = self._get_ref_annotation(obj, frame)
+
+        # handle union type
+        if ref_annotation.is_union:
+            return self._convert_union(obj, frame)
+
+        # check if conversion is needed and apply converter
+        if self._should_convert(obj, frame):
+            if converter := self._find_converter(obj, frame, ref_annotation):
+                return self._apply_converter(converter, obj, frame)
+            obj = self._handle_missing_converter(obj, frame)
+
+        # handle builtin collections by recursing into items
+        if issubclass(ref_annotation.concrete_type, COLLECTION_TYPES):
+            return self._convert_collection(obj, frame)
+
+        # no conversion needed, return as-is
+        return obj
+
+    @abstractmethod
+    def _get_builtin_registries(self, frame: FrameT) -> tuple[RegistryT, ...]:
+        """
+        Get builtin registries to use for conversion based on the parameters.
+        """
+
     @abstractmethod
     def _should_convert(self, obj: Any, frame: FrameT) -> bool:
         """
         Check if conversion should be applied.
 
-        For validation: returns True if object type doesn't match target
-        For serialization: returns True if object needs JSON conversion
+        - For validation: returns True if object type doesn't match target
+        - For serialization: returns True if object needs conversion based on mode
+        (e.g. json)
+        """
+
+    @abstractmethod
+    def _handle_missing_converter(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Handle situation where `_should_convert()` returned True, but no converter
+        was found.
         """
 
     @abstractmethod
@@ -285,6 +325,7 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
         For serialization: returns annotation inferred from object type
         """
 
+    # TODO: generic BaseConversionEngine.convert()
     @abstractmethod
     def _apply_converter(self, converter: Any, obj: Any, frame: FrameT) -> Any:
         """
@@ -293,34 +334,28 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
         # TODO:
         # return converter.convert(obj, SerializationHandle(frame))
 
-    def _dispatch_conversion(self, obj: Any, frame: FrameT) -> Any:
-        """
-        Main conversion dispatcher with common logic.
-        """
-        ref_annotation = self._get_ref_annotation(obj, frame)
-
-        # handle union type
-        if ref_annotation.is_union:
-            return self._convert_union(obj, frame)
-
-        # check if conversion is needed and apply converter
-        if self._should_convert(obj, frame):
-            converter = self.registry.find(obj, ref_annotation)
-            if converter:
-                return self._apply_converter(converter, obj, frame)
-
-        # handle builtin collections by recursing into items
-        if issubclass(ref_annotation.concrete_type, COLLECTION_TYPES):
-            return self._convert_collection(obj, frame)
-
-        # no conversion needed, return as-is
-        return obj
-
     @abstractmethod
     def _convert_union(self, obj: Any, frame: FrameT) -> Any:
         """
         Handle union type conversion.
         """
+
+    # TODO: implement following collection processing in base
+    @abstractmethod
+    def _convert_list(self, obj: Any, frame: FrameT) -> Any:
+        """Convert list by recursing into items."""
+
+    @abstractmethod
+    def _convert_tuple(self, obj: Any, frame: FrameT) -> Any:
+        """Convert tuple by recursing into items."""
+
+    @abstractmethod
+    def _convert_set(self, obj: Any, frame: FrameT) -> Any:
+        """Convert set by recursing into items."""
+
+    @abstractmethod
+    def _convert_dict(self, obj: Any, frame: FrameT) -> Any:
+        """Convert dict by recursing into keys and values."""
 
     def _convert_collection(self, obj: Any, frame: FrameT) -> Any:
         """
@@ -342,21 +377,14 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
             assert issubclass(type_, (set, frozenset))
             return self._convert_set(obj, frame)
 
-    @abstractmethod
-    def _convert_list(self, obj: Any, frame: FrameT) -> Any:
-        """Convert list by recursing into items."""
-
-    @abstractmethod
-    def _convert_tuple(self, obj: Any, frame: FrameT) -> Any:
-        """Convert tuple by recursing into items."""
-
-    @abstractmethod
-    def _convert_set(self, obj: Any, frame: FrameT) -> Any:
-        """Convert set by recursing into items."""
-
-    @abstractmethod
-    def _convert_dict(self, obj: Any, frame: FrameT) -> Any:
-        """Convert dict by recursing into keys and values."""
+    # TODO: return ConverterT
+    def _find_converter(
+        self, obj: Any, frame: FrameT, ref_annotation: Annotation
+    ) -> BaseTypedConverter | None:
+        for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
+            if converter := registry.find(obj, ref_annotation):
+                return converter
+        return None
 
 
 def normalize_to_registry[ConverterT, RegistryT](
