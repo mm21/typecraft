@@ -4,7 +4,7 @@ Serialization capability.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -15,8 +15,10 @@ from typing import (
 
 from .converting import (
     BaseConversionEngine,
+    BaseConversionFrame,
     BaseConverterRegistry,
     BaseTypedConverter,
+    ConversionHandle,
     ConverterFuncType,
     normalize_to_registry,
 )
@@ -34,12 +36,14 @@ __all__ = [
 ]
 
 
-type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationHandle]
+type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any]
 """
 Function which serializes the given object from a specific source type and generally
 returns an object of built-in Python type. Can optionally take
 `SerializationHandle` as the second argument.
 """
+
+type SerializationHandleType = ConversionHandle[SerializationFrame]
 
 
 @dataclass(kw_only=True)
@@ -57,121 +61,13 @@ class SerializationParams:
 
 
 @dataclass(kw_only=True)
-class SerializationFrame:
+class SerializationFrame(BaseConversionFrame[SerializationParams]):
     """
-    Internal recursion state. A new object is created for each recursion level.
-    """
-
-    source_annotation: Annotation | None
-    """
-    Optional source type annotation for type-specific serialization.
-    If None, type is inferred from the object.
+    Internal recursion state per frame.
     """
 
-    params: SerializationParams
-    """
-    Parameters passed at serialization entry point.
-    """
 
-    context: Any
-    """
-    User context passed at serialization entry point.
-    """
-
-    engine: SerializationEngine
-    """
-    Reference to serialization engine for manual recursion.
-    """
-
-    path: tuple[str | int, ...] = field(default_factory=tuple)
-    """
-    Field path at this level in recursion.
-    """
-
-    def recurse(
-        self,
-        obj: Any,
-        path_name: str | int,
-        source_annotation: Annotation | None = None,
-        context: Any | None = None,
-    ) -> Any:
-        next_frame = SerializationFrame(
-            source_annotation=source_annotation,
-            params=self.params,
-            context=context if context is not None else self.context,
-            engine=self.engine,
-            path=tuple(list(self.path) + [path_name]),
-        )
-        return self.engine.process(obj, next_frame)
-
-    @classmethod
-    def _new(
-        cls,
-        source_annotation: Annotation | None,
-        params: SerializationParams,
-        context: Any,
-        engine: SerializationEngine,
-    ) -> SerializationFrame:
-        return SerializationFrame(
-            source_annotation=source_annotation,
-            params=params,
-            context=context,
-            engine=engine,
-            path=(),
-        )
-
-    def _with_annotation(self, annotation: Annotation) -> SerializationFrame:
-        """
-        Create a new frame with the annotation replaced.
-        """
-        return SerializationFrame(
-            source_annotation=annotation,
-            params=self.params,
-            context=self.context,
-            engine=self.engine,
-            path=self.path,
-        )
-
-
-class SerializationHandle:
-    """
-    User-facing interface to state and operations, passed to custom `serialize()`
-    functions.
-    """
-
-    _frame: SerializationFrame
-
-    def __init__(self, frame: SerializationFrame):
-        self._frame = frame
-
-    @property
-    def source_annotation(self) -> Annotation | None:
-        return self._frame.source_annotation
-
-    @property
-    def params(self) -> SerializationParams:
-        return self._frame.params
-
-    @property
-    def context(self) -> Any:
-        return self._frame.context
-
-    def recurse(
-        self,
-        obj: Any,
-        path_name: str | int,
-        /,
-        *,
-        source_annotation: Annotation | None = None,
-        context: Any | None = None,
-    ) -> Any:
-        """
-        Recurse into serialization, optionally overriding source annotation and context.
-        """
-        return self._frame.recurse(obj, path_name, source_annotation, context)
-
-
-class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHandle]):
+class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any]):
     """
     Encapsulates serialization parameters from a source annotation.
     """
@@ -212,9 +108,9 @@ class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHan
         )
 
     def __repr__(self) -> str:
-        return f"TypedSerializer(source={self._source_annotation}, func={self._func}, variance={self._variance})"
+        return f"TypedSerializer(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
-    def serialize(self, obj: Any, handle: SerializationHandle, /) -> Any:
+    def serialize(self, obj: Any, handle: SerializationHandleType, /) -> Any:
         """
         Serialize object or raise `ValueError`.
 
@@ -224,7 +120,7 @@ class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHan
 
         # invoke serialization function
         try:
-            if func := self._func:
+            if func := self._func_wrapper:
                 # provided function
                 serialized_obj = func.invoke(obj, handle)
             else:
@@ -342,7 +238,7 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         """
         Apply serializer to convert the object.
         """
-        return converter.serialize(obj, SerializationHandle(frame))
+        return converter.serialize(obj, ConversionHandle[SerializationFrame](frame))
 
     def _convert_union(self, obj: Any, frame: SerializationFrame) -> Any:
         """
@@ -353,10 +249,11 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         for ann in ref_annotation.arg_annotations:
             if ann.is_type(obj):
                 # recurse with the matching union member type
-                return self.process(obj, frame._with_annotation(ann))
+                return self.process(obj, frame.copy(source_annotation=ann))
 
-        # no matching union member, serialize with inferred type
-        return self.process(obj, frame)
+        raise ValueError(
+            f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {frame.source_annotation}"
+        )
 
     def _convert_list(self, obj: list[Any], frame: SerializationFrame) -> list[Any]:
         """
@@ -499,14 +396,22 @@ def serialize(
         context: User-defined context passed to serializers
     """
     source_annotation = (
-        Annotation._normalize(source_type) if source_type is not None else None
+        Annotation._normalize(source_type)
+        if source_type is not None
+        else Annotation(obj)
     )
     registry = normalize_to_registry(
         TypedSerializer, SerializerRegistry, *serializers_or_registry
     )
     engine = SerializationEngine(registry=registry)
     params = SerializationParams(mode=mode)
-    frame = SerializationFrame._new(source_annotation, params, context, engine)
+    frame = SerializationFrame(
+        source_annotation=source_annotation,
+        target_annotation=ANY,
+        context=context,
+        params=params,
+        engine=engine,
+    )
     return engine.process(obj, frame)
 
 

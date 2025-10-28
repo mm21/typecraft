@@ -6,29 +6,30 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any, Self, cast
 
-from .inspecting.annotations import Annotation
+from .inspecting.annotations import ANY, Annotation
 from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import COLLECTION_TYPES, VarianceType
 
-type ConverterFuncType[SourceT, TargetT, HandleT] = Callable[
-    [SourceT], TargetT
-] | Callable[[SourceT, HandleT], TargetT]
+type ConverterFuncType[SourceT, TargetT] = Callable[[SourceT], TargetT] | Callable[
+    [SourceT, ConversionHandle], TargetT
+]
 """
 Function which converts an object. Can take the source object by itself or
 source object with info.
 """
 
 
-class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
+class ConverterFunctionWrapper[SourceT, TargetT]:
     """
     Encapsulates a validator or serializer function.
     """
 
-    func: ConverterFuncType[SourceT, TargetT, HandleT]
+    func: ConverterFuncType[SourceT, TargetT]
     """
     Converter function.
     """
@@ -72,10 +73,10 @@ class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
         self.obj_param = obj_param
         self.handle_param = handle_param
 
-    def invoke(self, obj: SourceT, handle: HandleT) -> TargetT:
+    def invoke(self, obj: SourceT, handle: ConversionHandle, /) -> TargetT:
         if self.handle_param:
             # invoke with info
-            func = cast(Callable[[SourceT, HandleT], TargetT], self.func)
+            func = cast(Callable[[SourceT, ConversionHandle], TargetT], self.func)
             return func(obj, handle)
         else:
             # invoke without info
@@ -83,7 +84,146 @@ class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
             return func(obj)
 
 
-class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
+@dataclass(kw_only=True)
+class BaseConversionFrame[ParamsT]:
+
+    source_annotation: Annotation
+    """
+    Source type we're converting from.
+    """
+
+    target_annotation: Annotation
+    """
+    Target type we're converting to.
+    """
+
+    context: Any
+    """
+    User context passed at validation entry point.
+    """
+
+    params: ParamsT
+    """
+    Parameters passed at validation entry point.
+    """
+
+    engine: BaseConversionEngine
+    """
+    Conversion engine for recursion.
+    """
+
+    path: tuple[str | int, ...] = field(default_factory=tuple)
+    """
+    Field path at this level in recursion.
+    """
+
+    seen: set[int] = field(default_factory=set)
+    """
+    Object ids for cycle detection.
+    """
+
+    def recurse(
+        self,
+        obj: Any,
+        path_segment: str | int,
+        /,
+        *,
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation | None = None,
+        context: Any | None = None,
+    ) -> Any:
+        """
+        Create a new frame and recurse using the engine.
+        """
+        next_frame = self.copy(
+            source_annotation=source_annotation,
+            target_annotation=target_annotation,
+            context=context,
+            path_append=path_segment,
+        )
+
+        # recurse and add/remove this object before/after
+        next_frame.seen.add(id(obj))
+        next_obj = self.engine.process(obj, next_frame)
+        next_frame.seen.remove(id(obj))
+
+        return next_obj
+
+    def copy(
+        self,
+        *,
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation | None = None,
+        context: Any | None = None,
+        path_append: str | int | None = None,
+    ) -> Self:
+        """
+        Create a new frame with the arguments replaced if not None.
+        """
+        path = (
+            self.path if path_append is None else tuple(list(self.path) + [path_append])
+        )
+        return type(self)(
+            source_annotation=source_annotation or self.source_annotation,
+            target_annotation=target_annotation or self.target_annotation,
+            context=context or self.context,
+            params=self.params,
+            engine=self.engine,
+            path=path,
+            seen=self.seen,
+        )
+
+
+class ConversionHandle[FrameT: BaseConversionFrame]:
+    """
+    User-facing interface to state and operations, passed to custom `validate()`
+    functions.
+    """
+
+    _frame: FrameT
+
+    def __init__(self, frame: FrameT, /):
+        self._frame = frame
+
+    @property
+    def source_annotation(self) -> Annotation:
+        return self._frame.source_annotation
+
+    @property
+    def target_annotation(self) -> Annotation:
+        return self._frame.target_annotation
+
+    @property
+    def context(self) -> Any:
+        return self._frame.context
+
+    def recurse(
+        self,
+        obj: Any,
+        path_segment: str | int,
+        /,
+        *,
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation | None = None,
+        context: Any | None = None,
+    ) -> Any:
+        """
+        Recurse into validation, overriding context if passed.
+        """
+        return self._frame.recurse(
+            obj,
+            path_segment,
+            source_annotation=source_annotation or Annotation(type(obj)),
+            target_annotation=target_annotation or ANY,
+            context=context,
+        )
+
+
+# TODO: BaseConverter: abstract methods: can_convert(), convert()
+
+
+# TODO: rename: Converter
+class BaseTypedConverter[SourceT, TargetT](ABC):
     """
     Base class for typed converters (validators and serializers).
 
@@ -101,7 +241,7 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
     Annotation specifying type to convert to.
     """
 
-    _func: ConverterFunctionWrapper[SourceT, TargetT, HandleT] | None
+    _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT] | None
     """
     Function taking source type and returning an instance of target type.
     """
@@ -118,12 +258,12 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
         target_annotation: Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
+        func: ConverterFuncType[SourceT, TargetT] | None = None,
         variance: VarianceType = "contravariant",
     ):
         self._source_annotation = Annotation._normalize(source_annotation)
         self._target_annotation = Annotation._normalize(target_annotation)
-        self._func = ConverterFunctionWrapper(func) if func else None
+        self._func_wrapper = ConverterFunctionWrapper(func) if func else None
         self._variance = variance
 
     @property
@@ -138,6 +278,7 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
     def variance(self) -> VarianceType:
         return self._variance
 
+    # TODO: source/target annotation
     @abstractmethod
     def can_convert(self, obj: Any, annotation: Annotation, /) -> bool:
         """
@@ -151,7 +292,7 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
     @classmethod
     def from_func(
         cls,
-        func: ConverterFuncType[SourceT, TargetT, HandleT],
+        func: ConverterFuncType[SourceT, TargetT],
         /,
         *,
         variance: VarianceType = "contravariant",
@@ -159,7 +300,7 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
         """
         Create a TypedValidator from a function by inspecting its signature.
         """
-        func_wrapper = ConverterFunctionWrapper[Any, TargetT, HandleT](func)
+        func_wrapper = ConverterFunctionWrapper[Any, TargetT](func)
 
         # validate sig: input and return types must be annotated
         assert func_wrapper.obj_param.annotation
@@ -377,7 +518,7 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
             assert issubclass(type_, (set, frozenset))
             return self._convert_set(obj, frame)
 
-    # TODO: return ConverterT
+    # TODO: return BaseConverter
     def _find_converter(
         self, obj: Any, frame: FrameT, ref_annotation: Annotation
     ) -> BaseTypedConverter | None:

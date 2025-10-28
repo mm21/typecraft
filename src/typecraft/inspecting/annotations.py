@@ -202,6 +202,8 @@ class Annotation:
 
         return True
 
+    # TODO: option: shallow=False - don't recurse into args if True (only handle
+    # literal/union/concrete_cls)
     def is_type(self, obj: Any, /) -> bool:
         """
         Check if object is an instance of this annotation; loosely equivalent to

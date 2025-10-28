@@ -5,7 +5,7 @@ Validation capability.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -17,8 +17,10 @@ from typing import (
 
 from .converting import (
     BaseConversionEngine,
+    BaseConversionFrame,
     BaseConverterRegistry,
     BaseTypedConverter,
+    ConversionHandle,
     ConverterFuncType,
     normalize_to_registry,
 )
@@ -39,11 +41,13 @@ __all__ = [
 ]
 
 
-type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT, ValidationHandle]
+type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT]
 """
 Function which validates the given object and returns an object of the
 specified type. Can optionally take `ValidationInfo` as the second argument.
 """
+
+type ValidationHandleType = ConversionHandle[ValidationFrame]
 
 
 @dataclass(kw_only=True)
@@ -59,131 +63,13 @@ class ValidationParams:
     """
 
 
-# TODO: BaseConversionFrame, parameterized: ParamsT, EngineT
-@dataclass(kw_only=True)
-class ValidationFrame:
+class ValidationFrame(BaseConversionFrame[ValidationParams]):
     """
-    Internal recursion state. A new object is created for each recursion level.
+    Internal recursion state per frame.
     """
 
-    target_annotation: Annotation
-    """
-    Target type we're validating to.
-    """
 
-    params: ValidationParams
-    """
-    Parameters passed at validation entry point.
-    """
-
-    context: Any
-    """
-    User context passed at validation entry point.
-    """
-
-    engine: ValidationEngine
-    """
-    Reference to validation engine for manual recursion.
-    """
-
-    path: tuple[str | int, ...] = field(default_factory=tuple)
-    """
-    Field path at this level in recursion.
-    """
-
-    seen: set[int] = field(default_factory=set)
-    """
-    Object ids for cycle detection.
-    """
-
-    # TODO: implement in BaseConversionFrame
-    def recurse(
-        self,
-        obj: Any,
-        target_annotation: Annotation,
-        path_name: str | int,
-        context: Any | None = None,
-    ) -> Any:
-        next_frame = ValidationFrame(
-            target_annotation=target_annotation,
-            params=self.params,
-            context=context if context is not None else self.context,
-            engine=self.engine,
-            path=tuple(list(self.path) + [path_name]),
-            seen=self.seen,
-        )
-        return self.engine.process(obj, next_frame)
-
-    @classmethod
-    def _new(
-        cls,
-        target_annotation: Annotation,
-        params: ValidationParams,
-        context: Any,
-        engine: ValidationEngine,
-    ) -> ValidationFrame:
-        return ValidationFrame(
-            target_annotation=target_annotation,
-            params=params,
-            context=context,
-            engine=engine,
-            path=(),
-            seen=set(),
-        )
-
-    def _with_annotation(self, annotation: Annotation) -> ValidationFrame:
-        """
-        Create a new frame with the annotation replaced.
-        """
-        return ValidationFrame(
-            target_annotation=annotation,
-            params=self.params,
-            context=self.context,
-            engine=self.engine,
-            path=self.path,
-            seen=self.seen,
-        )
-
-
-class ValidationHandle:
-    """
-    User-facing interface to state and operations, passed to custom `validate()`
-    functions.
-    """
-
-    _frame: ValidationFrame
-
-    def __init__(self, frame: ValidationFrame):
-        self._frame = frame
-
-    @property
-    def target_annotation(self) -> Annotation:
-        return self._frame.target_annotation
-
-    @property
-    def params(self) -> ValidationParams:
-        return self._frame.params
-
-    @property
-    def context(self) -> Any:
-        return self._frame.context
-
-    def recurse(
-        self,
-        obj: Any,
-        target_annotation: Annotation,
-        path_name: str | int,
-        /,
-        *,
-        context: Any | None = None,
-    ) -> Any:
-        """
-        Recurse into validation, overriding context if passed.
-        """
-        return self._frame.recurse(obj, target_annotation, path_name, context)
-
-
-class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT, ValidationHandle]):
+class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT]):
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
@@ -225,15 +111,15 @@ class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT, ValidationHandle]
         )
 
     def __repr__(self) -> str:
-        return f"TypedValidator(source={self._source_annotation}, target={self._target_annotation}, func={self._func}, variance={self._variance})"
+        return f"TypedValidator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
-    def validate(self, obj: Any, handle: ValidationHandle, /) -> TargetT:
+    def validate(self, obj: Any, handle: ValidationHandleType, /) -> TargetT:
         """
         Convert object or raise `ValueError`.
         """
 
         try:
-            if func := self._func:
+            if func := self._func_wrapper:
                 # provided validation function
                 validated_obj = func.invoke(obj, handle)
             else:
@@ -353,7 +239,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         """
         Apply validator to convert the object.
         """
-        return converter.validate(obj, ValidationHandle(frame))
+        return converter.validate(obj, ConversionHandle[ValidationFrame](frame))
 
     def _convert_union(self, obj: Any, frame: ValidationFrame) -> Any:
         """
@@ -361,7 +247,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         """
         for ann in frame.target_annotation.arg_annotations:
             try:
-                return self.process(obj, frame._with_annotation(ann))
+                return self.process(obj, frame.copy(target_annotation=ann))
             except (ValueError, TypeError):
                 continue
         raise ValueError(
@@ -380,7 +266,9 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         assert len(target_ann.arg_annotations) == 1
 
         item_ann = target_ann.arg_annotations[0]
-        validated_objs = [frame.recurse(o, item_ann, i) for i, o in enumerate(obj)]
+        validated_objs = [
+            frame.recurse(o, i, target_annotation=item_ann) for i, o in enumerate(obj)
+        ]
 
         if isinstance(obj, type_) and all(o is n for o, n in zip(obj, validated_objs)):
             return obj
@@ -412,7 +300,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
                     f"Tuple length mismatch: expected {len(target_ann.arg_annotations)}, got {len(sized_obj)}: {sized_obj} ({target_ann})"
                 )
             validated_objs = tuple(
-                frame.recurse(o, item_ann, i)
+                frame.recurse(o, i, target_annotation=item_ann)
                 for i, (o, item_ann) in enumerate(
                     zip(sized_obj, target_ann.arg_annotations)
                 )
@@ -422,7 +310,8 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
             assert len(target_ann.arg_annotations) == 2
             item_ann = target_ann.arg_annotations[0]
             validated_objs = tuple(
-                frame.recurse(o, item_ann, i) for i, o in enumerate(obj)
+                frame.recurse(o, i, target_annotation=item_ann)
+                for i, o in enumerate(obj)
             )
 
         if isinstance(obj, type_) and all(o is v for o, v in zip(obj, validated_objs)):
@@ -443,7 +332,9 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         assert len(target_ann.arg_annotations) == 1
 
         item_ann = target_ann.arg_annotations[0]
-        validated_objs = {frame.recurse(o, item_ann, i) for i, o in enumerate(obj)}
+        validated_objs = {
+            frame.recurse(o, i, target_annotation=item_ann) for i, o in enumerate(obj)
+        }
 
         if isinstance(obj, type_):
             obj_ids = {id(o) for o in obj}
@@ -464,8 +355,10 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         key_ann, value_ann = target_ann.arg_annotations
 
         validated_objs = {
-            frame.recurse(k, key_ann, f"key[{i}]"): frame.recurse(
-                v, value_ann, f"value[{i}]"
+            frame.recurse(k, f"key[{i}]", target_annotation=key_ann): frame.recurse(
+                v,
+                f"[{k}]",
+                target_annotation=value_ann,
             )
             for i, (k, v) in enumerate(obj.items())
         }
@@ -546,7 +439,13 @@ def validate(
     )
     engine = ValidationEngine(registry=registry)
     params = ValidationParams(lenient=lenient)
-    frame = ValidationFrame._new(target_annotation, params, context, engine)
+    frame = ValidationFrame(
+        source_annotation=Annotation(type(obj)),
+        target_annotation=target_annotation,
+        context=context,
+        params=params,
+        engine=engine,
+    )
     return engine.process(obj, frame)
 
 
@@ -576,10 +475,21 @@ def normalize_to_list[T](
     registry = normalize_to_registry(TypedValidator, ValidatorRegistry, *validators)
     engine = ValidationEngine(registry=registry)
     params = ValidationParams(lenient=lenient)
-    frame = ValidationFrame._new(target_annotation, params, context, engine)
 
     # validate each object and place in a new list
-    return [engine.process(o, frame) for o in objs]
+    return [
+        engine.process(
+            o,
+            ValidationFrame(
+                source_annotation=Annotation(type(o)),
+                target_annotation=target_annotation,
+                context=context,
+                params=params,
+                engine=engine,
+            ),
+        )
+        for o in objs
+    ]
 
 
 def _check_valid(obj: Any, annotation: Annotation) -> bool:
@@ -592,21 +502,25 @@ def _check_valid(obj: Any, annotation: Annotation) -> bool:
         return isinstance(obj, annotation.concrete_type)
 
 
-def _validate_list(obj: ValueCollectionType, handle: ValidationHandle) -> list[Any]:
+def _validate_list(obj: ValueCollectionType, handle: ValidationHandleType) -> list[Any]:
     return handle._frame.engine._convert_list(obj, handle._frame)
 
 
-def _validate_tuple(obj: ValueCollectionType, handle: ValidationHandle) -> tuple[Any]:
+def _validate_tuple(
+    obj: ValueCollectionType, handle: ValidationHandleType
+) -> tuple[Any]:
     return handle._frame.engine._convert_tuple(obj, handle._frame)
 
 
 def _validate_set(
-    obj: ValueCollectionType, handle: ValidationHandle
+    obj: ValueCollectionType, handle: ValidationHandleType
 ) -> set[Any] | frozenset[Any]:
     return handle._frame.engine._convert_set(obj, handle._frame)
 
 
-def _validate_dict(obj: Mapping[Any, Any], handle: ValidationHandle) -> dict[Any, Any]:
+def _validate_dict(
+    obj: Mapping[Any, Any], handle: ValidationHandleType
+) -> dict[Any, Any]:
     return handle._frame.engine._convert_dict(obj, handle._frame)
 
 
