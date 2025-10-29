@@ -24,8 +24,9 @@ from typing import (
     overload,
 )
 
+from .converting import ConversionHandle
 from .inspecting.annotations import Annotation
-from .validating import TypedValidator, ValidationHandle, validate
+from .validating import TypedValidator, validate
 
 __all__ = [
     "Field",
@@ -327,7 +328,7 @@ class BaseModel:
         return (*self.model_get_converters(), MODEL_VALIDATOR)
 
 
-def validate_model(obj: Mapping[Any, Any], handle: ValidationHandle) -> BaseModel:
+def validate_model(obj: Mapping[Any, Any], handle: ConversionHandle) -> BaseModel:
     type_ = handle.target_annotation.concrete_type
     assert issubclass(type_, BaseModel)
     assert isinstance(obj, Mapping)

@@ -398,7 +398,7 @@ def serialize(
     source_annotation = (
         Annotation._normalize(source_type)
         if source_type is not None
-        else Annotation(obj)
+        else Annotation(type(obj))
     )
     registry = normalize_to_registry(
         TypedSerializer, SerializerRegistry, *serializers_or_registry

@@ -128,8 +128,8 @@ class BaseConversionFrame[ParamsT]:
         path_segment: str | int,
         /,
         *,
-        source_annotation: Annotation | None = None,
-        target_annotation: Annotation | None = None,
+        source_annotation: Annotation = ANY,
+        target_annotation: Annotation = ANY,
         context: Any | None = None,
     ) -> Any:
         """
