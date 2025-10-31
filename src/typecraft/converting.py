@@ -221,6 +221,126 @@ class BaseConverter[SourceT, TargetT, HandleT](ABC):
     Annotation specifying type to convert to.
     """
 
+    def __init__(
+        self,
+        source_annotation: Any,
+        target_annotation: Any,
+        /,
+    ):
+        self._source_annotation = Annotation._normalize(source_annotation)
+        self._target_annotation = Annotation._normalize(target_annotation)
+
+    @property
+    def source_annotation(self) -> Annotation:
+        return self._source_annotation
+
+    @property
+    def target_annotation(self) -> Annotation:
+        return self._target_annotation
+
+    def get_variance(self) -> VarianceType:
+        return "invariant"
+
+    def check_match(
+        self,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        /,
+    ) -> bool:
+        """
+        Check if this converter matches for the given object and annotation.
+
+        Called internally by the framework to determine if this converter
+        should be considered for conversion.
+
+        Args:
+            obj: Object to potentially convert
+            annotation: Reference annotation (source for serialization, target for validation)
+
+        Returns:
+            True if source/target annotations match according to variance rules
+        """
+        # TODO: check based on variance of source vs target for each direction
+        if not self._check_variance_match(target_annotation, self._target_annotation):
+            return False
+
+        if not self._check_variance_match(source_annotation, self._source_annotation):
+            return False
+
+        return True
+
+    def can_convert(
+        self,
+        obj: SourceT,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        /,
+    ) -> bool:
+        """
+        Check if this converter can convert the given object.
+
+        Called internally by the framework after check_match() succeeds.
+        Base implementation returns True (assumes type match implies convertibility).
+        Subclasses can override to add additional validation logic.
+
+        Args:
+            obj: Object to convert
+            source_annotation: Source type annotation
+            target_annotation: Target type annotation
+
+        Returns:
+            True if conversion is possible
+        """
+        _ = obj, source_annotation, target_annotation
+        return True
+
+    @abstractmethod
+    def convert(
+        self,
+        obj: SourceT,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        handle: HandleT,
+        /,
+    ) -> TargetT:
+        """
+        Convert the object.
+
+        User must define conversion logic. Expected to always succeed since
+        check_match() and can_convert() returned True.
+
+        Args:
+            obj: Object to convert
+            source_annotation: Source type annotation
+            target_annotation: Target type annotation
+            handle: Handle with conversion context and operations
+
+        Returns:
+            Converted object
+        """
+
+    def _check_variance_match(
+        self,
+        annotation: Annotation,
+        ref_annotation: Annotation,
+    ) -> bool:
+        """
+        Check if annotation matches reference based on variance.
+        """
+        if self.get_variance() == "invariant":
+            # exact match only
+            return annotation == ref_annotation
+        else:
+            # contravariant: annotation must be a subclass of reference
+            return annotation.is_subtype(ref_annotation)
+
+
+class FromFuncMixin[SourceT, TargetT, HandleT]:
+    """
+    Mixin that provides from_func() classmethod and convert() implementation
+    for converters that wrap a function.
+    """
+
     _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, HandleT] | None
     """
     Function taking source type and returning an instance of target type.
@@ -241,33 +361,13 @@ class BaseConverter[SourceT, TargetT, HandleT](ABC):
         func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
         variance: VarianceType = "contravariant",
     ):
-        self._source_annotation = Annotation._normalize(source_annotation)
-        self._target_annotation = Annotation._normalize(target_annotation)
+        super().__init__(source_annotation, target_annotation)  # type: ignore
         self._func_wrapper = ConverterFunctionWrapper(func) if func else None
         self._variance = variance
 
     @property
-    def source_annotation(self) -> Annotation:
-        return self._source_annotation
-
-    @property
-    def target_annotation(self) -> Annotation:
-        return self._target_annotation
-
-    @property
     def variance(self) -> VarianceType:
         return self._variance
-
-    # TODO: source/target annotation
-    @abstractmethod
-    def can_convert(self, obj: Any, annotation: Annotation, /) -> bool:
-        """
-        Check if this converter can convert the given object with the given annotation.
-
-        The meaning of 'annotation' depends on the converter type:
-        - For validators: target annotation (converting TO)
-        - For serializers: source annotation (converting FROM)
-        """
 
     @classmethod
     def from_func(
@@ -278,7 +378,7 @@ class BaseConverter[SourceT, TargetT, HandleT](ABC):
         variance: VarianceType = "contravariant",
     ) -> Self:
         """
-        Create a TypedValidator from a function by inspecting its signature.
+        Create a converter from a function by inspecting its signature.
         """
         func_wrapper = ConverterFunctionWrapper[Any, TargetT, HandleT](func)
 
@@ -293,18 +393,39 @@ class BaseConverter[SourceT, TargetT, HandleT](ABC):
             variance=variance,
         )
 
-    def _check_variance_match(
+    def convert(
         self,
-        annotation: Annotation,
-        ref_annotation: Annotation,
-    ) -> bool:
-        """Check if annotation matches reference based on variance."""
-        if self._variance == "invariant":
-            # exact match only
-            return annotation == ref_annotation
-        else:
-            # contravariant (default): annotation must be a subclass of reference
-            return annotation.is_subtype(ref_annotation)
+        obj: Any,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        handle: HandleT,
+        /,
+    ) -> Any:
+        """
+        Convert object using the wrapped function or direct construction.
+        """
+        _ = source_annotation
+        try:
+            if func := self._func_wrapper:
+                # provided conversion function
+                converted_obj = func.invoke(obj, handle)
+            else:
+                # direct object construction
+                concrete_type = cast(
+                    Callable[[SourceT], TargetT], target_annotation.concrete_type
+                )
+                converted_obj = concrete_type(obj)
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}): {e}"
+            ) from None
+
+        if not target_annotation.is_type(converted_obj):
+            raise ValueError(
+                f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}), got {converted_obj} ({type(converted_obj)})"
+            )
+
+        return converted_obj
 
 
 # TODO: take BaseConverter, can be user-defined subclass (not based on type)
@@ -329,13 +450,19 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
     def __len__(self) -> int:
         return len(self._converters)
 
-    def find(self, obj: Any, annotation: Annotation) -> ConverterT | None:
+    def find(
+        self,
+        obj: Any,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+    ) -> ConverterT | None:
         """
         Find the first converter that can handle the conversion.
         """
         for converter in self._converters:
-            if converter.can_convert(obj, annotation):
-                return converter
+            if converter.check_match(source_annotation, target_annotation):
+                if converter.can_convert(obj, source_annotation, target_annotation):
+                    return converter
         return None
 
     def extend(self, converters: Sequence[ConverterT]):
@@ -446,14 +573,13 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
         For serialization: returns annotation inferred from object type
         """
 
-    # TODO: generic BaseConversionEngine.convert()
     @abstractmethod
     def _apply_converter(self, converter: Any, obj: Any, frame: FrameT) -> Any:
         """
         Apply a converter to transform the object.
         """
         # TODO:
-        # return converter.convert(obj, SerializationHandle(frame))
+        # return converter.convert(obj, self._handle_cls(frame))
 
     @abstractmethod
     def _convert_union(self, obj: Any, frame: FrameT) -> Any:
@@ -503,7 +629,9 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
         self, obj: Any, frame: FrameT, ref_annotation: Annotation
     ) -> BaseConverter | None:
         for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
-            if converter := registry.find(obj, ref_annotation):
+            if converter := registry.find(
+                obj, frame.source_annotation, frame.target_annotation
+            ):
                 return converter
         return None
 

@@ -7,9 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
     Literal,
-    cast,
     overload,
 )
 
@@ -20,6 +18,7 @@ from .converting import (
     BaseConverter,
     BaseConverterRegistry,
     ConverterFuncType,
+    FromFuncMixin,
     normalize_to_registry,
 )
 from .inspecting.annotations import ANY, Annotation
@@ -30,7 +29,8 @@ from .typedefs import (
 __all__ = [
     "SerializerFuncType",
     "SerializationEngine",
-    "TypedSerializer",
+    "BaseSerializingConverter",
+    "SerializingConverter",
     "SerializerRegistry",
     "serialize",
 ]
@@ -92,7 +92,18 @@ class SerializationHandle(
         )
 
 
-class TypedSerializer[SourceT](BaseConverter[SourceT, Any, SerializationHandle]):
+class BaseSerializingConverter[SourceT, TargetT](
+    BaseConverter[SourceT, TargetT, SerializationHandle]
+):
+    """
+    Base class for serialization converters.
+    """
+
+
+class SerializingConverter[SourceT](
+    FromFuncMixin[SourceT, Any, SerializationHandle],
+    BaseSerializingConverter[SourceT, Any],
+):
     """
     Encapsulates serialization parameters from a source annotation.
     """
@@ -133,53 +144,10 @@ class TypedSerializer[SourceT](BaseConverter[SourceT, Any, SerializationHandle])
         )
 
     def __repr__(self) -> str:
-        return f"TypedSerializer(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
-
-    def serialize(self, obj: Any, handle: SerializationHandle, /) -> Any:
-        """
-        Serialize object or raise `ValueError`.
-
-        `source_annotation` is required because some serializers may inspect it
-        to recurse into items of collections.
-        """
-
-        # invoke serialization function
-        try:
-            if func := self._func_wrapper:
-                # provided function
-                serialized_obj = func.invoke(obj, handle)
-            else:
-                # direct object construction
-                concrete_type = cast(
-                    Callable[[SourceT], Any], self._target_annotation.concrete_type
-                )
-                serialized_obj = concrete_type(obj)
-        except (ValueError, TypeError) as e:
-            raise ValueError(
-                f"TypedSerializer {self} failed to serialize {obj} ({type(obj)}): {e}"
-            ) from None
-
-        if not self._target_annotation.is_type(serialized_obj):
-            raise ValueError(
-                f"TypedSerializer {self} failed to serialize {obj} ({type(obj)}), got {serialized_obj} ({type(serialized_obj)})"
-            )
-
-        return serialized_obj
-
-    def can_convert(self, obj: Any, annotation: Annotation, /) -> bool:
-        """
-        Check if this serializer can serialize the given object from the given
-        source annotation.
-        """
-        source_ann = Annotation._normalize(annotation)
-
-        if not self._check_variance_match(source_ann, self._source_annotation):
-            return False
-
-        return source_ann.is_type(obj)
+        return f"SerializingConverter(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
 
-class SerializerRegistry(BaseConverterRegistry[TypedSerializer]):
+class SerializerRegistry(BaseConverterRegistry[SerializingConverter]):
     """
     Registry for managing type serializers.
 
@@ -191,14 +159,14 @@ class SerializerRegistry(BaseConverterRegistry[TypedSerializer]):
         return f"SerializerRegistry(serializers={self._converters})"
 
     @property
-    def serializers(self) -> list[TypedSerializer]:
+    def serializers(self) -> list[SerializingConverter]:
         """
         Get serializers currently registered.
         """
         return self._converters
 
     @overload
-    def register(self, serializer: TypedSerializer, /): ...
+    def register(self, serializer: SerializingConverter, /): ...
 
     @overload
     def register(
@@ -207,7 +175,7 @@ class SerializerRegistry(BaseConverterRegistry[TypedSerializer]):
 
     def register(
         self,
-        serializer_or_func: TypedSerializer | SerializerFuncType,
+        serializer_or_func: SerializingConverter | SerializerFuncType,
         /,
         *,
         variance: VarianceType = "contravariant",
@@ -217,8 +185,8 @@ class SerializerRegistry(BaseConverterRegistry[TypedSerializer]):
         """
         serializer = (
             serializer_or_func
-            if isinstance(serializer_or_func, TypedSerializer)
-            else TypedSerializer.from_func(serializer_or_func, variance=variance)
+            if isinstance(serializer_or_func, SerializingConverter)
+            else SerializingConverter.from_func(serializer_or_func, variance=variance)
         )
         self._register_converter(serializer)
 
@@ -258,12 +226,17 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         return Annotation(type(obj))
 
     def _apply_converter(
-        self, converter: TypedSerializer, obj: Any, frame: SerializationFrame
+        self, converter: SerializingConverter, obj: Any, frame: SerializationFrame
     ) -> Any:
         """
         Apply serializer to convert the object.
         """
-        return converter.serialize(obj, SerializationHandle(frame))
+        return converter.convert(
+            obj,
+            frame.source_annotation,
+            frame.target_annotation,
+            SerializationHandle(frame),
+        )
 
     def _convert_union(self, obj: Any, frame: SerializationFrame) -> Any:
         """
@@ -380,7 +353,7 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
 def serialize(
     obj: Any,
     /,
-    *serializers: TypedSerializer,
+    *serializers: SerializingConverter,
     source_type: Annotation | Any | None = None,
     mode: Literal["json", "plain"] = "json",
     context: Any = None,
@@ -402,7 +375,7 @@ def serialize(
 def serialize(
     obj: Any,
     /,
-    *serializers_or_registry: TypedSerializer | SerializerRegistry,
+    *serializers_or_registry: SerializingConverter | SerializerRegistry,
     source_type: Annotation | Any | None = None,
     mode: Literal["json", "plain"] = "json",
     context: Any = None,
@@ -426,7 +399,7 @@ def serialize(
         else Annotation(type(obj))
     )
     registry = normalize_to_registry(
-        TypedSerializer, SerializerRegistry, *serializers_or_registry
+        SerializingConverter, SerializerRegistry, *serializers_or_registry
     )
     engine = SerializationEngine(registry=registry)
     params = SerializationParams(mode=mode)

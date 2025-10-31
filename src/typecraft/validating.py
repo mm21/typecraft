@@ -8,10 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
     Generator,
     Union,
-    cast,
     overload,
 )
 
@@ -22,6 +20,7 @@ from .converting import (
     BaseConverter,
     BaseConverterRegistry,
     ConverterFuncType,
+    FromFuncMixin,
     normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
@@ -36,7 +35,8 @@ __all__ = [
     "ValidationParams",
     "ValidationHandle",
     "ValidationEngine",
-    "TypedValidator",
+    "BaseValidatingConverter",
+    "ValidatingConverter",
     "ValidatorRegistry",
     "validate",
     "normalize_to_list",
@@ -94,7 +94,17 @@ class ValidationHandle(BaseConversionHandle[ValidationFrame, ValidationParams]):
         )
 
 
-class TypedValidator[TargetT](BaseConverter[Any, TargetT, ValidationHandle]):
+class BaseValidatingConverter[SourceT, TargetT](
+    BaseConverter[SourceT, TargetT, ValidationHandle]
+):
+    """
+    Base class for validation converters.
+    """
+
+
+class ValidatingConverter[TargetT](
+    FromFuncMixin[Any, TargetT, ValidationHandle], BaseValidatingConverter[Any, TargetT]
+):
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
@@ -136,49 +146,10 @@ class TypedValidator[TargetT](BaseConverter[Any, TargetT, ValidationHandle]):
         )
 
     def __repr__(self) -> str:
-        return f"TypedValidator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, variance={self._variance})"
-
-    def validate(self, obj: Any, handle: ValidationHandle, /) -> TargetT:
-        """
-        Convert object or raise `ValueError`.
-        """
-
-        try:
-            if func := self._func_wrapper:
-                # provided validation function
-                validated_obj = func.invoke(obj, handle)
-            else:
-                # direct object construction
-                concrete_type = cast(
-                    Callable[[Any], TargetT], self._target_annotation.concrete_type
-                )
-                validated_obj = concrete_type(obj)
-        except (ValueError, TypeError) as e:
-            raise ValueError(
-                f"TypedValidator {self} failed to validate {obj} ({type(obj)}): {e}"
-            ) from None
-
-        if not self._target_annotation.is_type(validated_obj):
-            raise ValueError(
-                f"TypedValidator {self} failed to validate {obj} ({type(obj)}), got {validated_obj} ({type(validated_obj)})"
-            )
-
-        return validated_obj
-
-    def can_convert(self, obj: Any, annotation: Annotation | Any, /) -> bool:
-        """
-        Check if this validator can convert the given object to the given
-        target annotation.
-        """
-        target_ann = Annotation._normalize(annotation)
-
-        if not self._check_variance_match(target_ann, self._target_annotation):
-            return False
-
-        return self._source_annotation.is_type(obj)
+        return f"ValidatingConverter(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
 
-class ValidatorRegistry(BaseConverterRegistry[TypedValidator]):
+class ValidatorRegistry(BaseConverterRegistry[ValidatingConverter]):
     """
     Registry for managing type validators.
     """
@@ -187,14 +158,14 @@ class ValidatorRegistry(BaseConverterRegistry[TypedValidator]):
         return f"ValidatorRegistry(validators={self.validators})"
 
     @property
-    def validators(self) -> list[TypedValidator]:
+    def validators(self) -> list[ValidatingConverter]:
         """
         Get validators currently registered.
         """
         return self._converters
 
     @overload
-    def register(self, validator: TypedValidator[Any], /): ...
+    def register(self, validator: ValidatingConverter[Any], /): ...
 
     @overload
     def register(
@@ -207,18 +178,18 @@ class ValidatorRegistry(BaseConverterRegistry[TypedValidator]):
 
     def register(
         self,
-        validator_or_func: TypedValidator[Any] | ValidatorFuncType[Any],
+        validator_or_func: ValidatingConverter[Any] | ValidatorFuncType[Any],
         /,
         *,
         variance: VarianceType = "contravariant",
     ):
         """
-        Register a validator by `Validator` object or function.
+        Register a validator by `ValidatingConverter` object or function.
         """
         validator = (
             validator_or_func
-            if isinstance(validator_or_func, TypedValidator)
-            else TypedValidator.from_func(validator_or_func, variance=variance)
+            if isinstance(validator_or_func, ValidatingConverter)
+            else ValidatingConverter.from_func(validator_or_func, variance=variance)
         )
         self._register_converter(validator)
 
@@ -259,12 +230,17 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         return frame.target_annotation
 
     def _apply_converter(
-        self, converter: TypedValidator, obj: Any, frame: ValidationFrame
+        self, converter: ValidatingConverter, obj: Any, frame: ValidationFrame
     ) -> Any:
         """
         Apply validator to convert the object.
         """
-        return converter.validate(obj, ValidationHandle(frame))
+        return converter.convert(
+            obj,
+            frame.source_annotation,
+            frame.target_annotation,
+            ValidationHandle(frame),
+        )
 
     def _convert_union(self, obj: Any, frame: ValidationFrame) -> Any:
         """
@@ -403,7 +379,7 @@ def validate[T](
     obj: Any,
     target_type: type[T],
     /,
-    *validators: TypedValidator[T],
+    *validators: ValidatingConverter[T],
     lenient: bool = False,
     context: Any = None,
 ) -> T: ...
@@ -426,7 +402,7 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators: TypedValidator[Any],
+    *validators: ValidatingConverter[Any],
     lenient: bool = False,
     context: Any = None,
 ) -> Any: ...
@@ -448,7 +424,7 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators_or_registry: TypedValidator | ValidatorRegistry,
+    *validators_or_registry: ValidatingConverter | ValidatorRegistry,
     lenient: bool = False,
     context: Any = None,
 ) -> Any:
@@ -460,7 +436,7 @@ def validate(
     """
     target_annotation = Annotation._normalize(target_type)
     registry = normalize_to_registry(
-        TypedValidator, ValidatorRegistry, *validators_or_registry
+        ValidatingConverter, ValidatorRegistry, *validators_or_registry
     )
     engine = ValidationEngine(registry=registry)
     params = ValidationParams(lenient=lenient)
@@ -480,7 +456,7 @@ def normalize_to_list[T](
     obj_or_objs: Any,
     target_type: type[T],
     /,
-    *validators: TypedValidator[T],
+    *validators: ValidatingConverter[T],
     lenient: bool = False,
     context: Any = None,
 ) -> list[T]:
@@ -497,7 +473,9 @@ def normalize_to_list[T](
         objs = [obj_or_objs]
 
     target_annotation = Annotation._normalize(target_type)
-    registry = normalize_to_registry(TypedValidator, ValidatorRegistry, *validators)
+    registry = normalize_to_registry(
+        ValidatingConverter, ValidatorRegistry, *validators
+    )
     engine = ValidationEngine(registry=registry)
     params = ValidationParams(lenient=lenient)
 
@@ -546,11 +524,11 @@ def _validate_dict(obj: Mapping[Any, Any], handle: ValidationHandle) -> dict[Any
 
 
 BUILTIN_REGISTRY = ValidatorRegistry(
-    TypedValidator(Union[VALUE_COLLECTION_TYPES], list, func=_validate_list),
-    TypedValidator(Union[VALUE_COLLECTION_TYPES], tuple, func=_validate_tuple),
-    TypedValidator(Union[VALUE_COLLECTION_TYPES], set, func=_validate_set),
-    TypedValidator(Union[VALUE_COLLECTION_TYPES], frozenset, func=_validate_set),
-    TypedValidator(Mapping, dict, func=_validate_dict),
+    ValidatingConverter(Union[VALUE_COLLECTION_TYPES], list, func=_validate_list),
+    ValidatingConverter(Union[VALUE_COLLECTION_TYPES], tuple, func=_validate_tuple),
+    ValidatingConverter(Union[VALUE_COLLECTION_TYPES], set, func=_validate_set),
+    ValidatingConverter(Union[VALUE_COLLECTION_TYPES], frozenset, func=_validate_set),
+    ValidatingConverter(Mapping, dict, func=_validate_dict),
 )
 """
 Registry of built-in validators.

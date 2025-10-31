@@ -8,7 +8,7 @@ from typing import Annotated, Generator, Literal
 from pytest import raises
 
 from typecraft.validating import (
-    TypedValidator,
+    ValidatingConverter,
     ValidatorRegistry,
     normalize_to_list,
     validate,
@@ -66,7 +66,7 @@ def test_invalid():
 def test_conversion():
 
     # test with and without explicit converters
-    for converters in [(TypedValidator(str, int),), ()]:
+    for converters in [(ValidatingConverter(str, int),), ()]:
 
         # list[str | int] -> list[int]
         result = validate(["1", "2", 3], list[int], *converters, lenient=True)
@@ -142,7 +142,7 @@ def test_registry():
     Test validation with registry.
     """
     registry = ValidatorRegistry()
-    registry.register(TypedValidator(str, int))
+    registry.register(ValidatingConverter(str, int))
 
     obj = "1"
     result = validate(obj, int, registry)
