@@ -17,8 +17,8 @@ from .converting import (
     BaseConversionEngine,
     BaseConversionFrame,
     BaseConversionHandle,
+    BaseConverter,
     BaseConverterRegistry,
-    BaseTypedConverter,
     ConverterFuncType,
     normalize_to_registry,
 )
@@ -92,7 +92,7 @@ class SerializationHandle(
         )
 
 
-class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHandle]):
+class TypedSerializer[SourceT](BaseConverter[SourceT, Any, SerializationHandle]):
     """
     Encapsulates serialization parameters from a source annotation.
     """

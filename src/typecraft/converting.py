@@ -203,11 +203,7 @@ class BaseConversionHandle[FrameT: BaseConversionFrame, ParamsT: Any]:
         return self._frame.params
 
 
-# TODO: BaseConverter: abstract methods: can_convert(), convert()
-
-
-# TODO: rename: Converter
-class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
+class BaseConverter[SourceT, TargetT, HandleT](ABC):
     """
     Base class for typed converters (validators and serializers).
 
@@ -312,7 +308,7 @@ class BaseTypedConverter[SourceT, TargetT, HandleT](ABC):
 
 
 # TODO: take BaseConverter, can be user-defined subclass (not based on type)
-class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
+class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
     """
     Base class for converter registries.
 
@@ -358,7 +354,7 @@ class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
     @cached_property
     def _converter_cls(self) -> type[ConverterT]:
         converter_cls = extract_type_param(
-            type(self), BaseConverterRegistry, "ConverterT", BaseTypedConverter
+            type(self), BaseConverterRegistry, "ConverterT", BaseConverter
         )
         return cast(type[ConverterT], converter_cls)
 
@@ -505,7 +501,7 @@ class BaseConversionEngine[RegistryT: BaseConverterRegistry, FrameT: Any](ABC):
     # TODO: return BaseConverter
     def _find_converter(
         self, obj: Any, frame: FrameT, ref_annotation: Annotation
-    ) -> BaseTypedConverter | None:
+    ) -> BaseConverter | None:
         for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
             if converter := registry.find(obj, ref_annotation):
                 return converter

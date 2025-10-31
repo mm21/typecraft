@@ -19,8 +19,8 @@ from .converting import (
     BaseConversionEngine,
     BaseConversionFrame,
     BaseConversionHandle,
+    BaseConverter,
     BaseConverterRegistry,
-    BaseTypedConverter,
     ConverterFuncType,
     normalize_to_registry,
 )
@@ -94,7 +94,7 @@ class ValidationHandle(BaseConversionHandle[ValidationFrame, ValidationParams]):
         )
 
 
-class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT, ValidationHandle]):
+class TypedValidator[TargetT](BaseConverter[Any, TargetT, ValidationHandle]):
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
