@@ -18,9 +18,9 @@ from typing import (
 from .converting import (
     BaseConversionEngine,
     BaseConversionFrame,
+    BaseConversionHandle,
     BaseConverterRegistry,
     BaseTypedConverter,
-    ConversionHandle,
     ConverterFuncType,
     normalize_to_registry,
 )
@@ -33,6 +33,8 @@ from .typedefs import (
 
 __all__ = [
     "ValidatorFuncType",
+    "ValidationParams",
+    "ValidationHandle",
     "ValidationEngine",
     "TypedValidator",
     "ValidatorRegistry",
@@ -41,13 +43,11 @@ __all__ = [
 ]
 
 
-type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT]
+type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT, ValidationHandle]
 """
 Function which validates the given object and returns an object of the
 specified type. Can optionally take `ValidationInfo` as the second argument.
 """
-
-type ValidationHandleType = ConversionHandle[ValidationFrame]
 
 
 @dataclass(kw_only=True)
@@ -69,7 +69,32 @@ class ValidationFrame(BaseConversionFrame[ValidationParams]):
     """
 
 
-class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT]):
+class ValidationHandle(BaseConversionHandle[ValidationFrame, ValidationParams]):
+    """
+    User-facing interface to validation state and operations.
+    """
+
+    def recurse(
+        self,
+        obj: Any,
+        path_segment: str | int,
+        target_annotation: Annotation,
+        /,
+        *,
+        context: Any | None = None,
+    ) -> Any:
+        """
+        Recurse into validation, overriding context if passed.
+        """
+        return self._frame.recurse(
+            obj,
+            path_segment,
+            target_annotation=target_annotation,
+            context=context,
+        )
+
+
+class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT, ValidationHandle]):
     """
     Encapsulates type conversion parameters from a source annotation (which may be
     a union) to a target annotation.
@@ -113,7 +138,7 @@ class TypedValidator[TargetT](BaseTypedConverter[Any, TargetT]):
     def __repr__(self) -> str:
         return f"TypedValidator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
-    def validate(self, obj: Any, handle: ValidationHandleType, /) -> TargetT:
+    def validate(self, obj: Any, handle: ValidationHandle, /) -> TargetT:
         """
         Convert object or raise `ValueError`.
         """
@@ -239,7 +264,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         """
         Apply validator to convert the object.
         """
-        return converter.validate(obj, ConversionHandle[ValidationFrame](frame))
+        return converter.validate(obj, ValidationHandle(frame))
 
     def _convert_union(self, obj: Any, frame: ValidationFrame) -> Any:
         """
@@ -502,25 +527,21 @@ def _check_valid(obj: Any, annotation: Annotation) -> bool:
         return isinstance(obj, annotation.concrete_type)
 
 
-def _validate_list(obj: ValueCollectionType, handle: ValidationHandleType) -> list[Any]:
+def _validate_list(obj: ValueCollectionType, handle: ValidationHandle) -> list[Any]:
     return handle._frame.engine._convert_list(obj, handle._frame)
 
 
-def _validate_tuple(
-    obj: ValueCollectionType, handle: ValidationHandleType
-) -> tuple[Any]:
+def _validate_tuple(obj: ValueCollectionType, handle: ValidationHandle) -> tuple[Any]:
     return handle._frame.engine._convert_tuple(obj, handle._frame)
 
 
 def _validate_set(
-    obj: ValueCollectionType, handle: ValidationHandleType
+    obj: ValueCollectionType, handle: ValidationHandle
 ) -> set[Any] | frozenset[Any]:
     return handle._frame.engine._convert_set(obj, handle._frame)
 
 
-def _validate_dict(
-    obj: Mapping[Any, Any], handle: ValidationHandleType
-) -> dict[Any, Any]:
+def _validate_dict(obj: Mapping[Any, Any], handle: ValidationHandle) -> dict[Any, Any]:
     return handle._frame.engine._convert_dict(obj, handle._frame)
 
 

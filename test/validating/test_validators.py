@@ -4,12 +4,12 @@ Test low-level validation via `TypedValidator` instances.
 
 from typing import Any
 
-from typecraft.converting import ConversionHandle
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
     TypedValidator,
     ValidationEngine,
     ValidationFrame,
+    ValidationHandle,
     ValidationParams,
     ValidatorRegistry,
 )
@@ -24,8 +24,9 @@ def test_any():
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, handle: ConversionHandle) -> Any:
+    def func2(obj: Any, handle: ValidationHandle) -> Any:
         assert isinstance(obj, int)
+        assert not handle.params.lenient
         assert handle.target_annotation.concrete_type is object
         return -2 * obj
 
@@ -93,7 +94,7 @@ def test_registry():
         """
         return int(s)
 
-    def str_to_int(s: str, handle: ConversionHandle) -> int:
+    def str_to_int(s: str, handle: ValidationHandle) -> int:
         """
         Convert string to integer, also encompassing bool.
         """
@@ -120,7 +121,7 @@ def test_registry():
 
 def _create_handle(
     target_annotation: Any, params: ValidationParams | None = None
-) -> ConversionHandle:
+) -> ValidationHandle:
     engine = ValidationEngine()
     frame = ValidationFrame(
         source_annotation=ANY,
@@ -129,4 +130,4 @@ def _create_handle(
         params=params or ValidationParams(lenient=False),
         engine=engine,
     )
-    return ConversionHandle(frame)
+    return ValidationHandle(frame)

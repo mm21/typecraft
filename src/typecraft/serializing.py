@@ -16,9 +16,9 @@ from typing import (
 from .converting import (
     BaseConversionEngine,
     BaseConversionFrame,
+    BaseConversionHandle,
     BaseConverterRegistry,
     BaseTypedConverter,
-    ConversionHandle,
     ConverterFuncType,
     normalize_to_registry,
 )
@@ -36,14 +36,12 @@ __all__ = [
 ]
 
 
-type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any]
+type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationHandle]
 """
 Function which serializes the given object from a specific source type and generally
 returns an object of built-in Python type. Can optionally take
 `SerializationHandle` as the second argument.
 """
-
-type SerializationHandleType = ConversionHandle[SerializationFrame]
 
 
 @dataclass(kw_only=True)
@@ -67,7 +65,34 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
     """
 
 
-class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any]):
+class SerializationHandle(
+    BaseConversionHandle[SerializationFrame, SerializationParams]
+):
+    """
+    User-facing interface to serialization state and operations.
+    """
+
+    def recurse(
+        self,
+        obj: Any,
+        path_segment: str | int,
+        source_annotation: Annotation | None = None,
+        /,
+        *,
+        context: Any | None = None,
+    ) -> Any:
+        """
+        Recurse into serialization, overriding context if passed.
+        """
+        return self._frame.recurse(
+            obj,
+            path_segment,
+            source_annotation=source_annotation or ANY,
+            context=context,
+        )
+
+
+class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationHandle]):
     """
     Encapsulates serialization parameters from a source annotation.
     """
@@ -110,7 +135,7 @@ class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any]):
     def __repr__(self) -> str:
         return f"TypedSerializer(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
-    def serialize(self, obj: Any, handle: SerializationHandleType, /) -> Any:
+    def serialize(self, obj: Any, handle: SerializationHandle, /) -> Any:
         """
         Serialize object or raise `ValueError`.
 
@@ -238,7 +263,7 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         """
         Apply serializer to convert the object.
         """
-        return converter.serialize(obj, ConversionHandle[SerializationFrame](frame))
+        return converter.serialize(obj, SerializationHandle(frame))
 
     def _convert_union(self, obj: Any, frame: SerializationFrame) -> Any:
         """

@@ -39,10 +39,9 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..converting import ConversionHandle
 from ..inspecting.classes import extract_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
-from ..validating import TypedValidator
+from ..validating import TypedValidator, ValidationHandle
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -325,17 +324,14 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
     def _from_tomlkit_obj_with_handle(
         cls,
         tomlkit_obj: TomlkitT,
-        handle: ConversionHandle,
+        handle: ValidationHandle,
     ) -> Self:
         assert len(handle.target_annotation.arg_annotations) == 1
         item_type = handle.target_annotation.arg_annotations[0]
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
-        validated_items = [
-            handle.recurse(o, i, target_annotation=item_type)
-            for i, o in enumerate(items)
-        ]
+        validated_items = [handle.recurse(o, i, item_type) for i, o in enumerate(items)]
 
         obj = cls(validated_items)
         return cls._finalize_obj(tomlkit_obj, obj)
@@ -407,7 +403,7 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def validate_table(
-    obj: Any, handle: ConversionHandle
+    obj: Any, handle: ValidationHandle
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
     type_ = handle.target_annotation.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
@@ -415,7 +411,7 @@ def validate_table(
 
 
 def validate_array(
-    obj: Any, handle: ConversionHandle
+    obj: Any, handle: ValidationHandle
 ) -> ArrayWrapper | TableArrayWrapper:
     type_ = handle.target_annotation.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
