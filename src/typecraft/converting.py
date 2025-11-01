@@ -266,13 +266,6 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
 
         Called internally by the framework to determine if this converter
         should be considered for conversion.
-
-        Args:
-            obj: Object to potentially convert
-            annotation: Reference annotation (source for serialization, target for validation)
-
-        Returns:
-            True if source/target annotations match according to variance rules
         """
         # TODO: check based on variance of source vs target for each direction
         if not self._check_variance_match(target_annotation, self._target_annotation):
@@ -296,14 +289,6 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         Called internally by the framework after check_match() succeeds.
         Base implementation returns True (assumes type match implies convertibility).
         Subclasses can override to add additional validation logic.
-
-        Args:
-            obj: Object to convert
-            source_annotation: Source type annotation
-            target_annotation: Target type annotation
-
-        Returns:
-            True if conversion is possible
         """
         _ = obj, source_annotation, target_annotation
         return True
@@ -322,15 +307,6 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
 
         User must define conversion logic. Expected to always succeed since
         check_match() and can_convert() returned True.
-
-        Args:
-            obj: Object to convert
-            source_annotation: Source type annotation
-            target_annotation: Target type annotation
-            handle: Handle with conversion context and operations
-
-        Returns:
-            Converted object
         """
 
     def _check_variance_match(

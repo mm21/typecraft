@@ -386,12 +386,11 @@ def serialize(
     Handles nested parameterized types by recursively applying serialization
     at each level based on the actual object types (or optionally specified source type).
 
-    Args:
-        obj: Object to serialize
-        source_type: Optional source type annotation for type-specific serialization.
-                    If None, type is inferred from the object.
-        mode: "plain" for basic serialization, "json" to ensure JSON-compatible output
-        context: User-defined context passed to serializers
+    :param obj: Object to serialize
+    :param source_type: Optional source type annotation for type-specific serialization. \
+    If None, type is inferred from the object.
+    :param mode: "json" to ensure JSON-compatible output, "plain" for serialization with no coercion
+    :param context: User-defined context passed to serializers
     """
     source_annotation = (
         Annotation._normalize(source_type)
