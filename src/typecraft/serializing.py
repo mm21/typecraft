@@ -17,8 +17,8 @@ from .converting import (
     BaseConversionHandle,
     BaseConverter,
     BaseConverterRegistry,
+    ConverterFuncMixin,
     ConverterFuncType,
-    FromFuncMixin,
     normalize_to_registry,
 )
 from .inspecting.annotations import ANY, Annotation
@@ -29,8 +29,8 @@ from .typedefs import (
 __all__ = [
     "SerializerFuncType",
     "SerializationEngine",
-    "BaseSerializingConverter",
-    "SerializingConverter",
+    "BaseSerializer",
+    "Serializer",
     "SerializerRegistry",
     "serialize",
 ]
@@ -92,20 +92,20 @@ class SerializationHandle(
         )
 
 
-class BaseSerializingConverter[SourceT, TargetT](
+class BaseSerializer[SourceT, TargetT](
     BaseConverter[SourceT, TargetT, SerializationHandle]
 ):
     """
-    Base class for serialization converters.
+    Base class for type-based serializers.
     """
 
 
-class SerializingConverter[SourceT](
-    FromFuncMixin[SourceT, Any, SerializationHandle],
-    BaseSerializingConverter[SourceT, Any],
+class Serializer[SourceT](
+    ConverterFuncMixin[SourceT, Any, SerializationHandle],
+    BaseSerializer[SourceT, Any],
 ):
     """
-    Encapsulates serialization parameters from a source annotation.
+    Type-based serializer with type inference from functions.
     """
 
     @overload
@@ -144,10 +144,10 @@ class SerializingConverter[SourceT](
         )
 
     def __repr__(self) -> str:
-        return f"SerializingConverter(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
+        return f"Serializer(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
 
 
-class SerializerRegistry(BaseConverterRegistry[SerializingConverter]):
+class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
     """
     Registry for managing type serializers.
 
@@ -159,14 +159,14 @@ class SerializerRegistry(BaseConverterRegistry[SerializingConverter]):
         return f"SerializerRegistry(serializers={self._converters})"
 
     @property
-    def serializers(self) -> list[SerializingConverter]:
+    def serializers(self) -> list[BaseSerializer]:
         """
         Get serializers currently registered.
         """
         return self._converters
 
     @overload
-    def register(self, serializer: SerializingConverter, /): ...
+    def register(self, serializer: BaseSerializer, /): ...
 
     @overload
     def register(
@@ -175,7 +175,7 @@ class SerializerRegistry(BaseConverterRegistry[SerializingConverter]):
 
     def register(
         self,
-        serializer_or_func: SerializingConverter | SerializerFuncType,
+        serializer_or_func: BaseSerializer | SerializerFuncType,
         /,
         *,
         variance: VarianceType = "contravariant",
@@ -185,8 +185,8 @@ class SerializerRegistry(BaseConverterRegistry[SerializingConverter]):
         """
         serializer = (
             serializer_or_func
-            if isinstance(serializer_or_func, SerializingConverter)
-            else SerializingConverter.from_func(serializer_or_func, variance=variance)
+            if isinstance(serializer_or_func, BaseSerializer)
+            else Serializer.from_func(serializer_or_func, variance=variance)
         )
         self._register_converter(serializer)
 
@@ -226,7 +226,7 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         return Annotation(type(obj))
 
     def _apply_converter(
-        self, converter: SerializingConverter, obj: Any, frame: SerializationFrame
+        self, converter: Serializer, obj: Any, frame: SerializationFrame
     ) -> Any:
         """
         Apply serializer to convert the object.
@@ -353,7 +353,7 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
 def serialize(
     obj: Any,
     /,
-    *serializers: SerializingConverter,
+    *serializers: Serializer,
     source_type: Annotation | Any | None = None,
     mode: Literal["json", "plain"] = "json",
     context: Any = None,
@@ -375,7 +375,7 @@ def serialize(
 def serialize(
     obj: Any,
     /,
-    *serializers_or_registry: SerializingConverter | SerializerRegistry,
+    *serializers_or_registry: Serializer | SerializerRegistry,
     source_type: Annotation | Any | None = None,
     mode: Literal["json", "plain"] = "json",
     context: Any = None,
@@ -399,7 +399,7 @@ def serialize(
         else Annotation(type(obj))
     )
     registry = normalize_to_registry(
-        SerializingConverter, SerializerRegistry, *serializers_or_registry
+        Serializer, SerializerRegistry, *serializers_or_registry
     )
     engine = SerializationEngine(registry=registry)
     params = SerializationParams(mode=mode)

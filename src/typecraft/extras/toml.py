@@ -41,7 +41,7 @@ from tomlkit.items import (
 
 from ..inspecting.classes import extract_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
-from ..validating import ValidatingConverter, ValidationHandle
+from ..validating import ValidationHandle, Validator
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -151,7 +151,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     model_config = ModelConfig(validate_on_assignment=True)
 
-    def model_get_converters(self) -> tuple[ValidatingConverter[Any], ...]:
+    def model_get_converters(self) -> tuple[Validator[Any], ...]:
         return VALIDATORS
 
     def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
@@ -419,8 +419,8 @@ def validate_array(
 
 
 VALIDATORS = (
-    ValidatingConverter(Table, BaseTableWrapper, func=validate_table),
-    ValidatingConverter(InlineTable, BaseInlineTableWrapper, func=validate_table),
-    ValidatingConverter(Array, ArrayWrapper, func=validate_array),
-    ValidatingConverter(AoT, TableArrayWrapper, func=validate_array),
+    Validator(Table, BaseTableWrapper, func=validate_table),
+    Validator(InlineTable, BaseInlineTableWrapper, func=validate_table),
+    Validator(Array, ArrayWrapper, func=validate_array),
+    Validator(AoT, TableArrayWrapper, func=validate_array),
 )

@@ -1,16 +1,16 @@
 """
-Test low-level validation via `ValidatingConverter` instances.
+Test low-level validation via `Validator` instances.
 """
 
 from typing import Any
 
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
-    ValidatingConverter,
     ValidationEngine,
     ValidationFrame,
     ValidationHandle,
     ValidationParams,
+    Validator,
     ValidatorRegistry,
 )
 
@@ -33,8 +33,8 @@ def test_any():
     obj = 1
 
     # test both function types
-    converter1 = ValidatingConverter(Any, Any, func=func1)
-    converter2 = ValidatingConverter(Any, Any, func=func2)
+    converter1 = Validator(Any, Any, func=func1)
+    converter2 = Validator(Any, Any, func=func2)
 
     assert converter1.can_convert(obj, ANY, ANY)
     conv_obj = converter1.convert(obj, ANY, ANY, _create_handle(Any))
@@ -53,7 +53,7 @@ def test_generic():
     def func(obj: Any) -> list[str]:
         return [str(o) for o in obj]
 
-    converter = ValidatingConverter(list[int], list[str], func=func)
+    converter = Validator(list[int], list[str], func=func)
     obj = [123]
 
     assert converter.can_convert(obj, Annotation(list[int]), Annotation(list[str]))
@@ -74,8 +74,8 @@ def test_invariant():
     Test converter with variance="invariant".
     """
 
-    converter_contra = ValidatingConverter(str, int)
-    converter_inv = ValidatingConverter(str, int, variance="invariant")
+    converter_contra = Validator(str, int)
+    converter_inv = Validator(str, int, variance="invariant")
     obj = "123"
 
     # contravariant converter can convert to bool since it's a subclass of int

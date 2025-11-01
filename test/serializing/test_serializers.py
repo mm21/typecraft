@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
     SerializationHandle,
+    Serializer,
     SerializerRegistry,
-    SerializingConverter,
     serialize,
 )
 
@@ -34,7 +34,7 @@ def test_custom_serializer():
         return {"name": p.name, "age": p.age}
 
     person = Person(name="Alice", age=30)
-    serializer = SerializingConverter(Person, func=serialize_person)
+    serializer = Serializer(Person, func=serialize_person)
 
     result = serialize(person, serializer)
     assert result == {"name": "Alice", "age": 30}
@@ -65,8 +65,8 @@ def test_nested_custom_serializer():
     person2 = Person(name="Bob", age=25)
     company = Company(name="TechCo", employees=[person1, person2])
 
-    person_serializer = SerializingConverter(Person, func=serialize_person)
-    company_serializer = SerializingConverter(Company, func=serialize_company)
+    person_serializer = Serializer(Person, func=serialize_person)
+    company_serializer = Serializer(Company, func=serialize_company)
 
     result = serialize(company, person_serializer, company_serializer)
     assert result == {
@@ -88,7 +88,7 @@ def test_list_of_custom_objects():
         Person(name="Bob", age=25),
     ]
 
-    serializer = SerializingConverter(Person, func=serialize_person)
+    serializer = Serializer(Person, func=serialize_person)
     result = serialize(people, serializer)
 
     assert result == [
@@ -106,7 +106,7 @@ def test_union_types():
         return {"name": p.name, "age": p.age, "type": "person"}
 
     person = Person(name="Alice", age=30)
-    serializer = SerializingConverter(Person, func=serialize_person)
+    serializer = Serializer(Person, func=serialize_person)
 
     # int | Person where object is int
     result = serialize(42, serializer, source_type=int | Person)
@@ -130,7 +130,7 @@ def test_dict_with_custom_values():
         "bob": Person(name="Bob", age=25),
     }
 
-    serializer = SerializingConverter(Person, func=serialize_person)
+    serializer = Serializer(Person, func=serialize_person)
     result = serialize(people_dict, serializer)
 
     assert result == {
@@ -153,7 +153,7 @@ def test_mixed_nested_structures():
         "team_b": [Person("Charlie", 35)],
     }
 
-    serializer = SerializingConverter(Person, func=serialize_person)
+    serializer = Serializer(Person, func=serialize_person)
     result = serialize(data, serializer)
 
     assert result == {
@@ -167,14 +167,14 @@ def test_custom_serializer_for_builtin():
     Test that custom serializers work for builtin types.
     """
     # int -> str
-    serializer = SerializingConverter(int, str)
+    serializer = Serializer(int, str)
     assert serialize(42, serializer) == "42"
 
     # float -> int (truncate)
     def truncate(f: float) -> int:
         return int(f)
 
-    serializer = SerializingConverter(float, func=truncate)
+    serializer = Serializer(float, func=truncate)
     assert serialize(3.14, serializer) == 3
     assert serialize(2.99, serializer) == 2
 
@@ -182,7 +182,7 @@ def test_custom_serializer_for_builtin():
     def uppercase(s: str) -> str:
         return s.upper()
 
-    serializer = SerializingConverter(str, func=uppercase)
+    serializer = Serializer(str, func=uppercase)
     assert serialize("hello", serializer) == "HELLO"
 
 
@@ -195,14 +195,14 @@ def test_custom_serializer_for_builtin_collections():
     def sort_list(lst: list) -> list:
         return sorted(lst)
 
-    serializer = SerializingConverter(list, func=sort_list)
+    serializer = Serializer(list, func=sort_list)
     assert serialize([3, 1, 2], serializer) == [1, 2, 3]
 
     # dict -> keys only
     def dict_keys(d: dict) -> list:
         return list(d.keys())
 
-    serializer = SerializingConverter(dict, func=dict_keys)
+    serializer = Serializer(dict, func=dict_keys)
     assert serialize({"b": 2, "a": 1}, serializer) == ["b", "a"]
 
 
@@ -211,7 +211,7 @@ def test_registry():
     Test serialization with registry.
     """
     registry = SerializerRegistry()
-    registry.register(SerializingConverter(int, str))
+    registry.register(Serializer(int, str))
 
     obj = 1
     result = serialize(obj, registry)

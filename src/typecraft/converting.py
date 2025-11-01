@@ -349,7 +349,7 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
             return annotation.is_subtype(ref_annotation)
 
 
-class FromFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
+class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
     """
     Mixin that provides from_func() classmethod and convert() implementation
     for converters that wrap a function.
