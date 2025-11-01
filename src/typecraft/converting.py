@@ -13,7 +13,7 @@ from typing import Any, Self, cast
 from .inspecting.annotations import ANY, Annotation
 from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
-from .typedefs import COLLECTION_TYPES, VarianceType
+from .typedefs import COLLECTION_TYPES
 
 type ConverterFuncType[SourceT, TargetT, HandleT] = Callable[
     [SourceT], TargetT
@@ -209,12 +209,9 @@ class ConverterInterface:
     """
 
     def __init__(
-        self,
-        source_annotation: Any,
-        target_annotation: Any,
-        /,
+        self, source_annotation: Any, target_annotation: Any, /, *, match_subtype: bool
     ):
-        _ = source_annotation, target_annotation
+        _ = source_annotation, target_annotation, match_subtype
 
 
 class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
@@ -235,14 +232,15 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
     Annotation specifying type to convert to.
     """
 
+    # TODO: match source/target subtype
+    _match_subtype: bool
+
     def __init__(
-        self,
-        source_annotation: Any,
-        target_annotation: Any,
-        /,
+        self, source_annotation: Any, target_annotation: Any, /, *, match_subtype: bool
     ):
         self._source_annotation = Annotation._normalize(source_annotation)
         self._target_annotation = Annotation._normalize(target_annotation)
+        self._match_subtype = match_subtype
 
     @property
     def source_annotation(self) -> Annotation:
@@ -252,8 +250,9 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
     def target_annotation(self) -> Annotation:
         return self._target_annotation
 
-    def get_variance(self) -> VarianceType:
-        return "invariant"
+    @property
+    def match_subtype(self) -> bool:
+        return self._match_subtype
 
     def check_match(
         self,
@@ -267,11 +266,11 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         Called internally by the framework to determine if this converter
         should be considered for conversion.
         """
-        # TODO: check based on variance of source vs target for each direction
-        if not self._check_variance_match(target_annotation, self._target_annotation):
+        # TODO: check based on match_subtype of source vs target for each direction
+        if not self._check_subtype_match(target_annotation, self._target_annotation):
             return False
 
-        if not self._check_variance_match(source_annotation, self._source_annotation):
+        if not self._check_subtype_match(source_annotation, self._source_annotation):
             return False
 
         return True
@@ -309,20 +308,20 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         check_match() and can_convert() returned True.
         """
 
-    def _check_variance_match(
+    def _check_subtype_match(
         self,
         annotation: Annotation,
         ref_annotation: Annotation,
     ) -> bool:
         """
-        Check if annotation matches reference based on variance.
+        Check if annotation matches reference based on match_subtype.
         """
-        if self.get_variance() == "invariant":
+        if self.match_subtype:
+            # annotation can be a subclass of reference
+            return annotation.is_subtype(ref_annotation)
+        else:
             # exact match only
             return annotation == ref_annotation
-        else:
-            # contravariant: annotation must be a subclass of reference
-            return annotation.is_subtype(ref_annotation)
 
 
 class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
@@ -336,10 +335,9 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
     Function taking source type and returning an instance of target type.
     """
 
-    _variance: VarianceType
+    _match_subtype: bool
     """
-    Variance with respect to a reference annotation, either source or target depending
-    on serialization vs validation.
+    Whether to match subtypes.
     """
 
     def __init__(
@@ -348,15 +346,13 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         target_annotation: Any,
         *,
         func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ):
-        super().__init__(source_annotation, target_annotation)
+        super().__init__(
+            source_annotation, target_annotation, match_subtype=match_subtype
+        )
         self._func_wrapper = ConverterFunctionWrapper(func) if func else None
-        self._variance = variance
-
-    @property
-    def variance(self) -> VarianceType:
-        return self._variance
+        self._match_subtype = match_subtype
 
     @classmethod
     def from_func(
@@ -366,7 +362,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         # TODO: can_convert_func
         /,
         *,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ) -> Self:
         """
         Create a converter from a function by inspecting its signature.
@@ -381,7 +377,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
             func_wrapper.obj_param.annotation,
             func_wrapper.sig_info.return_annotation,
             func=func,
-            variance=variance,
+            match_subtype=match_subtype,
         )
 
     def convert(
@@ -419,19 +415,14 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         return converted_obj
 
 
-# TODO: take BaseConverter, can be user-defined subclass (not based on type)
 class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
     """
     Base class for converter registries.
-
-    Provides efficient lookup of converters based on object type and annotation.
-    Converters are indexed by a key type for fast lookup, with fallback to
-    sequential search for contravariant matching.
     """
 
     _converters: list[ConverterT]
     """
-    List of all converters for fallback/contravariant matching.
+    List of all converters.
     """
 
     def __init__(self, *converters: ConverterT):

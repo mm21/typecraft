@@ -27,7 +27,6 @@ from .inspecting.annotations import Annotation
 from .typedefs import (
     VALUE_COLLECTION_TYPES,
     ValueCollectionType,
-    VarianceType,
 )
 
 __all__ = [
@@ -116,7 +115,7 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ): ...
 
     @overload
@@ -127,7 +126,7 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ): ...
 
     def __init__(
@@ -137,14 +136,14 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ):
         super().__init__(
-            source_annotation, target_annotation, func=func, variance=variance
+            source_annotation, target_annotation, func=func, match_subtype=match_subtype
         )
 
     def __repr__(self) -> str:
-        return f"Validator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, variance={self._variance})"
+        return f"Validator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, match_subtype={self._match_subtype})"
 
 
 class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
@@ -171,7 +170,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         func: ValidatorFuncType,
         /,
         *,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ): ...
 
     def register(
@@ -179,7 +178,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         validator_or_func: BaseValidator | ValidatorFuncType,
         /,
         *,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ):
         """
         Register a validator by `Validator` object or function.
@@ -187,7 +186,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         validator = (
             validator_or_func
             if isinstance(validator_or_func, BaseValidator)
-            else Validator.from_func(validator_or_func, variance=variance)
+            else Validator.from_func(validator_or_func, match_subtype=match_subtype)
         )
         self._register_converter(validator)
 

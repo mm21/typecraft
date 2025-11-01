@@ -69,22 +69,22 @@ def test_generic():
     assert conv_obj == ["123"]
 
 
-def test_invariant():
+def test_match_subtype():
     """
-    Test converter with variance="invariant".
+    Test converter with match_subtype=True.
     """
 
-    converter_contra = Validator(str, int)
-    converter_inv = Validator(str, int, variance="invariant")
+    converter = Validator(str, int)
+    converter_match_subtype = Validator(str, int, match_subtype=True)
     obj = "123"
 
-    # contravariant converter can convert to bool since it's a subclass of int
-    assert converter_contra.can_convert(obj, Annotation(str), Annotation(int))
-    assert converter_contra.can_convert(obj, Annotation(str), Annotation(bool))
+    # non-match_subtype converter cannot convert to bool, strictly int
+    assert converter.can_convert(obj, Annotation(str), Annotation(int))
+    assert not converter.can_convert(obj, Annotation(str), Annotation(bool))
 
-    # invariant convert cannot convert to bool, strictly int
-    assert converter_inv.can_convert(obj, Annotation(str), Annotation(int))
-    assert not converter_inv.can_convert(obj, Annotation(str), Annotation(bool))
+    # match_subtype converter can convert to bool since it's a subclass of int
+    assert converter_match_subtype.can_convert(obj, Annotation(str), Annotation(int))
+    assert converter_match_subtype.can_convert(obj, Annotation(str), Annotation(bool))
 
 
 def test_registry():
@@ -106,25 +106,25 @@ def test_registry():
 
     # register converters
     registry = ValidatorRegistry()
-    registry.register(str_to_int_inv, variance="invariant")
+    registry.register(str_to_int_inv, match_subtype=True)
     registry.register(str_to_int)
 
     # use the registry
     obj = "42"
 
-    converter = registry.find(obj, Annotation(str), Annotation(int))
-    assert converter
-    assert converter.variance == "invariant"
+    validator = registry.find(obj, Annotation(str), Annotation(int))
+    assert validator
+    assert validator.match_subtype is False
     assert (
-        converter.convert(obj, Annotation(str), Annotation(int), _create_handle(int))
+        validator.convert(obj, Annotation(str), Annotation(int), _create_handle(int))
         == 42
     )
 
-    converter = registry.find(obj, Annotation(str), Annotation(bool))
-    assert converter
-    assert converter.variance == "contravariant"
+    validator = registry.find(obj, Annotation(str), Annotation(bool))
+    assert validator
+    assert validator.match_subtype is True
     assert (
-        converter.convert(obj, Annotation(str), Annotation(bool), _create_handle(bool))
+        validator.convert(obj, Annotation(str), Annotation(bool), _create_handle(bool))
         is True
     )
 

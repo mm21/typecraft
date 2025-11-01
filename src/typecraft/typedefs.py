@@ -7,20 +7,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import (
     Generator,
-    Literal,
 )
 
 from .inspecting.annotations import flatten_union
-
-__all__ = [
-    "VarianceType",
-]
-
-
-type VarianceType = Literal["contravariant", "invariant"]
-"""
-Variance supported by a converter.
-"""
 
 type ValueCollectionType = list | tuple | set | frozenset | range | Generator
 """

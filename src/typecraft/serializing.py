@@ -22,9 +22,6 @@ from .converting import (
     normalize_to_registry,
 )
 from .inspecting.annotations import ANY, Annotation
-from .typedefs import (
-    VarianceType,
-)
 
 __all__ = [
     "SerializerFuncType",
@@ -116,7 +113,7 @@ class Serializer[SourceT](
         /,
         *,
         func: SerializerFuncType[SourceT] | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ): ...
 
     @overload
@@ -127,7 +124,7 @@ class Serializer[SourceT](
         /,
         *,
         func: SerializerFuncType | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ): ...
 
     def __init__(
@@ -137,14 +134,14 @@ class Serializer[SourceT](
         /,
         *,
         func: SerializerFuncType | None = None,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ):
         super().__init__(
-            source_annotation, target_annotation, func=func, variance=variance
+            source_annotation, target_annotation, func=func, match_subtype=match_subtype
         )
 
     def __repr__(self) -> str:
-        return f"Serializer(source={self._source_annotation}, func={self._func_wrapper}, variance={self._variance})"
+        return f"Serializer(source={self._source_annotation}, func={self._func_wrapper}, match_subtype={self._match_subtype})"
 
 
 class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
@@ -169,16 +166,14 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
     def register(self, serializer: BaseSerializer, /): ...
 
     @overload
-    def register(
-        self, func: SerializerFuncType, /, *, variance: VarianceType = "contravariant"
-    ): ...
+    def register(self, func: SerializerFuncType, /, *, match_subtype: bool = False): ...
 
     def register(
         self,
         serializer_or_func: BaseSerializer | SerializerFuncType,
         /,
         *,
-        variance: VarianceType = "contravariant",
+        match_subtype: bool = False,
     ):
         """
         Register a serializer.
@@ -186,7 +181,7 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         serializer = (
             serializer_or_func
             if isinstance(serializer_or_func, BaseSerializer)
-            else Serializer.from_func(serializer_or_func, variance=variance)
+            else Serializer.from_func(serializer_or_func, match_subtype=match_subtype)
         )
         self._register_converter(serializer)
 
