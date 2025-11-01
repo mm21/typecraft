@@ -419,8 +419,13 @@ def validate_array(
 
 
 VALIDATORS = (
-    Validator(Table, BaseTableWrapper, func=validate_table),
-    Validator(InlineTable, BaseInlineTableWrapper, func=validate_table),
+    Validator(Table, BaseTableWrapper, func=validate_table, match_target_subtype=True),
+    Validator(
+        InlineTable,
+        BaseInlineTableWrapper,
+        func=validate_table,
+        match_target_subtype=True,
+    ),
     Validator(Array, ArrayWrapper, func=validate_array),
     Validator(AoT, TableArrayWrapper, func=validate_array),
 )

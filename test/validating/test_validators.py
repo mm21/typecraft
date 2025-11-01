@@ -75,7 +75,7 @@ def test_match_subtype():
     """
 
     converter = Validator(str, int)
-    converter_match_subtype = Validator(str, int, match_subtype=True)
+    converter_match_subtype = Validator(str, int, match_target_subtype=True)
     obj = "123"
 
     # non-match_subtype converter cannot convert to bool, strictly int
@@ -106,7 +106,7 @@ def test_registry():
 
     # register converters
     registry = ValidatorRegistry()
-    registry.register(str_to_int_inv, match_subtype=True)
+    registry.register(str_to_int_inv, match_target_subtype=True)
     registry.register(str_to_int)
 
     # use the registry
@@ -114,7 +114,7 @@ def test_registry():
 
     validator = registry.find(obj, Annotation(str), Annotation(int))
     assert validator
-    assert validator.match_subtype is False
+    assert validator.match_target_subtype is False
     assert (
         validator.convert(obj, Annotation(str), Annotation(int), _create_handle(int))
         == 42
@@ -122,7 +122,7 @@ def test_registry():
 
     validator = registry.find(obj, Annotation(str), Annotation(bool))
     assert validator
-    assert validator.match_subtype is True
+    assert validator.match_target_subtype is True
     assert (
         validator.convert(obj, Annotation(str), Annotation(bool), _create_handle(bool))
         is True

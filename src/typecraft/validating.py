@@ -115,7 +115,8 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ): ...
 
     @overload
@@ -126,7 +127,8 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ): ...
 
     def __init__(
@@ -136,14 +138,19 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ):
         super().__init__(
-            source_annotation, target_annotation, func=func, match_subtype=match_subtype
+            source_annotation,
+            target_annotation,
+            func=func,
+            match_source_subtype=match_source_subtype,
+            match_target_subtype=match_target_subtype,
         )
 
     def __repr__(self) -> str:
-        return f"Validator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, match_subtype={self._match_subtype})"
+        return f"Validator(source={self._source_annotation}, target={self._target_annotation}, func={self._func_wrapper}, match_source_subtype={self._match_source_subtype}, match_target_subtype={self._match_target_subtype})"
 
 
 class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
@@ -170,7 +177,8 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         func: ValidatorFuncType,
         /,
         *,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ): ...
 
     def register(
@@ -178,7 +186,8 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         validator_or_func: BaseValidator | ValidatorFuncType,
         /,
         *,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ):
         """
         Register a validator by `Validator` object or function.
@@ -186,7 +195,11 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         validator = (
             validator_or_func
             if isinstance(validator_or_func, BaseValidator)
-            else Validator.from_func(validator_or_func, match_subtype=match_subtype)
+            else Validator.from_func(
+                validator_or_func,
+                match_source_subtype=match_source_subtype,
+                match_target_subtype=match_target_subtype,
+            )
         )
         self._register_converter(validator)
 

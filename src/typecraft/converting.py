@@ -209,9 +209,20 @@ class ConverterInterface:
     """
 
     def __init__(
-        self, source_annotation: Any, target_annotation: Any, /, *, match_subtype: bool
+        self,
+        source_annotation: Any,
+        target_annotation: Any,
+        /,
+        *,
+        match_source_subtype: bool,
+        match_target_subtype: bool,
     ):
-        _ = source_annotation, target_annotation, match_subtype
+        _ = (
+            source_annotation,
+            target_annotation,
+            match_source_subtype,
+            match_target_subtype,
+        )
 
 
 class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
@@ -232,15 +243,29 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
     Annotation specifying type to convert to.
     """
 
-    # TODO: match source/target subtype
-    _match_subtype: bool
+    _match_source_subtype: bool
+    """
+    Whether to match subtypes of the source annotation.
+    """
+
+    _match_target_subtype: bool
+    """
+    Whether to match subtypes of the target annotation.
+    """
 
     def __init__(
-        self, source_annotation: Any, target_annotation: Any, /, *, match_subtype: bool
+        self,
+        source_annotation: Any,
+        target_annotation: Any,
+        /,
+        *,
+        match_source_subtype: bool,
+        match_target_subtype: bool,
     ):
         self._source_annotation = Annotation._normalize(source_annotation)
         self._target_annotation = Annotation._normalize(target_annotation)
-        self._match_subtype = match_subtype
+        self._match_source_subtype = match_source_subtype
+        self._match_target_subtype = match_target_subtype
 
     @property
     def source_annotation(self) -> Annotation:
@@ -251,8 +276,12 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         return self._target_annotation
 
     @property
-    def match_subtype(self) -> bool:
-        return self._match_subtype
+    def match_source_subtype(self) -> bool:
+        return self._match_source_subtype
+
+    @property
+    def match_target_subtype(self) -> bool:
+        return self._match_target_subtype
 
     def check_match(
         self,
@@ -263,17 +292,20 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         """
         Check if this converter matches for the given object and annotation.
 
-        Called internally by the framework to determine if this converter
-        should be considered for conversion.
+        Checks whether source and target annotations are compatible with this converter,
+        taking into account match_source_subtype and match_target_subtype settings.
+
+        :param source_annotation: Annotation of the source object
+        :param target_annotation: Target type to convert to
+        :return: True if converter matches
         """
-        # TODO: check based on match_subtype of source vs target for each direction
-        if not self._check_subtype_match(target_annotation, self._target_annotation):
-            return False
-
-        if not self._check_subtype_match(source_annotation, self._source_annotation):
-            return False
-
-        return True
+        source_match = self.__check_match(
+            self._source_annotation, source_annotation, self._match_source_subtype
+        )
+        target_match = self.__check_match(
+            self._target_annotation, target_annotation, self._match_target_subtype
+        )
+        return source_match and target_match
 
     def can_convert(
         self,
@@ -283,11 +315,15 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         /,
     ) -> bool:
         """
-        Check if this converter can convert the given object.
+        Check if converter can convert the given object. Can be overridden by custom
+        subclasses.
 
         Called internally by the framework after check_match() succeeds.
-        Base implementation returns True (assumes type match implies convertibility).
-        Subclasses can override to add additional validation logic.
+
+        :param obj: Object to potentially convert
+        :param source_annotation: Annotation of source object
+        :param target_annotation: Annotation to convert to
+        :return: True if converter can handle conversion
         """
         _ = obj, source_annotation, target_annotation
         return True
@@ -302,57 +338,51 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         /,
     ) -> TargetT:
         """
-        Convert the object.
+        Convert object.
 
-        User must define conversion logic. Expected to always succeed since
+        Subclass must define conversion logic. Expected to always succeed since
         check_match() and can_convert() returned True.
+
+        :param obj: Object to convert
+        :param source_annotation: Annotation of source object
+        :param target_annotation: Annotation to convert to
+        :param handle: Handle for conversion operations
+        :return: Converted object
         """
 
-    def _check_subtype_match(
-        self,
-        annotation: Annotation,
-        ref_annotation: Annotation,
+    def __check_match(
+        self, annotation: Annotation, check_annotation: Annotation, match_subtype: bool
     ) -> bool:
-        """
-        Check if annotation matches reference based on match_subtype.
-        """
-        if self.match_subtype:
-            # annotation can be a subclass of reference
-            return annotation.is_subtype(ref_annotation)
+        if match_subtype:
+            return check_annotation.is_subtype(annotation)
         else:
-            # exact match only
-            return annotation == ref_annotation
+            return check_annotation == annotation
 
 
 class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
     """
-    Mixin that provides from_func() classmethod and convert() implementation
-    for converters that wrap a function.
+    Mixin class for function-based converters.
     """
 
     _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, HandleT] | None
-    """
-    Function taking source type and returning an instance of target type.
-    """
-
-    _match_subtype: bool
-    """
-    Whether to match subtypes.
-    """
 
     def __init__(
         self,
         source_annotation: Any,
         target_annotation: Any,
+        /,
         *,
         func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ):
         super().__init__(
-            source_annotation, target_annotation, match_subtype=match_subtype
+            source_annotation,
+            target_annotation,
+            match_source_subtype=match_source_subtype,
+            match_target_subtype=match_target_subtype,
         )
         self._func_wrapper = ConverterFunctionWrapper(func) if func else None
-        self._match_subtype = match_subtype
 
     @classmethod
     def from_func(
@@ -362,14 +392,19 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         # TODO: can_convert_func
         /,
         *,
-        match_subtype: bool = False,
+        match_source_subtype: bool = False,
+        match_target_subtype: bool = False,
     ) -> Self:
         """
-        Create a converter from a function by inspecting its signature.
-        """
-        func_wrapper = ConverterFunctionWrapper[Any, TargetT, HandleT](func)
+        Create converter from function by inspecting its signature to infer source and
+        target types.
 
-        # validate sig: input and return types must be annotated
+        :param func: Converter function
+        :param match_source_subtype: Match subtypes of source annotation
+        :param match_target_subtype: Match subtypes of target annotation
+        :return: Converter instance
+        """
+        func_wrapper = ConverterFunctionWrapper(func)
         assert func_wrapper.obj_param.annotation
         assert func_wrapper.sig_info.return_annotation
 
@@ -377,7 +412,8 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
             func_wrapper.obj_param.annotation,
             func_wrapper.sig_info.return_annotation,
             func=func,
-            match_subtype=match_subtype,
+            match_source_subtype=match_source_subtype,
+            match_target_subtype=match_target_subtype,
         )
 
     def convert(
