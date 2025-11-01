@@ -113,7 +113,7 @@ class Serializer[SourceT](
         /,
         *,
         func: SerializerFuncType[SourceT] | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
 
@@ -125,7 +125,7 @@ class Serializer[SourceT](
         /,
         *,
         func: SerializerFuncType | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
 
@@ -136,7 +136,7 @@ class Serializer[SourceT](
         /,
         *,
         func: SerializerFuncType | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
         super().__init__(
@@ -178,7 +178,7 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         func: SerializerFuncType,
         /,
         *,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
 
@@ -187,7 +187,7 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         serializer_or_func: BaseSerializer | SerializerFuncType,
         /,
         *,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
         """

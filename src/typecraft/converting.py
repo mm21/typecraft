@@ -373,7 +373,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         /,
         *,
         func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
         super().__init__(
@@ -392,7 +392,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         # TODO: can_convert_func
         /,
         *,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ) -> Self:
         """

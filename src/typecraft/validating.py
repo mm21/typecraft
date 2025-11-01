@@ -115,7 +115,7 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
 
@@ -127,7 +127,7 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
 
@@ -138,7 +138,7 @@ class Validator[TargetT](
         /,
         *,
         func: ValidatorFuncType[TargetT] | None = None,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
         super().__init__(
@@ -177,7 +177,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         func: ValidatorFuncType,
         /,
         *,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
 
@@ -186,7 +186,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         validator_or_func: BaseValidator | ValidatorFuncType,
         /,
         *,
-        match_source_subtype: bool = False,
+        match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
         """
