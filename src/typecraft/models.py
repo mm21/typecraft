@@ -178,9 +178,9 @@ class ModelConfig:
     Configures model.
     """
 
-    lenient: bool = False
+    strict: bool = True
     """
-    Coerce values to expected type if possible.
+    Don't attempt to coerce values to the expected type; just validate.
     """
 
     validate_on_assignment: bool = False
@@ -232,7 +232,7 @@ class BaseModel:
                 value_,
                 field_info.annotation.raw,
                 *self.__converters,
-                lenient=self.model_config.lenient,
+                strict=self.model_config.strict,
             )
             value_ = self.model_post_validate(field_info, value_)
         else:

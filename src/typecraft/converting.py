@@ -203,7 +203,21 @@ class BaseConversionHandle[FrameT: BaseConversionFrame, ParamsT: Any]:
         return self._frame.params
 
 
-class BaseConverter[SourceT, TargetT, HandleT](ABC):
+class ConverterInterface:
+    """
+    Defines the interface for converters and mixins.
+    """
+
+    def __init__(
+        self,
+        source_annotation: Any,
+        target_annotation: Any,
+        /,
+    ):
+        _ = source_annotation, target_annotation
+
+
+class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
     """
     Base class for typed converters (validators and serializers).
 
@@ -335,7 +349,7 @@ class BaseConverter[SourceT, TargetT, HandleT](ABC):
             return annotation.is_subtype(ref_annotation)
 
 
-class FromFuncMixin[SourceT, TargetT, HandleT]:
+class FromFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
     """
     Mixin that provides from_func() classmethod and convert() implementation
     for converters that wrap a function.
@@ -356,12 +370,11 @@ class FromFuncMixin[SourceT, TargetT, HandleT]:
         self,
         source_annotation: Any,
         target_annotation: Any,
-        /,
         *,
         func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
         variance: VarianceType = "contravariant",
     ):
-        super().__init__(source_annotation, target_annotation)  # type: ignore
+        super().__init__(source_annotation, target_annotation)
         self._func_wrapper = ConverterFunctionWrapper(func) if func else None
         self._variance = variance
 
@@ -372,7 +385,9 @@ class FromFuncMixin[SourceT, TargetT, HandleT]:
     @classmethod
     def from_func(
         cls,
+        # TODO: rename: convert_func
         func: ConverterFuncType[SourceT, TargetT, HandleT],
+        # TODO: can_convert_func
         /,
         *,
         variance: VarianceType = "contravariant",

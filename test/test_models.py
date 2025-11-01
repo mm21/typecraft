@@ -28,8 +28,8 @@ class ValidateOnAssignmentTest(BaseModel):
     b: str = "abc"
 
 
-class LenientTest(BaseModel):
-    model_config = ModelConfig(lenient=True)
+class CoercionTest(BaseModel):
+    model_config = ModelConfig(strict=False)
 
     a: int = 123
     b: str = "abc"
@@ -86,7 +86,7 @@ def test_conversion():
     with raises(ValueError):
         dc.a = "321"  # type: ignore
 
-    dc = LenientTest(a="321")  # type: ignore
+    dc = CoercionTest(a="321")  # type: ignore
     assert dc.a == 321
 
     # not validated upon assignment

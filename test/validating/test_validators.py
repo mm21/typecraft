@@ -26,7 +26,7 @@ def test_any():
 
     def func2(obj: Any, handle: ValidationHandle) -> Any:
         assert isinstance(obj, int)
-        assert not handle.params.lenient
+        assert handle.params.strict
         assert handle.target_annotation.concrete_type is object
         return -2 * obj
 
@@ -56,12 +56,16 @@ def test_generic():
     converter = ValidatingConverter(list[int], list[str], func=func)
     obj = [123]
 
-    assert converter.can_convert(obj, list[str])
-    assert not converter.can_convert(obj, list[float])
-    assert not converter.can_convert(obj, list[Any])
-    assert not converter.can_convert(obj, list)
+    assert converter.can_convert(obj, Annotation(list[int]), Annotation(list[str]))
+    assert converter.can_convert(obj, Annotation(list[int]), Annotation(list[Any]))
+    assert not converter.can_convert(
+        obj, Annotation(list[float]), Annotation(list[str])
+    )
+    assert not converter.can_convert(obj, Annotation(list[Any]), Annotation(list[str]))
 
-    conv_obj = converter.validate(obj, _create_handle(list[str]))
+    conv_obj = converter.convert(
+        obj, Annotation(list[int]), Annotation(list[str]), _create_handle(list[str])
+    )
     assert conv_obj == ["123"]
 
 
@@ -75,12 +79,12 @@ def test_invariant():
     obj = "123"
 
     # contravariant converter can convert to bool since it's a subclass of int
-    assert converter_contra.can_convert(obj, int)
-    assert converter_contra.can_convert(obj, bool)
+    assert converter_contra.can_convert(obj, Annotation(str), Annotation(int))
+    assert converter_contra.can_convert(obj, Annotation(str), Annotation(bool))
 
     # invariant convert cannot convert to bool, strictly int
-    assert converter_inv.can_convert(obj, int)
-    assert not converter_inv.can_convert(obj, bool)
+    assert converter_inv.can_convert(obj, Annotation(str), Annotation(int))
+    assert not converter_inv.can_convert(obj, Annotation(str), Annotation(bool))
 
 
 def test_registry():
@@ -108,15 +112,21 @@ def test_registry():
     # use the registry
     obj = "42"
 
-    converter = registry.find(obj, Annotation(int))
+    converter = registry.find(obj, Annotation(str), Annotation(int))
     assert converter
     assert converter.variance == "invariant"
-    assert converter.validate(obj, _create_handle(int)) == 42
+    assert (
+        converter.convert(obj, Annotation(str), Annotation(int), _create_handle(int))
+        == 42
+    )
 
-    converter = registry.find(obj, Annotation(bool))
+    converter = registry.find(obj, Annotation(str), Annotation(bool))
     assert converter
     assert converter.variance == "contravariant"
-    assert converter.validate(obj, _create_handle(bool)) is True
+    assert (
+        converter.convert(obj, Annotation(str), Annotation(bool), _create_handle(bool))
+        is True
+    )
 
 
 def _create_handle(
@@ -127,7 +137,7 @@ def _create_handle(
         source_annotation=ANY,
         target_annotation=Annotation(target_annotation),
         context=None,
-        params=params or ValidationParams(lenient=False),
+        params=params or ValidationParams(strict=True),
         engine=engine,
     )
     return ValidationHandle(frame)

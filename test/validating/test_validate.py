@@ -69,42 +69,42 @@ def test_conversion():
     for converters in [(ValidatingConverter(str, int),), ()]:
 
         # list[str | int] -> list[int]
-        result = validate(["1", "2", 3], list[int], *converters, lenient=True)
+        result = validate(["1", "2", 3], list[int], *converters, strict=False)
         assert result == [1, 2, 3]
 
         # list[tuple[str]] -> list[list[int]]
         obj = [("1", "2"), ("3", "4")]
-        result = validate(obj, list[list[int]], *converters, lenient=True)
+        result = validate(obj, list[list[int]], *converters, strict=False)
         assert result == [[1, 2], [3, 4]]
 
         # list[str] -> tuple[int, str]
         obj = ["1", "2"]
-        result = validate(obj, tuple[int, str], *converters, lenient=True)
+        result = validate(obj, tuple[int, str], *converters, strict=False)
         assert result == (1, "2")
 
         # list[int] -> tuple[str, ...]
         obj = [1, 2]
-        result = validate(obj, tuple[str, ...], *converters, lenient=True)
+        result = validate(obj, tuple[str, ...], *converters, strict=False)
         assert result == ("1", "2")
 
         # list[list[tuple[str, str]]] -> list[list[list[int]]]
         obj = [[("1", "2"), ("3", "4")], [("5", "6")]]
-        result = validate(obj, list[list[list[int]]], *converters, lenient=True)
+        result = validate(obj, list[list[list[int]]], *converters, strict=False)
         assert result == [[[1, 2], [3, 4]], [[5, 6]]]
 
         # dict[int, list[str]] -> dict[str, list[int]]
         obj = {1: ["1", "2"], 2: ["3", "4"]}
-        result = validate(obj, dict[str, list[int]], *converters, lenient=True)
+        result = validate(obj, dict[str, list[int]], *converters, strict=False)
         assert result == {"1": [1, 2], "2": [3, 4]}
 
         # list[int] -> set[str]
         obj = [1, 2, 3, 2, 1]
-        result = validate(obj, set[str], *converters, lenient=True)
+        result = validate(obj, set[str], *converters, strict=False)
         assert result == {"1", "2", "3"}
 
         # str -> int | float
         obj = "1.5"
-        result = validate(obj, int | float, *converters, lenient=True)
+        result = validate(obj, int | float, *converters, strict=False)
         assert result == 1.5
 
         # annotated type
@@ -113,13 +113,13 @@ def test_conversion():
             obj,
             Annotated[list[int], "positive integers"],
             *converters,
-            lenient=True,
+            strict=False,
         )
         assert result == [1, 2, 3]
 
         # range -> list[int]
         obj = range(3)
-        result = validate(obj, list[int], *converters, lenient=True)
+        result = validate(obj, list[int], *converters, strict=False)
         assert result == [0, 1, 2]
 
         # generator -> list[int]
@@ -128,12 +128,12 @@ def test_conversion():
                 yield i
 
         obj = gen()
-        result = validate(obj, list[int], *converters, lenient=True)
+        result = validate(obj, list[int], *converters, strict=False)
         assert result == [0, 1, 2]
 
         # generator -> tuple[int, int, int]
         obj = gen()
-        result = validate(obj, tuple[int, int, int], *converters, lenient=True)
+        result = validate(obj, tuple[int, int, int], *converters, strict=False)
         assert result == (0, 1, 2)
 
 
@@ -157,8 +157,8 @@ def test_normalize_to_list():
     obj1 = [1, 2, "3"]
     obj2 = 1
 
-    norm_obj1 = normalize_to_list(obj1, str, lenient=True)
+    norm_obj1 = normalize_to_list(obj1, str, strict=False)
     assert norm_obj1 == ["1", "2", "3"]
 
-    norm_obj2 = normalize_to_list(obj2, str, lenient=True)
+    norm_obj2 = normalize_to_list(obj2, str, strict=False)
     assert norm_obj2 == ["1"]

@@ -56,10 +56,9 @@ class ValidationParams:
     Validation params as passed by user.
     """
 
-    # TODO: rename as strict
-    lenient: bool
+    strict: bool
     """
-    Whether to invoke converters if object is not of correct type.
+    Don't attempt to coerce values to the expected type; just validate.
     """
 
 
@@ -202,7 +201,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
     def _get_builtin_registries(
         self, frame: ValidationFrame
     ) -> tuple[ValidatorRegistry, ...]:
-        return (BUILTIN_REGISTRY,) if frame.params.lenient else ()
+        return () if frame.params.strict else (BUILTIN_REGISTRY,)
 
     def _should_convert(self, obj: Any, frame: ValidationFrame) -> bool:
         """
@@ -213,7 +212,7 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
         return not _check_valid(obj, frame.target_annotation)
 
     def _handle_missing_converter(self, obj: Any, frame: ValidationFrame):
-        if frame.params.lenient:
+        if not frame.params.strict:
             # try direct object construction
             # TODO: create converter for each builtin type instead of blindly attempting
             # object construction
@@ -380,7 +379,7 @@ def validate[T](
     target_type: type[T],
     /,
     *validators: ValidatingConverter[T],
-    lenient: bool = False,
+    strict: bool = True,
     context: Any = None,
 ) -> T: ...
 
@@ -392,7 +391,7 @@ def validate[T](
     registry: ValidatorRegistry,
     /,
     *,
-    lenient: bool = False,
+    strict: bool = True,
     context: Any = None,
 ) -> T: ...
 
@@ -403,7 +402,7 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: ValidatingConverter[Any],
-    lenient: bool = False,
+    strict: bool = True,
     context: Any = None,
 ) -> Any: ...
 
@@ -415,7 +414,7 @@ def validate(
     registry: ValidatorRegistry,
     /,
     *,
-    lenient: bool = False,
+    strict: bool = True,
     context: Any = None,
 ) -> Any: ...
 
@@ -425,7 +424,7 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators_or_registry: ValidatingConverter | ValidatorRegistry,
-    lenient: bool = False,
+    strict: bool = True,
     context: Any = None,
 ) -> Any:
     """
@@ -439,7 +438,7 @@ def validate(
         ValidatingConverter, ValidatorRegistry, *validators_or_registry
     )
     engine = ValidationEngine(registry=registry)
-    params = ValidationParams(lenient=lenient)
+    params = ValidationParams(strict=strict)
     frame = ValidationFrame(
         source_annotation=Annotation(type(obj)),
         target_annotation=target_annotation,
@@ -457,7 +456,7 @@ def normalize_to_list[T](
     target_type: type[T],
     /,
     *validators: ValidatingConverter[T],
-    lenient: bool = False,
+    strict: bool = True,
     context: Any = None,
 ) -> list[T]:
     """
@@ -477,7 +476,7 @@ def normalize_to_list[T](
         ValidatingConverter, ValidatorRegistry, *validators
     )
     engine = ValidationEngine(registry=registry)
-    params = ValidationParams(lenient=lenient)
+    params = ValidationParams(strict=strict)
 
     # validate each object and place in a new list
     return [
