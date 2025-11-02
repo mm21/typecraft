@@ -24,7 +24,9 @@ type AnnotatedAlias = Annotated[int, "doc"]
 type ListAlias = list[int]
 type AnnotatedListAlias = Annotated[ListAlias, "doc"]
 type UnionWithAnnotatedAlias = Union[Annotated[int, "positive"], str]
-type DeepAlias = Annotated[Union[int, str], "constraint"]
+type AnnotatedUnionAlias = Annotated[Union[int, str], "constraint"]
+type ParameterizedUnionAlias[T] = Annotated[list[T] | tuple[T], "test"]
+type DeepParameterizedUnionAlias[T] = ParameterizedUnionAlias[T] | set[T]
 
 
 def test_is_subtype():
@@ -164,6 +166,15 @@ def test_flatten_union():
     result = flatten_union(Union[SimpleAlias, str])
     assert result == (int, str)
 
+    result = flatten_union(ParameterizedUnionAlias)
+    assert len(result) == 2
+    assert tuple(get_origin(r) for r in result) == (list, tuple)
+
+    # union in type alias
+    result = flatten_union(DeepParameterizedUnionAlias)
+    assert len(result) == 3
+    assert tuple(get_origin(r) for r in result) == (list, tuple, set)
+
 
 def test_flatten_union_with_annotated():
     # annotated in union (preserve_extras=False)
@@ -221,11 +232,11 @@ def test_compositions():
     flattened = flatten_union(UnionWithAnnotatedAlias)
     assert flattened == (int, str)
 
-    # deeply nested
-    normalized = normalize_annotation(DeepAlias)
+    # union nested in annotated
+    normalized = normalize_annotation(AnnotatedUnionAlias)
     assert is_union(normalized)
 
-    flattened = flatten_union(DeepAlias)
+    flattened = flatten_union(AnnotatedUnionAlias)
     assert flattened == (int, str)
 
 

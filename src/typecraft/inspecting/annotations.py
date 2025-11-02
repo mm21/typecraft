@@ -7,12 +7,13 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from inspect import Parameter
-from types import EllipsisType, NoneType, UnionType
+from types import EllipsisType, GenericAlias, NoneType, UnionType
 from typing import (
     Annotated,
     Any,
     Literal,
     TypeAliasType,
+    TypeVar,
     Union,
     get_args,
     get_origin,
@@ -410,7 +411,17 @@ def unwrap_alias(annotation: Any, /) -> Any:
     """
     If annotation is a `TypeAlias`, extract the corresponding definition.
     """
-    return annotation.__value__ if isinstance(annotation, TypeAliasType) else annotation
+    if isinstance(annotation, TypeAliasType):
+        return annotation.__value__
+    elif isinstance(annotation, GenericAlias):
+        # might have e.g.:
+        # type MyType[T] = list[T]
+        # unwrap_alias(MyType[T])
+        origin = get_origin(annotation)
+        if isinstance(origin, TypeAliasType):
+            # have e.g. MyType[T], return list[T]
+            return origin.__value__
+    return annotation
 
 
 def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
@@ -463,6 +474,9 @@ def get_concrete_type(annotation: Any, /) -> type:
 
     if concrete_type in {Literal, Any}:
         return object
+
+    if isinstance(concrete_type, TypeVar):
+        concrete_type = concrete_type.__bound__
 
     # convert singletons to respective type so isinstance() works as expected
     singleton_map = {None: NoneType, Ellipsis: EllipsisType, Union: UnionType}
