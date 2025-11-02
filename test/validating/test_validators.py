@@ -15,6 +15,79 @@ from typecraft.validating import (
 )
 
 
+def test_match_any():
+    """
+    Test conversion match to/from Any.
+    """
+
+    validator = Validator(Any, str)
+
+    # can convert anything to str
+    assert validator.check_match(Annotation(int), Annotation(str))
+    assert validator.check_match(Annotation(int), ANY)
+    assert validator.check_match(ANY, Annotation(str))
+    assert validator.check_match(ANY, ANY)
+    assert not validator.check_match(ANY, Annotation(int))
+
+
+def test_match_subtype():
+    """
+    Test converter with match_subtype=True.
+    """
+
+    validator = Validator(str, int)
+
+    # cannot convert to bool, strictly int
+    assert validator.check_match(Annotation(str), Annotation(int))
+    assert not validator.check_match(Annotation(str), Annotation(bool))
+
+    validator = Validator(str, int, match_target_subtype=True)
+
+    # can convert to bool since it's a subclass of int
+    assert validator.check_match(Annotation(str), Annotation(int))
+    assert validator.check_match(Annotation(str), Annotation(bool))
+
+    validator = Validator(int, Any, match_target_subtype=True)
+
+    # can convert from int to anything
+    # - not very practical since int is already a subtype of Any
+    assert validator.check_match(Annotation(int), ANY)
+    assert validator.check_match(Annotation(int), Annotation(str))
+    assert not validator.check_match(ANY, Annotation(str))
+
+
+def test_match_custom():
+    """
+    Test conversion match to/from custom subclasses.
+    """
+
+    class CustomInt(int):
+        pass
+
+    class CustomStr(str):
+        pass
+
+    validator = Validator(int, str)
+
+    # can convert to str, but not custom str
+    assert validator.check_match(Annotation(int), Annotation(str))
+    assert validator.check_match(Annotation(CustomInt), Annotation(str))
+    assert not validator.check_match(Annotation(int), Annotation(CustomStr))
+    assert not validator.check_match(Annotation(CustomInt), Annotation(CustomStr))
+
+    validator = Validator(int, CustomStr)
+
+    # can convert to str or custom str
+    assert validator.check_match(Annotation(int), Annotation(str))
+    assert validator.check_match(Annotation(int), Annotation(CustomStr))
+
+    validator = Validator(CustomInt, str)
+
+    # can convert from custom int, but not int
+    assert validator.check_match(Annotation(CustomInt), Annotation(str))
+    assert not validator.check_match(Annotation(int), Annotation(str))
+
+
 def test_any():
     """
     Test conversion to Any.
@@ -50,41 +123,25 @@ def test_generic():
     Test conversion with generic types.
     """
 
-    def func(obj: Any) -> list[str]:
+    def func(obj: list[int]) -> list[str]:
         return [str(o) for o in obj]
 
-    converter = Validator(list[int], list[str], func=func)
+    validator = Validator(list[int], list[str], func=func)
     obj = [123]
 
-    assert converter.can_convert(obj, Annotation(list[int]), Annotation(list[str]))
-    assert converter.can_convert(obj, Annotation(list[int]), Annotation(list[Any]))
-    assert not converter.can_convert(
-        obj, Annotation(list[float]), Annotation(list[str])
-    )
-    assert not converter.can_convert(obj, Annotation(list[Any]), Annotation(list[str]))
+    assert validator.check_match(Annotation(list[int]), Annotation(list[str]))
+    assert validator.check_match(Annotation(list[int]), Annotation(list[Any]))
+    assert not validator.check_match(Annotation(list[float]), Annotation(list[str]))
+    assert not validator.check_match(Annotation(list[Any]), Annotation(list[str]))
 
-    conv_obj = converter.convert(
+    conv_obj = validator.convert(
         obj, Annotation(list[int]), Annotation(list[str]), _create_handle(list[str])
     )
     assert conv_obj == ["123"]
 
-
-def test_match_subtype():
-    """
-    Test converter with match_subtype=True.
-    """
-
-    converter = Validator(str, int)
-    converter_match_subtype = Validator(str, int, match_target_subtype=True)
-    obj = "123"
-
-    # non-match_subtype converter cannot convert to bool, strictly int
-    assert converter.can_convert(obj, Annotation(str), Annotation(int))
-    assert not converter.can_convert(obj, Annotation(str), Annotation(bool))
-
-    # match_subtype converter can convert to bool since it's a subclass of int
-    assert converter_match_subtype.can_convert(obj, Annotation(str), Annotation(int))
-    assert converter_match_subtype.can_convert(obj, Annotation(str), Annotation(bool))
+    conv_obj = validator.convert(
+        obj, Annotation(list[int]), Annotation(list[Any]), _create_handle(list[Any])
+    )
 
 
 def test_registry():
@@ -92,13 +149,13 @@ def test_registry():
     Test converter registry.
     """
 
-    def str_to_int_inv(s: str) -> int:
+    def str_to_int(s: str) -> int:
         """
         Convert string to integer, not encompassing bool.
         """
         return int(s)
 
-    def str_to_int(s: str, handle: ValidationHandle) -> int:
+    def str_to_int_subtype(s: str, handle: ValidationHandle) -> int:
         """
         Convert string to integer, also encompassing bool.
         """
@@ -106,8 +163,8 @@ def test_registry():
 
     # register converters
     registry = ValidatorRegistry()
-    registry.register(str_to_int_inv, match_target_subtype=True)
     registry.register(str_to_int)
+    registry.register(str_to_int_subtype, match_target_subtype=True)
 
     # use the registry
     obj = "42"

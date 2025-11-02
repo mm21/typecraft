@@ -303,7 +303,10 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
             self._source_annotation, source_annotation, self._match_source_subtype
         )
         target_match = self.__check_match(
-            self._target_annotation, target_annotation, self._match_target_subtype
+            self._target_annotation,
+            target_annotation,
+            self._match_target_subtype,
+            covariant=True,
         )
         return source_match and target_match
 
@@ -351,12 +354,22 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         """
 
     def __check_match(
-        self, annotation: Annotation, check_annotation: Annotation, match_subtype: bool
+        self,
+        annotation: Annotation,
+        check_annotation: Annotation,
+        match_subtype: bool,
+        covariant: bool = False,
     ) -> bool:
-        if match_subtype:
-            return check_annotation.is_subtype(annotation)
+        if match_subtype and check_annotation.is_subtype(annotation):
+            # source/target can match a more specific type (contravariant)
+            return True
+        elif covariant and annotation.is_subtype(check_annotation):
+            # target can match a less specific type (covariant)
+            return True
         else:
-            return check_annotation == annotation
+            # source/target must match exactly (invariant)
+            # TODO: handle unions?
+            return annotation == check_annotation
 
 
 class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
