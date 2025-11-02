@@ -202,9 +202,7 @@ class Annotation:
 
         return True
 
-    # TODO: option: shallow=False - don't recurse into args if True (only handle
-    # literal/union/concrete_cls)
-    def is_type(self, obj: Any, /) -> bool:
+    def is_type(self, obj: Any, /, *, recurse: bool = True) -> bool:
         """
         Check if object is an instance of this annotation; loosely equivalent to
         `isinstance(obj, annotation)`.
@@ -219,7 +217,7 @@ class Annotation:
             return any(obj == value for value in self.args)
 
         if self.is_union:
-            return any(a.is_type(obj) for a in self.arg_annotations)
+            return any(a.is_type(obj, recurse=recurse) for a in self.arg_annotations)
 
         if self.is_callable:
             return self._check_callable(obj)
@@ -227,10 +225,10 @@ class Annotation:
         if not isinstance(obj, self.concrete_type):
             return False
 
-        if issubclass(self.concrete_type, (list, tuple, set, dict)):
+        if recurse and issubclass(self.concrete_type, (list, tuple, set, dict)):
             return self._check_collection(obj)
 
-        # concrete type matches and is not a collection
+        # concrete type matches and is not a collection (or we're not recursing)
         return True
 
     @classmethod

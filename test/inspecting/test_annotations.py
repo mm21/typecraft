@@ -194,6 +194,15 @@ def test_is_instance():
     assert not a.is_type("c")
     assert not a.is_type(1)
 
+    # no recursion
+    a = Annotation(list[str])
+    assert a.is_type([1], recurse=False)
+    assert not a.is_type([1])
+    a = Annotation(int | str)
+    assert a.is_type(1, recurse=False)
+    assert a.is_type("a", recurse=False)
+    assert not a.is_type(1.0, recurse=False)
+
 
 def test_eq():
     """
