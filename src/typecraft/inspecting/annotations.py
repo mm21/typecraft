@@ -12,6 +12,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    Self,
     TypeAliasType,
     TypeVar,
     Union,
@@ -92,7 +93,35 @@ class Annotation:
     - Otherwise: annotation itself, ensuring it's a type
     """
 
+    __cache: dict[int, Self] = {}
+    """
+    Cache to prevent infinite recursion with recursive type aliases.
+    """
+
+    __init_done: bool = False
+    """
+    Whether initialization has already been completed.
+    """
+
+    def __new__(cls, annotation: Any, /) -> Self:
+        """
+        Create or retrieve cached Annotation instance to support recursive type aliases.
+        """
+        key = id(annotation)
+
+        if obj := cls.__cache.get(key):
+            return obj
+
+        obj = super().__new__(cls)
+        cls.__cache[key] = obj
+        return obj
+
     def __init__(self, annotation: Any, /):
+        # skip initialization if already done or in progress (cached instance)
+        if self.__init_done:
+            return
+
+        self.__init_done = True
         raw, extras = split_annotated(unwrap_alias(annotation))
         raw = unwrap_alias(raw)
 

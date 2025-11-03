@@ -8,6 +8,7 @@ from typing import Any, Literal, Sequence, Union
 from typecraft.inspecting.annotations import Annotation, is_instance, is_subtype
 
 type ListAlias = list[int]
+type RecursiveAlias = list[RecursiveAlias] | int
 
 
 def test_alias():
@@ -18,6 +19,23 @@ def test_alias():
     assert a.origin is list
     assert len(a.args) == 1
     assert a.args[0] is int
+
+
+def test_recursive_alias():
+    """
+    Test recursive alias.
+    """
+    a = Annotation(RecursiveAlias)
+    assert a.is_union
+    assert len(a.arg_annotations) == 2
+
+    arg1, arg2 = a.arg_annotations
+    assert arg1.concrete_type is list
+    assert arg2.concrete_type is int
+
+    # arg1 should be a list of RecursiveAlias, the same Annotation object
+    assert len(arg1.arg_annotations) == 1
+    assert arg1.arg_annotations[0] is a
 
 
 def test_union():
