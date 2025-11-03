@@ -273,7 +273,6 @@ def test_any_vs_object():
     assert Annotation(list[int]).is_subtype(Any)
     assert Annotation(dict[str, Any]).is_subtype(Any)
     assert Annotation(Callable[[int], str]).is_subtype(Any)
-    print("✓ Any as top type: everything is a subtype of Any")
 
     # Any as BOTTOM type - Any is a subtype of everything
     assert Annotation(Any).is_subtype(int)
@@ -282,11 +281,9 @@ def test_any_vs_object():
     assert Annotation(Any).is_subtype(list)
     assert Annotation(Any).is_subtype(list[int])
     assert Annotation(Any).is_subtype(Callable[[str], bool])
-    print("✓ Any as bottom type: Any is a subtype of everything")
 
     # Any is both a subtype of itself (top meets bottom)
     assert Annotation(Any).is_subtype(Any)
-    print("✓ Any is a subtype of itself")
 
     # object is a concrete type
     assert Annotation(int).is_subtype(object)
@@ -296,14 +293,12 @@ def test_any_vs_object():
     assert Annotation(Any).is_subtype(object)
     # and object is a subtype of Any (top type property)
     assert Annotation(object).is_subtype(Any)
-    print("✓ object behaves as a concrete type")
 
     # in generic type parameters, Any maintains its dual nature
     assert Annotation(list[int]).is_subtype(list[Any])  # top type
     assert Annotation(list[Any]).is_subtype(list[int])  # bottom type
     assert Annotation(dict[str, int]).is_subtype(dict[str, Any])  # top type
     assert Annotation(dict[Any, Any]).is_subtype(dict[str, int])  # bottom type
-    print("✓ Any in generic parameters maintains dual nature")
 
     # list[object] is different from list[Any]
     assert Annotation(list[int]).is_subtype(list[object])  # normal covariance
@@ -312,7 +307,6 @@ def test_any_vs_object():
     )  # object is NOT bottom type
     # but list[Any] IS a subtype of list[int] (bottom type property)
     assert Annotation(list[Any]).is_subtype(list[int])
-    print("✓ list[object] vs list[Any] distinction works")
 
     # with callables, Any in parameters and return types
     # Any in return (bottom type): can return anything
@@ -322,21 +316,16 @@ def test_any_vs_object():
     # Both directions work due to Any's dual nature
     assert Annotation(Callable[[int], str]).is_subtype(Callable[[Any], Any])
     assert Annotation(Callable[[Any], Any]).is_subtype(Callable[[int], str])
-    print("✓ Any in callables maintains dual nature")
 
     # nested generics
     assert Annotation(list[list[int]]).is_subtype(list[list[Any]])  # top type
     assert Annotation(list[list[Any]]).is_subtype(list[list[int]])  # bottom type
     assert Annotation(list[list[int]]).is_subtype(list[Any])  # top type
     assert Annotation(list[Any]).is_subtype(list[list[int]])  # bottom type
-    print("✓ Nested generics with Any work correctly")
 
     # unions with Any
     assert Annotation(int | str).is_subtype(Any)  # top type
     assert Annotation(Any).is_subtype(int | str)  # bottom type
-    print("✓ Unions with Any work correctly")
-
-    print("\n✓ All Any vs object tests passed!")
 
 
 def test_callable():
