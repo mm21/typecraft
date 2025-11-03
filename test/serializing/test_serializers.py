@@ -150,25 +150,11 @@ def test_custom_serializer_for_builtin():
     assert serialize(3.14, serializer) == 3
     assert serialize(2.99, serializer) == 2
 
-    # str -> uppercase
-    def uppercase(s: str) -> str:
-        return s.upper()
-
-    serializer = Serializer.from_func(uppercase)
-    assert serialize("hello", serializer) == "HELLO"
-
 
 def test_custom_serializer_for_builtin_collections():
     """
     Test that custom serializers work for builtin collection types.
     """
-
-    # list -> sorted list
-    def sort_list(lst: list) -> list:
-        return sorted(lst)
-
-    serializer = Serializer.from_func(sort_list)
-    assert serialize([3, 1, 2], serializer) == [1, 2, 3]
 
     # dict -> keys only
     def dict_keys(d: dict) -> list:

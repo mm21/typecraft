@@ -11,7 +11,6 @@ from typing import (
     Literal,
     Protocol,
     TypeVar,
-    Union,
     overload,
     runtime_checkable,
 )
@@ -37,10 +36,11 @@ __all__ = [
     "serialize",
 ]
 
-type JsonSerializableType = list[JsonSerializableType] | dict[
-    str | int | float | bool, JsonSerializableType
-] | str | int | float | bool | NoneType
+type JsonSerializableType = str | int | float | bool | NoneType | list[
+    JsonSerializableType
+] | dict[str | int | float | bool, JsonSerializableType]
 
+JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
 
 type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationHandle]
 """
@@ -75,23 +75,6 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
     Internal recursion state per frame.
     """
 
-    def recurse_serialize(
-        self,
-        obj: Any,
-        path_segment: str | int,
-        /,
-        *,
-        source_annotation: Annotation | None = None,
-        context: Any | None = None,
-    ) -> Any:
-        return self.recurse(
-            obj,
-            path_segment,
-            source_annotation=source_annotation or Annotation(type(obj)),
-            target_annotation=JSON_TYPES_ANNOTATION,
-            context=context,
-        )
-
 
 class SerializationHandle(
     BaseConversionHandle[SerializationFrame, SerializationParams]
@@ -112,8 +95,12 @@ class SerializationHandle(
         """
         Recurse into serialization, overriding context if passed.
         """
-        return self._frame.recurse_serialize(
-            obj, path_segment, source_annotation=source_annotation, context=context
+        return self._frame.recurse(
+            obj,
+            path_segment,
+            source_annotation=source_annotation,
+            target_annotation=JSON_SERIALIZABLE_ANNOTATION,
+            context=context,
         )
 
 
@@ -259,7 +246,7 @@ def serialize(
     params = SerializationParams(mode=mode, sort_sets=sort_sets)
     frame = SerializationFrame(
         source_annotation=source_annotation,
-        target_annotation=JSON_TYPES_ANNOTATION,
+        target_annotation=JSON_SERIALIZABLE_ANNOTATION,
         context=context,
         params=params,
         engine=engine,
@@ -267,27 +254,17 @@ def serialize(
     return engine.process(obj, frame)
 
 
-JSON_TYPES = [
-    list,
-    dict,
-    str,
-    int,
-    float,
-    bool,
-    NoneType,
-]
-
-JSON_TYPES_ANNOTATION = Annotation(Union[*JSON_TYPES])
-
 _T_contra = TypeVar("_T_contra", contravariant=True)
 
 
+# technically only one of __lt__/__gt__ is required
 @runtime_checkable
 class SupportsComparison(Protocol[_T_contra]):
     def __lt__(self, other: _T_contra, /) -> bool: ...
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
+# TODO: convert to list using process_sequence() before checking for sort
 def _convert_set[T: SupportsComparison](
     obj: set[T] | frozenset[T], handle: SerializationHandle
 ) -> list[T]:
@@ -303,7 +280,7 @@ def _convert_set[T: SupportsComparison](
         return obj_list
 
 
-# TODO
+# TODO: use process_*, similar to validating.BUILTIN_REGISTRY
 JSON_REGISTRY = SerializerRegistry(
     Serializer(tuple, list),
     Serializer(set | frozenset, list, func=_convert_set),
