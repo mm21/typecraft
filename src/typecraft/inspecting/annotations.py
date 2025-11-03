@@ -120,15 +120,26 @@ class Annotation:
     def __repr__(self) -> str:
         raw = f"{self.raw}"
         extras = f"extras={self.extras}"
-        origin = f"origin={self.origin}"
-        args = f"args={self.args}"
         concrete_type = f"concrete_type={self.concrete_type}"
-        return f"Annotation({", ".join((raw, extras, origin, args, concrete_type))})"
+        return f"Annotation({", ".join((raw, extras, concrete_type))})"
 
     def __eq__(self, other: Any, /) -> bool:
         if not isinstance(other, Annotation):
             return False
-        return self.is_subtype(other) and other.is_subtype(self)
+        if not self.concrete_type is other.concrete_type:
+            return False
+
+        my_args = list(self.arg_annotations)
+        other_args = list(other.arg_annotations)
+
+        if len(my_args) < len(other_args):
+            my_args += [ANY] * (len(other_args) - len(my_args))
+        elif len(other_args) < len(my_args):
+            my_args += [ANY] * (len(my_args) - len(other_args))
+
+        return all(
+            my_arg == other_arg for my_arg, other_arg in zip(my_args, other_args)
+        )
 
     @property
     def is_union(self) -> bool:
@@ -147,14 +158,30 @@ class Annotation:
         Check if this annotation is a subtype of other annotation; loosely
         equivalent to `issubclass(annotation, other)`.
 
+        Any is BOTH a top type and a bottom type in Python's gradual typing:
+        - Top type: Everything is a subtype of Any (you can assign anything TO Any)
+        - Bottom type: Any is a subtype of everything (you can assign anything FROM Any)
+
+        `object` is a concrete type - only actual object subtypes are subtypes of
+        `object`.
+
         Examples:
 
-        - `Annotation(int).is_subtype(Annotation(Any))` returns `True`
+        - `Annotation(int).is_subtype(Annotation(Any))` returns `True` (Any as top type)
+        - `Annotation(Any).is_subtype(Annotation(int))` returns `True` (Any as bottom type)
         - `Annotation(list[int]).is_subtype(list[Any])` returns `True`
-        - `Annotation(list[int]).is_subtype(list[str])` returns `False`
+        - `Annotation(list[Any]).is_subtype(list[int])` returns `True` (Any in params)
         - `Annotation(int).is_subtype(Callable[[Any], int])` returns `True`
         """
         other_ann = Annotation._normalize(other)
+
+        # Any is the top type - everything is a subtype of Any
+        if other_ann.raw is Any:
+            return True
+
+        # Any is also the bottom type - Any is a subtype of everything
+        if self.raw is Any:
+            return True
 
         # handle union for self
         if self.is_union:

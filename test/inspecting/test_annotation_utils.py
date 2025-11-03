@@ -37,9 +37,19 @@ def test_is_subtype():
     assert is_subtype(int, Annotation(Any))
     assert is_subtype(int, Any)
 
+    # Any is BOTH top and bottom type - bidirectional relationships
+    assert is_subtype(Any, int)  # bottom type behavior
+    assert is_subtype(Any, object)  # bottom type behavior
+    assert is_subtype(Annotation(Any), Annotation(int))  # bottom type
+    assert is_subtype(Any, Any)  # top and bottom meet
+
     # verify with alias
     assert is_subtype(SimpleAlias, UnionAlias)
     assert is_subtype(ListAlias, AnnotatedListAlias)
+
+    # verify with Any in generics - bidirectional
+    assert is_subtype(list[int], list[Any])  # top type
+    assert is_subtype(list[Any], list[int])  # bottom type
 
 
 def test_is_instance():
@@ -48,6 +58,11 @@ def test_is_instance():
     assert is_instance(1, int)
     assert is_instance(1, Annotation(Any))
     assert is_instance(1, Annotation(int))
+
+    # Any accepts all values
+    assert is_instance("hello", Any)
+    assert is_instance([1, 2, 3], Any)
+    assert is_instance(None, Any)
 
     # verify with alias
     assert is_instance(1, UnionAlias)
