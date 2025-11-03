@@ -65,76 +65,72 @@ def test_invalid():
 
 def test_conversion():
 
-    # test with and without explicit converters
-    for converters in [(Validator(str, int),), ()]:
+    # list[str | int] -> list[int]
+    result = validate(["1", "2", 3], list[int], strict=False)
+    assert result == [1, 2, 3]
 
-        # list[str | int] -> list[int]
-        result = validate(["1", "2", 3], list[int], *converters, strict=False)
-        assert result == [1, 2, 3]
+    # list[tuple[str]] -> list[list[int]]
+    obj = [("1", "2"), ("3", "4")]
+    result = validate(obj, list[list[int]], strict=False)
+    assert result == [[1, 2], [3, 4]]
 
-        # list[tuple[str]] -> list[list[int]]
-        obj = [("1", "2"), ("3", "4")]
-        result = validate(obj, list[list[int]], *converters, strict=False)
-        assert result == [[1, 2], [3, 4]]
+    # list[str] -> tuple[int, str]
+    obj = ["1", "2"]
+    result = validate(obj, tuple[int, str], strict=False)
+    assert result == (1, "2")
 
-        # list[str] -> tuple[int, str]
-        obj = ["1", "2"]
-        result = validate(obj, tuple[int, str], *converters, strict=False)
-        assert result == (1, "2")
+    # list[int] -> tuple[str, ...]
+    obj = [1, 2]
+    result = validate(obj, tuple[str, ...], strict=False)
+    assert result == ("1", "2")
 
-        # list[int] -> tuple[str, ...]
-        obj = [1, 2]
-        result = validate(obj, tuple[str, ...], *converters, strict=False)
-        assert result == ("1", "2")
+    # list[list[tuple[str, str]]] -> list[list[list[int]]]
+    obj = [[("1", "2"), ("3", "4")], [("5", "6")]]
+    result = validate(obj, list[list[list[int]]], strict=False)
+    assert result == [[[1, 2], [3, 4]], [[5, 6]]]
 
-        # list[list[tuple[str, str]]] -> list[list[list[int]]]
-        obj = [[("1", "2"), ("3", "4")], [("5", "6")]]
-        result = validate(obj, list[list[list[int]]], *converters, strict=False)
-        assert result == [[[1, 2], [3, 4]], [[5, 6]]]
+    # dict[int, list[str]] -> dict[str, list[int]]
+    obj = {1: ["1", "2"], 2: ["3", "4"]}
+    result = validate(obj, dict[str, list[int]], strict=False)
+    assert result == {"1": [1, 2], "2": [3, 4]}
 
-        # dict[int, list[str]] -> dict[str, list[int]]
-        obj = {1: ["1", "2"], 2: ["3", "4"]}
-        result = validate(obj, dict[str, list[int]], *converters, strict=False)
-        assert result == {"1": [1, 2], "2": [3, 4]}
+    # list[int] -> set[str]
+    obj = [1, 2, 3, 2, 1]
+    result = validate(obj, set[str], strict=False)
+    assert result == {"1", "2", "3"}
 
-        # list[int] -> set[str]
-        obj = [1, 2, 3, 2, 1]
-        result = validate(obj, set[str], *converters, strict=False)
-        assert result == {"1", "2", "3"}
+    # str -> int | float
+    obj = "1.5"
+    result = validate(obj, int | float, strict=False)
+    assert result == 1.5
 
-        # str -> int | float
-        obj = "1.5"
-        result = validate(obj, int | float, *converters, strict=False)
-        assert result == 1.5
+    # annotated type
+    obj = ["1", "2", "3"]
+    result = validate(
+        obj,
+        Annotated[list[int], "positive integers"],
+        strict=False,
+    )
+    assert result == [1, 2, 3]
 
-        # annotated type
-        obj = ["1", "2", "3"]
-        result = validate(
-            obj,
-            Annotated[list[int], "positive integers"],
-            *converters,
-            strict=False,
-        )
-        assert result == [1, 2, 3]
+    # range -> list[int]
+    obj = range(3)
+    result = validate(obj, list[int], strict=False)
+    assert result == [0, 1, 2]
 
-        # range -> list[int]
-        obj = range(3)
-        result = validate(obj, list[int], *converters, strict=False)
-        assert result == [0, 1, 2]
+    # generator -> list[int]
+    def gen() -> Generator[int, None, None]:
+        for i in range(3):
+            yield i
 
-        # generator -> list[int]
-        def gen() -> Generator[int, None, None]:
-            for i in range(3):
-                yield i
+    obj = gen()
+    result = validate(obj, list[int], strict=False)
+    assert result == [0, 1, 2]
 
-        obj = gen()
-        result = validate(obj, list[int], *converters, strict=False)
-        assert result == [0, 1, 2]
-
-        # generator -> tuple[int, int, int]
-        obj = gen()
-        result = validate(obj, tuple[int, int, int], *converters, strict=False)
-        assert result == (0, 1, 2)
+    # generator -> tuple[int, int, int]
+    obj = gen()
+    result = validate(obj, tuple[int, int, int], strict=False)
+    assert result == (0, 1, 2)
 
 
 def test_registry():

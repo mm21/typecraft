@@ -151,7 +151,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     model_config = ModelConfig(validate_on_assignment=True)
 
-    def model_get_converters(self) -> tuple[Validator[Any], ...]:
+    def model_get_validators(self) -> tuple[Validator[Any, Any], ...]:
         return VALIDATORS
 
     def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:

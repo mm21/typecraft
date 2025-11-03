@@ -4,7 +4,7 @@ Test end-to-end serialization via APIs.
 
 from typing import Any, Literal
 
-from typecraft.serializing import serialize
+from typecraft.serializing import Serializer, serialize
 
 
 def test_primitives():
@@ -127,15 +127,18 @@ def test_fixed_length_tuples():
     ]
 
 
-def test_without_serializer():
+def test_custom():
     """
-    Test that objects without serializers pass through.
+    Test that custom objects can be serialized.
     """
 
     class CustomClass:
-        def __init__(self, value):
+        value: int
+
+        def __init__(self, value: int):
             self.value = value
 
     obj = CustomClass(42)
-    result = serialize(obj)
-    assert result is obj  # passed through unchanged
+    serializer = Serializer(CustomClass, int, func=lambda obj: obj.value)
+    result = serialize(obj, serializer)
+    assert result == 42

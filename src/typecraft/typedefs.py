@@ -4,23 +4,46 @@ Basic definitions for type-based converting.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence, Set
 from typing import (
+    Any,
     Generator,
 )
 
-from .inspecting.annotations import flatten_union
+from .inspecting.annotations import Annotation, flatten_union
 
-type ValueCollectionType = list | tuple | set | frozenset | range | Generator
+type ValueCollectionTargetType[T] = Sequence[T] | Set[T] | tuple[T]
 """
-Types convertible to lists, tuples, and sets; collections which contain values
-rather than key-value mappings.
-"""
-
-type CollectionType = ValueCollectionType | Mapping
-"""
-Types convertible to collection types.
+Collections which contain values rather than key-value mappings.
 """
 
-VALUE_COLLECTION_TYPES = flatten_union(ValueCollectionType)
-COLLECTION_TYPES = flatten_union(CollectionType)
+type ValueCollectionSourceType[T] = ValueCollectionTargetType[T] | range | Generator[
+    T, None, None
+]
+"""
+Types convertible to `ValueCollectionType`.
+"""
+
+type CollectionTargetType = ValueCollectionTargetType[Any] | Mapping[Any, Any]
+"""
+Superset of all collection types.
+"""
+
+type CollectionSourceType = ValueCollectionSourceType[Any] | Mapping[Any, Any]
+"""
+Superset of all types convertible to `CollectionType`.
+"""
+
+
+def _extract_types(type_: Any) -> tuple[type, ...]:
+    """
+    Extract concrete types from annotation.
+    """
+    types = flatten_union(type_)
+    return tuple(Annotation(t).concrete_type for t in types)
+
+
+VALUE_COLLECTION_TARGET_TYPES = _extract_types(ValueCollectionTargetType)
+VALUE_COLLECTION_SOURCE_TYPES = _extract_types(ValueCollectionSourceType)
+COLLECTION_TARGET_TYPES = _extract_types(CollectionTargetType)
+COLLECTION_SOURCE_TYPES = _extract_types(CollectionSourceType)

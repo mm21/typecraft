@@ -231,7 +231,7 @@ class BaseModel:
             value_ = validate(
                 value_,
                 field_info.annotation.raw,
-                *self.__converters,
+                *self.__validators,
                 strict=self.model_config.strict,
             )
             value_ = self.model_post_validate(field_info, value_)
@@ -288,7 +288,7 @@ class BaseModel:
 
         return values
 
-    def model_get_converters(self) -> tuple[Validator[Any], ...]:
+    def model_get_validators(self) -> tuple[Validator[Any, Any], ...]:
         """
         Override to provide converters for values by type, including inner values like
         elements of lists.
@@ -319,13 +319,13 @@ class BaseModel:
         return {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
 
     @cached_property
-    def __converters(self) -> tuple[Validator[Any], ...]:
+    def __validators(self) -> tuple[Validator[Any, Any], ...]:
         """
         Converters to use for validation.
         """
         # add converter for nested dataclasses at end in case user passes a
         # converter for a subclass
-        return (*self.model_get_converters(), MODEL_CONVERTER)
+        return (*self.model_get_validators(), MODEL_CONVERTER)
 
 
 def validate_model(obj: Mapping[Any, Any], handle: BaseConversionHandle) -> BaseModel:
@@ -335,7 +335,9 @@ def validate_model(obj: Mapping[Any, Any], handle: BaseConversionHandle) -> Base
     return type_(**obj)
 
 
-MODEL_CONVERTER = Validator(Mapping, BaseModel, func=validate_model)
+MODEL_CONVERTER = Validator(
+    Mapping, BaseModel, func=validate_model, match_target_subtype=True
+)
 """
 Converts a mapping (e.g. dict) to a model.
 """

@@ -53,7 +53,7 @@ def test_match_subtype():
     # - not very practical since int is already a subtype of Any
     assert validator.check_match(Annotation(int), ANY)
     assert validator.check_match(Annotation(int), Annotation(str))
-    assert not validator.check_match(ANY, Annotation(str))
+    assert validator.check_match(ANY, Annotation(str))
 
 
 def test_match_custom():
@@ -131,8 +131,9 @@ def test_generic():
 
     assert validator.check_match(Annotation(list[int]), Annotation(list[str]))
     assert validator.check_match(Annotation(list[int]), Annotation(list[Any]))
+    assert validator.check_match(Annotation(list[Any]), Annotation(list[str]))
+    assert not validator.check_match(Annotation(list[Any]), Annotation(list[int]))
     assert not validator.check_match(Annotation(list[float]), Annotation(list[str]))
-    assert not validator.check_match(Annotation(list[Any]), Annotation(list[str]))
 
     conv_obj = validator.convert(
         obj, Annotation(list[int]), Annotation(list[str]), _create_handle(list[str])
