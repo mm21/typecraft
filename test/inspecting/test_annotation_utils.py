@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from typecraft.inspecting.annotations import (
     Annotation,
+    extract_tuple_args,
     flatten_union,
     get_concrete_type,
     is_instance,
@@ -251,3 +252,19 @@ def test_edge_cases():
     # mixed union syntaxes in nested structures
     result = flatten_union(Union[int | str, float])
     assert result == (int, str, float)
+
+
+def test_tuple_args():
+    # fixed-length tuple
+    result = extract_tuple_args(Annotation(tuple[int, str]))
+    assert len(result) == 2
+    assert result == (Annotation(int), Annotation(str))
+
+    # variadic tuple
+    result = extract_tuple_args(Annotation(tuple[int, ...]))
+    assert len(result) == 0
+
+    # padded variadic tuple
+    result = extract_tuple_args(Annotation(tuple[int, ...]), length=2)
+    assert len(result) == 2
+    assert result == (Annotation(int), Annotation(int))
