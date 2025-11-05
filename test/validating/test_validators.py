@@ -109,11 +109,11 @@ def test_any():
     converter2 = Validator(Any, Any, func=func2)
 
     assert converter1.can_convert(obj, ANY, ANY)
-    conv_obj = converter1.convert(obj, ANY, ANY, _create_frame(obj, Any))
+    conv_obj = converter1.convert(obj, _create_frame(Any, Any))
     assert conv_obj == -1
 
     assert converter2.can_convert(obj, ANY, ANY)
-    conv_obj = converter2.convert(obj, ANY, ANY, _create_frame(obj, Any))
+    conv_obj = converter2.convert(obj, _create_frame(Any, Any))
     assert conv_obj == -2
 
 
@@ -134,14 +134,10 @@ def test_generic():
     assert not validator.check_match(Annotation(list[Any]), Annotation(list[int]))
     assert not validator.check_match(Annotation(list[float]), Annotation(list[str]))
 
-    conv_obj = validator.convert(
-        obj, Annotation(list[int]), Annotation(list[str]), _create_frame(obj, list[str])
-    )
+    conv_obj = validator.convert(obj, _create_frame(list[int], list[str]))
     assert conv_obj == ["123"]
 
-    conv_obj = validator.convert(
-        obj, Annotation(list[int]), Annotation(list[Any]), _create_frame(obj, list[Any])
-    )
+    conv_obj = validator.convert(obj, _create_frame(list[int], list[Any]))
 
 
 def test_registry():
@@ -172,30 +168,22 @@ def test_registry():
     validator = registry.find(obj, Annotation(str), Annotation(int))
     assert validator
     assert validator.match_target_subtype is False
-    assert (
-        validator.convert(
-            obj, Annotation(str), Annotation(int), _create_frame(obj, int)
-        )
-        == 42
-    )
+    assert validator.convert(obj, _create_frame(str, int)) == 42
 
     validator = registry.find(obj, Annotation(str), Annotation(bool))
     assert validator
     assert validator.match_target_subtype is True
-    assert (
-        validator.convert(
-            obj, Annotation(str), Annotation(bool), _create_frame(obj, bool)
-        )
-        is True
-    )
+    assert validator.convert(obj, _create_frame(str, bool)) is True
 
 
 def _create_frame(
-    obj: Any, target_annotation: Any, params: ValidationParams | None = None
+    source_annotation: Any,
+    target_annotation: Any,
+    params: ValidationParams | None = None,
 ) -> ValidationFrame:
     engine = ValidationEngine()
     return ValidationFrame(
-        source_annotation=Annotation(type(obj)),
+        source_annotation=Annotation(source_annotation),
         target_annotation=Annotation(target_annotation),
         context=None,
         params=params or ValidationParams(strict=True),

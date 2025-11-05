@@ -328,8 +328,6 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     def convert(
         self,
         obj: SourceT,
-        source_annotation: Annotation,
-        target_annotation: Annotation,
         frame: FrameT,
         /,
     ) -> TargetT:
@@ -454,15 +452,12 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
     def convert(
         self,
         obj: Any,
-        source_annotation: Annotation,
-        target_annotation: Annotation,
         frame: FrameT,
         /,
     ) -> Any:
         """
         Convert object using the wrapped function or direct construction.
         """
-        _ = source_annotation
         try:
             if func := self._func_wrapper:
                 # provided conversion function
@@ -478,7 +473,7 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
                 f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}): {e}"
             ) from None
 
-        if not target_annotation.is_type(converted_obj):
+        if not frame.target_annotation.is_type(converted_obj):
             raise ValueError(
                 f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}), got {converted_obj} ({type(converted_obj)})"
             )
@@ -589,12 +584,7 @@ class BaseConversionEngine[
         if not frame.target_annotation.is_type(obj, recurse=False):
             # find converter and invoke it, returning the converted object
             if converter := self._find_converter(obj, frame):
-                return converter.convert(
-                    obj,
-                    frame.source_annotation,
-                    frame.target_annotation,
-                    frame,
-                )
+                return converter.convert(obj, frame)
             raise ValueError(
                 f"Object '{obj}' ({type(obj)}) could not be converted from {frame.source_annotation} to {frame.target_annotation}"
             )
