@@ -7,7 +7,7 @@ from typing import Any
 
 from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
-    SerializationHandle,
+    SerializationFrame,
     Serializer,
     SerializerRegistry,
     serialize,
@@ -55,12 +55,12 @@ def test_nested_custom_serializer():
     Test serialization with nested custom objects.
     """
 
-    def serialize_company(c: Company, handle: SerializationHandle) -> dict:
-        # use context to recursively serialize employees
+    def serialize_company(c: Company, frame: SerializationFrame) -> dict:
+        # use frame to recursively serialize employees
         return {
             "name": c.name,
             "employees": [
-                handle.recurse(emp, i, Annotation(Person))
+                frame.recurse(emp, i, source_annotation=Annotation(Person))
                 for i, emp in enumerate(c.employees)
             ],
         }

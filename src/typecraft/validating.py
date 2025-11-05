@@ -16,7 +16,6 @@ from typing import (
 from .converting import (
     BaseConversionEngine,
     BaseConversionFrame,
-    BaseConversionHandle,
     BaseConverter,
     BaseConverterRegistry,
     ConverterFuncMixin,
@@ -37,7 +36,7 @@ from .typedefs import (
 __all__ = [
     "ValidatorFuncType",
     "ValidationParams",
-    "ValidationHandle",
+    "ValidationFrame",
     "ValidationEngine",
     "BaseValidator",
     "Validator",
@@ -47,7 +46,7 @@ __all__ = [
 ]
 
 
-type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT, ValidationHandle]
+type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT, ValidationFrame]
 """
 Function which validates the given object and returns an object of the
 specified type. Can optionally take `ValidationInfo` as the second argument.
@@ -72,41 +71,14 @@ class ValidationFrame(BaseConversionFrame[ValidationParams]):
     """
 
 
-class ValidationHandle(BaseConversionHandle[ValidationFrame, ValidationParams]):
-    """
-    User-facing interface to validation state and operations.
-    """
-
-    def recurse(
-        self,
-        obj: Any,
-        path_segment: str | int,
-        target_annotation: Annotation,
-        /,
-        *,
-        context: Any | None = None,
-    ) -> Any:
-        """
-        Recurse into validation, overriding context if passed.
-        """
-        return self._frame.recurse(
-            obj,
-            path_segment,
-            target_annotation=target_annotation,
-            context=context,
-        )
-
-
-class BaseValidator[SourceT, TargetT](
-    BaseConverter[SourceT, TargetT, ValidationHandle]
-):
+class BaseValidator[SourceT, TargetT](BaseConverter[SourceT, TargetT, ValidationFrame]):
     """
     Base class for type-based validators.
     """
 
 
 class Validator[SourceT, TargetT](
-    ConverterFuncMixin[SourceT, TargetT, ValidationHandle],
+    ConverterFuncMixin[SourceT, TargetT, ValidationFrame],
     BaseValidator[SourceT, TargetT],
 ):
     """
@@ -165,9 +137,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         self._register_converter(validator)
 
 
-class ValidationEngine(
-    BaseConversionEngine[ValidatorRegistry, ValidationFrame, ValidationHandle]
-):
+class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame]):
     """
     Orchestrates validation process. Not exposed to user.
     """
@@ -298,25 +268,23 @@ def normalize_to_list[T](
 
 
 def _validate_tuple(
-    obj: ValueCollectionSourceType, handle: ValidationHandle
+    obj: ValueCollectionSourceType, frame: ValidationFrame
 ) -> tuple[Any]:
-    return cast(tuple[Any], process_tuple(obj, handle._frame))
+    return cast(tuple[Any], process_tuple(obj, frame))
 
 
-def _validate_list(
-    obj: ValueCollectionSourceType, handle: ValidationHandle
-) -> list[Any]:
-    return cast(list[Any], process_sequence(obj, handle._frame))
+def _validate_list(obj: ValueCollectionSourceType, frame: ValidationFrame) -> list[Any]:
+    return cast(list[Any], process_sequence(obj, frame))
 
 
 def _validate_set(
-    obj: ValueCollectionSourceType, handle: ValidationHandle
+    obj: ValueCollectionSourceType, frame: ValidationFrame
 ) -> set[Any] | frozenset[Any]:
-    return cast(set[Any] | frozenset[Any], process_set(obj, handle._frame))
+    return cast(set[Any] | frozenset[Any], process_set(obj, frame))
 
 
-def _validate_dict(obj: Mapping[Any, Any], handle: ValidationHandle) -> dict[Any, Any]:
-    return cast(dict[Any, Any], process_mapping(obj, handle._frame))
+def _validate_dict(obj: Mapping[Any, Any], frame: ValidationFrame) -> dict[Any, Any]:
+    return cast(dict[Any, Any], process_mapping(obj, frame))
 
 
 BUILTIN_REGISTRY = ValidatorRegistry(

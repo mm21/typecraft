@@ -18,7 +18,6 @@ from typing import (
 from .converting import (
     BaseConversionEngine,
     BaseConversionFrame,
-    BaseConversionHandle,
     BaseConverter,
     BaseConverterRegistry,
     ConverterFuncMixin,
@@ -29,6 +28,8 @@ from .inspecting.annotations import Annotation
 
 __all__ = [
     "SerializerFuncType",
+    "SerializationParams",
+    "SerializationFrame",
     "SerializationEngine",
     "BaseSerializer",
     "Serializer",
@@ -42,11 +43,11 @@ type JsonSerializableType = str | int | float | bool | NoneType | list[
 
 JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
 
-type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationHandle]
+type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationFrame]
 """
 Function which serializes the given object from a specific source type and generally
 returns an object of built-in Python type. Can optionally take
-`SerializationHandle` as the second argument.
+`SerializationFrame` as the second argument.
 """
 
 
@@ -75,37 +76,27 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
     Internal recursion state per frame.
     """
 
-
-class SerializationHandle(
-    BaseConversionHandle[SerializationFrame, SerializationParams]
-):
-    """
-    User-facing interface to serialization state and operations.
-    """
-
     def recurse(
         self,
         obj: Any,
         path_segment: str | int,
-        source_annotation: Annotation | None = None,
         /,
         *,
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation | None = None,
         context: Any | None = None,
     ) -> Any:
-        """
-        Recurse into serialization, overriding context if passed.
-        """
-        return self._frame.recurse(
+        return super().recurse(
             obj,
             path_segment,
             source_annotation=source_annotation,
-            target_annotation=JSON_SERIALIZABLE_ANNOTATION,
+            target_annotation=target_annotation or JSON_SERIALIZABLE_ANNOTATION,
             context=context,
         )
 
 
 class BaseSerializer[SourceT, TargetT](
-    BaseConverter[SourceT, TargetT, SerializationHandle]
+    BaseConverter[SourceT, TargetT, SerializationFrame]
 ):
     """
     Base class for type-based serializers.
@@ -113,7 +104,7 @@ class BaseSerializer[SourceT, TargetT](
 
 
 class Serializer[SourceT, TargetT](
-    ConverterFuncMixin[SourceT, TargetT, SerializationHandle],
+    ConverterFuncMixin[SourceT, TargetT, SerializationFrame],
     BaseSerializer[SourceT, TargetT],
 ):
     """
@@ -175,9 +166,7 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         self._register_converter(serializer)
 
 
-class SerializationEngine(
-    BaseConversionEngine[SerializerRegistry, SerializationFrame, SerializationHandle]
-):
+class SerializationEngine(BaseConversionEngine[SerializerRegistry, SerializationFrame]):
     """
     Orchestrates serialization process. Not exposed to user.
     """
@@ -266,10 +255,10 @@ class SupportsComparison(Protocol[_T_contra]):
 
 # TODO: convert to list using process_sequence() before checking for sort
 def _convert_set[T: SupportsComparison](
-    obj: set[T] | frozenset[T], handle: SerializationHandle
+    obj: set[T] | frozenset[T], frame: SerializationFrame
 ) -> list[T]:
     obj_list = list(obj)
-    if handle.params.sort_sets:
+    if frame.params.sort_sets:
         for o in obj_list:
             if not isinstance(o, SupportsComparison):
                 raise ValueError(

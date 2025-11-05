@@ -15,21 +15,21 @@ from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import COLLECTION_TARGET_TYPES, ValueCollectionSourceType
 
-type ConverterFuncType[SourceT, TargetT, HandleT] = Callable[
+type ConverterFuncType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
     [SourceT], TargetT
-] | Callable[[SourceT, HandleT], TargetT]
+] | Callable[[SourceT, FrameT], TargetT]
 """
 Function which converts an object. Can take the source object by itself or
 source object with info.
 """
 
 
-class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
+class ConverterFunctionWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     """
     Encapsulates a validator or serializer function.
     """
 
-    func: ConverterFuncType[SourceT, TargetT, HandleT]
+    func: ConverterFuncType[SourceT, TargetT, FrameT]
     """
     Converter function.
     """
@@ -44,9 +44,9 @@ class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
     Parameter for object to be validated/serialized, must be positional.
     """
 
-    handle_param: ParameterInfo | None
+    frame_param: ParameterInfo | None
     """
-    Parameter for additional info, must be positional.
+    Optional parameter for conversion frame, must be positional.
     """
 
     def __init__(self, func: Callable[..., Any]):
@@ -61,25 +61,25 @@ class ConverterFunctionWrapper[SourceT, TargetT, HandleT]:
             obj_param
         ), f"Function {func} does not take any positional params, must take obj as positional"
 
-        # get handle parameter
-        handle_param = sig_info.get_param("handle")
-        if handle_param:
+        # get frame parameter
+        frame_param = sig_info.get_param("frame")
+        if frame_param:
             assert (
-                handle_param.index == 1
-            ), f"Function {func} must take handle as second positional argument, got index {handle_param.index}"
+                frame_param.index == 1
+            ), f"Function {func} must take frame as second positional argument, got index {frame_param.index}"
 
         self.func = func
         self.sig_info = sig_info
         self.obj_param = obj_param
-        self.handle_param = handle_param
+        self.frame_param = frame_param
 
-    def invoke(self, obj: SourceT, handle: HandleT, /) -> TargetT:
-        if self.handle_param:
-            # invoke with info
-            func = cast(Callable[[SourceT, HandleT], TargetT], self.func)
-            return func(obj, handle)
+    def invoke(self, obj: SourceT, frame: FrameT, /) -> TargetT:
+        if self.frame_param:
+            # invoke with frame
+            func = cast(Callable[[SourceT, FrameT], TargetT], self.func)
+            return func(obj, frame)
         else:
-            # invoke without info
+            # invoke without frame
             func = cast(Callable[[SourceT], TargetT], self.func)
             return func(obj)
 
@@ -182,35 +182,6 @@ class BaseConversionFrame[ParamsT]:
         )
 
 
-class BaseConversionHandle[FrameT: BaseConversionFrame, ParamsT: Any]:
-    """
-    User-facing interface to state and operations, passed to custom `validate()`
-    functions.
-    """
-
-    # TODO: __frame, once collection validators don't recurse
-    _frame: FrameT
-
-    def __init__(self, frame: FrameT, /):
-        self._frame = frame
-
-    @property
-    def source_annotation(self) -> Annotation:
-        return self._frame.source_annotation
-
-    @property
-    def target_annotation(self) -> Annotation:
-        return self._frame.target_annotation
-
-    @property
-    def context(self) -> Any:
-        return self._frame.context
-
-    @property
-    def params(self) -> ParamsT:
-        return self._frame.params
-
-
 class ConverterInterface:
     """
     Defines the interface for converters and mixins.
@@ -261,7 +232,9 @@ class ConverterInterface:
         return ", ".join((s, t, m_s, m_t))
 
 
-class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
+class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
+    ConverterInterface, ABC
+):
     """
     Base class for typed converters (validators and serializers).
 
@@ -357,7 +330,7 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         obj: SourceT,
         source_annotation: Annotation,
         target_annotation: Annotation,
-        handle: HandleT,
+        frame: FrameT,
         /,
     ) -> TargetT:
         """
@@ -369,7 +342,7 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
         :param obj: Object to convert
         :param source_annotation: Annotation of source object
         :param target_annotation: Annotation to convert to
-        :param handle: Handle for conversion operations
+        :param frame: Frame for conversion operations
         :return: Converted object
         """
 
@@ -391,12 +364,14 @@ class BaseConverter[SourceT, TargetT, HandleT](ConverterInterface, ABC):
             return annotation == check_annotation
 
 
-class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
+class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
+    ConverterInterface
+):
     """
     Mixin class for function-based converters.
     """
 
-    _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, HandleT] | None
+    _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, FrameT] | None
 
     @overload
     def __init__(
@@ -405,7 +380,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         target_annotation: type[TargetT],
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
+        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
@@ -417,7 +392,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         target_annotation: Annotation | Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
+        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
@@ -428,7 +403,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         target_annotation: Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, HandleT] | None = None,
+        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
@@ -448,7 +423,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
     def from_func(
         cls,
         # TODO: rename: convert_func
-        func: ConverterFuncType[SourceT, TargetT, HandleT],
+        func: ConverterFuncType[SourceT, TargetT, FrameT],
         # TODO: can_convert_func
         /,
         *,
@@ -481,7 +456,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         obj: Any,
         source_annotation: Annotation,
         target_annotation: Annotation,
-        handle: HandleT,
+        frame: FrameT,
         /,
     ) -> Any:
         """
@@ -491,7 +466,7 @@ class ConverterFuncMixin[SourceT, TargetT, HandleT](ConverterInterface):
         try:
             if func := self._func_wrapper:
                 # provided conversion function
-                converted_obj = func.invoke(obj, handle)
+                converted_obj = func.invoke(obj, frame)
             else:
                 # direct object construction
                 concrete_type = cast(
@@ -567,7 +542,6 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
 class BaseConversionEngine[
     RegistryT: BaseConverterRegistry,
     FrameT: BaseConversionFrame,
-    HandleT: BaseConversionHandle,
 ](ABC):
     """
     Base class for conversion engines. Orchestrates conversion process, containing
@@ -598,17 +572,6 @@ class BaseConversionEngine[
         assert registry_cls
         return cast(type[RegistryT], registry_cls)
 
-    @cached_property
-    def __handle_cls(self) -> type[HandleT]:
-        """
-        Class used for conversion handle.
-        """
-        handle_cls = extract_type_param(
-            type(self), BaseConversionEngine, "HandleT", BaseConversionHandle
-        )
-        assert handle_cls
-        return cast(type[HandleT], handle_cls)
-
     def process(self, obj: Any, frame: FrameT) -> Any:
         """
         Main conversion dispatcher with common logic.
@@ -630,7 +593,7 @@ class BaseConversionEngine[
                     obj,
                     frame.source_annotation,
                     frame.target_annotation,
-                    self.__handle_cls(frame),
+                    frame,
                 )
             raise ValueError(
                 f"Object '{obj}' ({type(obj)}) could not be converted from {frame.source_annotation} to {frame.target_annotation}"

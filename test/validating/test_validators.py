@@ -8,7 +8,6 @@ from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
     ValidationEngine,
     ValidationFrame,
-    ValidationHandle,
     ValidationParams,
     Validator,
     ValidatorRegistry,
@@ -97,10 +96,10 @@ def test_any():
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, handle: ValidationHandle) -> Any:
+    def func2(obj: Any, frame: ValidationFrame) -> Any:
         assert isinstance(obj, int)
-        assert handle.params.strict
-        assert handle.target_annotation.concrete_type is object
+        assert frame.params.strict
+        assert frame.target_annotation.concrete_type is object
         return -2 * obj
 
     obj = 1
@@ -110,11 +109,11 @@ def test_any():
     converter2 = Validator(Any, Any, func=func2)
 
     assert converter1.can_convert(obj, ANY, ANY)
-    conv_obj = converter1.convert(obj, ANY, ANY, _create_handle(Any))
+    conv_obj = converter1.convert(obj, ANY, ANY, _create_frame(obj, Any))
     assert conv_obj == -1
 
     assert converter2.can_convert(obj, ANY, ANY)
-    conv_obj = converter2.convert(obj, ANY, ANY, _create_handle(Any))
+    conv_obj = converter2.convert(obj, ANY, ANY, _create_frame(obj, Any))
     assert conv_obj == -2
 
 
@@ -136,12 +135,12 @@ def test_generic():
     assert not validator.check_match(Annotation(list[float]), Annotation(list[str]))
 
     conv_obj = validator.convert(
-        obj, Annotation(list[int]), Annotation(list[str]), _create_handle(list[str])
+        obj, Annotation(list[int]), Annotation(list[str]), _create_frame(obj, list[str])
     )
     assert conv_obj == ["123"]
 
     conv_obj = validator.convert(
-        obj, Annotation(list[int]), Annotation(list[Any]), _create_handle(list[Any])
+        obj, Annotation(list[int]), Annotation(list[Any]), _create_frame(obj, list[Any])
     )
 
 
@@ -156,11 +155,11 @@ def test_registry():
         """
         return int(s)
 
-    def str_to_int_subtype(s: str, handle: ValidationHandle) -> int:
+    def str_to_int_subtype(s: str, frame: ValidationFrame) -> int:
         """
         Convert string to integer, also encompassing bool.
         """
-        return handle.target_annotation.concrete_type(s)
+        return frame.target_annotation.concrete_type(s)
 
     # register converters
     registry = ValidatorRegistry()
@@ -174,7 +173,9 @@ def test_registry():
     assert validator
     assert validator.match_target_subtype is False
     assert (
-        validator.convert(obj, Annotation(str), Annotation(int), _create_handle(int))
+        validator.convert(
+            obj, Annotation(str), Annotation(int), _create_frame(obj, int)
+        )
         == 42
     )
 
@@ -182,20 +183,21 @@ def test_registry():
     assert validator
     assert validator.match_target_subtype is True
     assert (
-        validator.convert(obj, Annotation(str), Annotation(bool), _create_handle(bool))
+        validator.convert(
+            obj, Annotation(str), Annotation(bool), _create_frame(obj, bool)
+        )
         is True
     )
 
 
-def _create_handle(
-    target_annotation: Any, params: ValidationParams | None = None
-) -> ValidationHandle:
+def _create_frame(
+    obj: Any, target_annotation: Any, params: ValidationParams | None = None
+) -> ValidationFrame:
     engine = ValidationEngine()
-    frame = ValidationFrame(
-        source_annotation=ANY,
+    return ValidationFrame(
+        source_annotation=Annotation(type(obj)),
         target_annotation=Annotation(target_annotation),
         context=None,
         params=params or ValidationParams(strict=True),
         engine=engine,
     )
-    return ValidationHandle(frame)

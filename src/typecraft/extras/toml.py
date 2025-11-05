@@ -41,7 +41,7 @@ from tomlkit.items import (
 
 from ..inspecting.classes import extract_type_param
 from ..models import BaseModel, FieldInfo, ModelConfig
-from ..validating import ValidationHandle, Validator
+from ..validating import ValidationFrame, Validator
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -324,14 +324,17 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
     def _from_tomlkit_obj_with_handle(
         cls,
         tomlkit_obj: TomlkitT,
-        handle: ValidationHandle,
+        frame: ValidationFrame,
     ) -> Self:
-        assert len(handle.target_annotation.arg_annotations) == 1
-        item_type = handle.target_annotation.arg_annotations[0]
+        assert len(frame.target_annotation.arg_annotations) == 1
+        item_type = frame.target_annotation.arg_annotations[0]
 
         # get items and validate
         items = cls._get_item_values(tomlkit_obj)
-        validated_items = [handle.recurse(o, i, item_type) for i, o in enumerate(items)]
+        validated_items = [
+            frame.recurse(o, i, target_annotation=item_type)
+            for i, o in enumerate(items)
+        ]
 
         obj = cls(validated_items)
         return cls._finalize_obj(tomlkit_obj, obj)
@@ -403,19 +406,19 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
 
 
 def validate_table(
-    obj: Any, handle: ValidationHandle
+    obj: Any, frame: ValidationFrame
 ) -> BaseTableWrapper | BaseInlineTableWrapper:
-    type_ = handle.target_annotation.concrete_type
+    type_ = frame.target_annotation.concrete_type
     assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
     return type_._from_tomlkit_obj(obj)
 
 
 def validate_array(
-    obj: Any, handle: ValidationHandle
+    obj: Any, frame: ValidationFrame
 ) -> ArrayWrapper | TableArrayWrapper:
-    type_ = handle.target_annotation.concrete_type
+    type_ = frame.target_annotation.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
-    return type_._from_tomlkit_obj_with_handle(obj, handle)
+    return type_._from_tomlkit_obj_with_handle(obj, frame)
 
 
 VALIDATORS = (
