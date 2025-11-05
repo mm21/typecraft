@@ -738,14 +738,20 @@ def process_tuple[T](
 
 
 def process_sequence[T](
-    obj: ValueCollectionSourceType[T], frame: BaseConversionFrame
+    obj: ValueCollectionSourceType[T],
+    frame: BaseConversionFrame,
+    default_target_annotation: Annotation = ANY,
 ) -> Sequence[T]:
     """
     Process a sequence, converting items if necessary.
     """
     target_type = frame.target_annotation.concrete_type
+    # TODO: handle conversion from tuple
+    # - check why we need target type of ANY
     source_item_ann = _extract_sequence_item_ann(frame.source_annotation)
-    target_item_ann = _extract_sequence_item_ann(frame.target_annotation) or ANY
+    target_item_ann = (
+        _extract_sequence_item_ann(frame.target_annotation) or default_target_annotation
+    )
 
     # create list of validated items
     converted_objs = cast(

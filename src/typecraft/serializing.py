@@ -4,6 +4,7 @@ Serialization capability.
 
 from __future__ import annotations
 
+from collections.abc import Set
 from dataclasses import dataclass
 from types import NoneType
 from typing import (
@@ -11,6 +12,7 @@ from typing import (
     Literal,
     Protocol,
     TypeVar,
+    cast,
     overload,
     runtime_checkable,
 )
@@ -23,8 +25,10 @@ from .converting import (
     ConverterFuncMixin,
     ConverterFuncType,
     normalize_to_registry,
+    process_sequence,
 )
 from .inspecting.annotations import Annotation
+from .typedefs import ValueCollectionSourceType
 
 __all__ = [
     "SerializerFuncType",
@@ -253,26 +257,27 @@ class SupportsComparison(Protocol[_T_contra]):
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
-# TODO: convert to list using process_sequence() before checking for sort
-def _convert_set[T: SupportsComparison](
-    obj: set[T] | frozenset[T], frame: SerializationFrame
-) -> list[T]:
-    obj_list = list(obj)
-    if frame.params.sort_sets:
+def _serialize_list(
+    obj: ValueCollectionSourceType, frame: SerializationFrame
+) -> list[Any]:
+    obj_list = cast(
+        list[Any], process_sequence(obj, frame, JSON_SERIALIZABLE_ANNOTATION)
+    )
+
+    if isinstance(obj, Set) and frame.params.sort_sets:
         for o in obj_list:
             if not isinstance(o, SupportsComparison):
                 raise ValueError(
                     f"Object '{o}' does not support comparison, so containing object cannot be converted to a sorted list"
                 )
-        return sorted(obj_list)
+        return sorted(cast(list[SupportsComparison], obj_list))
     else:
         return obj_list
 
 
-# TODO: use process_*, similar to validating.BUILTIN_REGISTRY
+# TODO: add more serializers: dataclasses, ...
 JSON_REGISTRY = SerializerRegistry(
-    Serializer(tuple, list),
-    Serializer(set | frozenset, list, func=_convert_set),
+    Serializer(set | frozenset | tuple, list, func=_serialize_list),
 )
 """
 Registry to use for json-mode serialization.

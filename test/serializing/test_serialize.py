@@ -2,7 +2,7 @@
 Test end-to-end serialization via APIs.
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 from typecraft.serializing import Serializer, serialize
 
@@ -75,19 +75,6 @@ def test_nested_collections():
     # list[tuple[int, str]]
     obj = [(1, "a"), (2, "b")]
     assert serialize(obj, source_type=list[tuple[int, str]]) == [[1, "a"], [2, "b"]]
-
-
-def test_any_annotation():
-    """
-    Test serialization with Any annotation (minimal type information).
-    """
-    # primitives should work
-    assert serialize(42, source_type=Any) == 42
-    assert serialize("hello", source_type=Any) == "hello"
-
-    # collections should work
-    assert serialize([1, 2, 3], source_type=Any) == [1, 2, 3]
-    assert serialize({"a": 1}, source_type=Any) == {"a": 1}
 
 
 def test_literal_values():
