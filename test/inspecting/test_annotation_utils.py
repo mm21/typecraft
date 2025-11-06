@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from typecraft.inspecting.annotations import (
     Annotation,
+    LiteralType,
     extract_tuple_args,
     flatten_union,
     get_concrete_type,
@@ -222,7 +223,7 @@ def test_get_concrete_type():
     assert get_concrete_type(Annotated[list[int], "doc"]) is list
 
     # special cases return object
-    assert get_concrete_type(Literal[1, 2, 3]) is object
+    assert get_concrete_type(Literal[1, 2, 3]) is LiteralType
     assert get_concrete_type(Any) is object
 
     # singleton mapping

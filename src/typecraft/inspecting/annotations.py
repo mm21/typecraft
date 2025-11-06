@@ -16,6 +16,7 @@ from typing import (
     TypeAliasType,
     TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
 )
@@ -32,6 +33,8 @@ __all__ = [
     "flatten_union",
     "get_concrete_type",
 ]
+
+LiteralType = type(Literal["sentinel"])
 
 
 class Annotation:
@@ -521,7 +524,10 @@ def get_concrete_type(annotation: Any, /) -> type:
     annotation_ = normalize_annotation(annotation)
     concrete_type = get_origin(annotation_) or annotation_
 
-    if concrete_type in {Literal, Any}:
+    if concrete_type is Literal:
+        return cast(type, LiteralType)
+
+    if concrete_type is Any:
         return object
 
     if isinstance(concrete_type, TypeVar):

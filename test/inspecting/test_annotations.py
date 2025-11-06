@@ -270,6 +270,7 @@ def test_eq():
     assert Annotation(list[Any]) == Annotation(list[Any])
     assert Annotation(list) == Annotation(list[Any])
     assert Annotation(list[str]) != Annotation(list[Any])
+    assert Annotation(Literal["a", "b"]) != Annotation(Any)
 
 
 def test_any_vs_object():
