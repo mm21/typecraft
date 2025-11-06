@@ -47,3 +47,8 @@ VALUE_COLLECTION_TARGET_TYPES = _extract_types(ValueCollectionTargetType)
 VALUE_COLLECTION_SOURCE_TYPES = _extract_types(ValueCollectionSourceType)
 COLLECTION_TARGET_TYPES = _extract_types(CollectionTargetType)
 COLLECTION_SOURCE_TYPES = _extract_types(CollectionSourceType)
+
+COLLECTION_TARGET_TYPE_EXCEPTIONS = (str, bytes, bytearray, memoryview)
+"""
+Collection target types which shouldn't be recursed into.
+"""

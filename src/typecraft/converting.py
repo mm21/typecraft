@@ -13,7 +13,11 @@ from typing import Any, Generator, Self, Sized, cast, overload
 from .inspecting.annotations import ANY, Annotation, extract_tuple_args
 from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
-from .typedefs import COLLECTION_TARGET_TYPES, ValueCollectionSourceType
+from .typedefs import (
+    COLLECTION_TARGET_TYPE_EXCEPTIONS,
+    COLLECTION_TARGET_TYPES,
+    ValueCollectionSourceType,
+)
 
 type ConverterFuncType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
     [SourceT], TargetT
@@ -135,8 +139,13 @@ class BaseConversionFrame[ParamsT]:
         """
         Create a new frame and recurse using the engine.
         """
+        source_annotation_ = (
+            Annotation(type(obj))
+            if source_annotation in (None, ANY)
+            else source_annotation
+        )
         next_frame = self.copy(
-            source_annotation=source_annotation or Annotation(type(obj)),
+            source_annotation=source_annotation_,
             target_annotation=target_annotation,
             context=context,
             path_append=path_segment,
@@ -567,6 +576,15 @@ class BaseConversionEngine[
         assert registry_cls
         return cast(type[RegistryT], registry_cls)
 
+    @cached_property
+    def __is_serializing(self) -> bool:
+        """
+        Whether the engine is serializing; for debugging only.
+        """
+        from .serializing import SerializationEngine
+
+        return isinstance(self, SerializationEngine)
+
     def process(self, obj: Any, frame: FrameT) -> Any:
         """
         Main conversion dispatcher with common logic.
@@ -579,6 +597,12 @@ class BaseConversionEngine[
 
         if frame.source_annotation.is_union:
             return self._convert_source_union(obj, frame)
+
+        # debug asserts: can't convert from any, can't serialize to any
+        # - can validate to any; is_type() will just return True
+        assert frame.source_annotation != ANY
+        if self.__is_serializing:
+            assert frame.target_annotation != ANY
 
         # check if conversion is needed
         if not frame.target_annotation.is_type(obj, recurse=False):
@@ -593,7 +617,11 @@ class BaseConversionEngine[
         # - we can only create built-in collection types; the user is responsible for
         # recursing into custom subclasses thereof in a custom converter as the
         # custom subclass may have a special construction interface
-        if issubclass(frame.target_annotation.concrete_type, COLLECTION_TARGET_TYPES):
+        if issubclass(
+            frame.target_annotation.concrete_type, COLLECTION_TARGET_TYPES
+        ) and not issubclass(
+            frame.target_annotation.concrete_type, COLLECTION_TARGET_TYPE_EXCEPTIONS
+        ):
             return self._process_collection(obj, frame)
 
         # no conversion needed, return as-is
