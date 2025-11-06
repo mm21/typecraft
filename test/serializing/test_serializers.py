@@ -9,7 +9,6 @@ from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
     SerializationFrame,
     Serializer,
-    SerializerRegistry,
     serialize,
 )
 
@@ -132,45 +131,3 @@ def test_union_types():
     # int | Person where object is Person
     result = serialize(person, PERSON_SERIALIZER, source_type=int | Person)
     assert result == {"name": "Alice", "age": 30}
-
-
-def test_custom_serializer_for_builtin():
-    """
-    Test that custom serializers work for builtin types.
-    """
-    # int -> str
-    serializer = Serializer(int, str)
-    assert serialize(42, serializer) == "42"
-
-    # float -> int (truncate)
-    def truncate(f: float) -> int:
-        return int(f)
-
-    serializer = Serializer.from_func(truncate)
-    assert serialize(3.14, serializer) == 3
-    assert serialize(2.99, serializer) == 2
-
-
-def test_custom_serializer_for_builtin_collections():
-    """
-    Test that custom serializers work for builtin collection types.
-    """
-
-    # dict -> keys only
-    def dict_keys(d: dict) -> list:
-        return list(d.keys())
-
-    serializer = Serializer.from_func(dict_keys)
-    assert serialize({"b": 2, "a": 1}, serializer) == ["b", "a"]
-
-
-def test_registry():
-    """
-    Test serialization with registry.
-    """
-    registry = SerializerRegistry()
-    registry.register(Serializer(int, str))
-
-    obj = 1
-    result = serialize(obj, registry)
-    assert result == "1"

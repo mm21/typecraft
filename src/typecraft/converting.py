@@ -516,10 +516,12 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
         """
         Find the first converter that can handle the conversion.
         """
+        assert not target_annotation.is_union
         for converter in self._converters:
-            if converter.check_match(source_annotation, target_annotation):
-                if converter.can_convert(obj, source_annotation, target_annotation):
-                    return converter
+            if converter.check_match(
+                source_annotation, target_annotation
+            ) and converter.can_convert(obj, source_annotation, target_annotation):
+                return converter
         return None
 
     def extend(self, converters: Sequence[ConverterT]):
@@ -592,27 +594,30 @@ class BaseConversionEngine[
         Walks the object recursively based on reference annotation,
         invoking type-based converters when conversion is needed.
         """
+        # if source is a union, select which specific annotation matches the object
         if frame.source_annotation.is_union:
-            return self._process_source_union(obj, frame)
-
-        if frame.target_annotation.is_union:
-            return self._process_target_union(obj, frame)
+            frame_ = frame.copy(
+                source_annotation=_select_from_union(obj, frame.source_annotation)
+            )
+        else:
+            frame_ = frame
 
         # debug asserts:
         # - can't validate/serialize FROM any: need to know the object type
         # - can't serialize TO any: must have a known supported target type
         # - can validate TO any: is_type() will just return True
-        assert frame.source_annotation != ANY
+        assert frame_.source_annotation != ANY
         if self.__is_serializing:
-            assert frame.target_annotation != ANY
+            assert frame_.target_annotation != ANY
 
-        # check if conversion is needed
-        if not frame.target_annotation.is_type(obj, recurse=False):
-            # find converter and invoke it, returning the converted object
-            if converter := self._find_converter(obj, frame):
-                return converter.convert(obj, frame)
-            raise ValueError(
-                f"Object '{obj}' ({type(obj)}) could not be converted from {frame.source_annotation} to {frame.target_annotation}"
+        # invoke conversion if needed
+        if not frame_.target_annotation.is_type(obj, recurse=False):
+            return self._invoke_conversion(obj, frame_)
+
+        # if target is a union, select which specific annotation matches the object
+        if frame_.target_annotation.is_union:
+            frame_ = frame_.copy(
+                target_annotation=_select_from_union(obj, frame_.target_annotation)
             )
 
         # process collections by recursing into them
@@ -620,11 +625,11 @@ class BaseConversionEngine[
         # recursing into custom subclasses thereof in a custom converter as the
         # custom subclass may have a special construction interface
         if issubclass(
-            frame.target_annotation.concrete_type, COLLECTION_TARGET_TYPES
+            frame_.target_annotation.concrete_type, COLLECTION_TARGET_TYPES
         ) and not issubclass(
-            frame.target_annotation.concrete_type, COLLECTION_TARGET_TYPE_EXCEPTIONS
+            frame_.target_annotation.concrete_type, COLLECTION_TARGET_TYPE_EXCEPTIONS
         ):
-            return self._process_collection(obj, frame)
+            return self._process_collection(obj, frame_)
 
         # no conversion needed, return as-is
         return obj
@@ -634,33 +639,6 @@ class BaseConversionEngine[
         """
         Get builtin registries to use for conversion based on the parameters.
         """
-
-    def _process_source_union(self, obj: Any, frame: FrameT) -> Any:
-        """
-        Select which annotation the object matches and process it.
-        """
-        source_annotation = next(
-            (a for a in frame.source_annotation.arg_annotations if a.is_type(obj)),
-            None,
-        )
-        if not source_annotation:
-            raise ValueError(
-                f"'{obj}' ({type(obj)}) is not a type of source union {frame.source_annotation}"
-            )
-        return self.process(obj, frame.copy(source_annotation=source_annotation))
-
-    def _process_target_union(self, obj: Any, frame: FrameT) -> Any:
-        """
-        Process constituent types of union by trying each annotation.
-        """
-        for ann in frame.target_annotation.arg_annotations:
-            try:
-                return self.process(obj, frame.copy(target_annotation=ann))
-            except (ValueError, TypeError):
-                continue
-        raise ValueError(
-            f"'{obj}' ({type(obj)}) could not be converted to any member of target union {frame.target_annotation}"
-        )
 
     def _process_collection(self, obj: Any, frame: FrameT) -> Any:
         """
@@ -679,10 +657,31 @@ class BaseConversionEngine[
             assert issubclass(target_type, Mapping)
             return convert_to_mapping(cast(Mapping, obj), frame)
 
-    def _find_converter(self, obj: Any, frame: FrameT) -> BaseConverter | None:
+    def _invoke_conversion(self, obj: Any, frame: FrameT) -> Any:
+        if frame.target_annotation.is_union:
+            # handle union
+            for target_option in frame.target_annotation.arg_annotations:
+                if converter := self._find_converter(obj, frame, target_option):
+                    frame_ = frame.copy(target_annotation=target_option)
+                    try:
+                        return converter.convert(obj, frame_)
+                    except (ValueError, TypeError):
+                        # keep trying other converters
+                        continue
+        else:
+            # handle single target type
+            if converter := self._find_converter(obj, frame, frame.target_annotation):
+                return converter.convert(obj, frame)
+        raise ValueError(
+            f"Object '{obj}' ({type(obj)}) could not be converted from {frame.source_annotation} to {frame.target_annotation}"
+        )
+
+    def _find_converter(
+        self, obj: Any, frame: FrameT, target_annotation: Annotation
+    ) -> BaseConverter | None:
         for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
             if converter := registry.find(
-                obj, frame.source_annotation, frame.target_annotation
+                obj, frame.source_annotation, target_annotation
             ):
                 return converter
         return None
@@ -920,3 +919,19 @@ def _extract_mapping_item_ann(ann: Annotation) -> tuple[Annotation, Annotation] 
         return ann.arg_annotations
     else:
         return None
+
+
+def _select_from_union(obj: Any, union: Annotation) -> Annotation:
+    """
+    Select the annotation from the union which matches the given object.
+    """
+    assert union.is_union
+    ann = next(
+        (a for a in union.arg_annotations if a.is_type(obj, recurse=False)),
+        None,
+    )
+    if not ann:
+        raise ValueError(f"'{obj}' ({type(obj)}) is not a type of union {union}")
+    if ann.is_union:
+        return _select_from_union(obj, ann)
+    return ann
