@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import (
     Any,
     Union,
-    cast,
     overload,
 )
 
@@ -20,11 +19,11 @@ from .converting import (
     BaseConverterRegistry,
     ConverterFuncMixin,
     ConverterFuncType,
+    convert_to_mapping,
+    convert_to_sequence,
+    convert_to_set,
+    convert_to_tuple,
     normalize_to_registry,
-    process_mapping,
-    process_sequence,
-    process_set,
-    process_tuple,
 )
 from .inspecting.annotations import Annotation
 from .typedefs import (
@@ -267,24 +266,28 @@ def normalize_to_list[T](
     ]
 
 
-def _validate_tuple(
-    obj: ValueCollectionSourceType, frame: ValidationFrame
-) -> tuple[Any]:
-    return cast(tuple[Any], process_tuple(obj, frame))
+def _validate_tuple(obj: ValueCollectionSourceType, frame: ValidationFrame) -> tuple:
+    return convert_to_tuple(obj, frame)
 
 
-def _validate_list(obj: ValueCollectionSourceType, frame: ValidationFrame) -> list[Any]:
-    return cast(list[Any], process_sequence(obj, frame))
+def _validate_list(obj: ValueCollectionSourceType, frame: ValidationFrame) -> list:
+    obj_list = convert_to_sequence(obj, frame)
+    assert isinstance(obj_list, list)
+    return obj_list
 
 
 def _validate_set(
     obj: ValueCollectionSourceType, frame: ValidationFrame
-) -> set[Any] | frozenset[Any]:
-    return cast(set[Any] | frozenset[Any], process_set(obj, frame))
+) -> set | frozenset:
+    obj_set = convert_to_set(obj, frame)
+    assert isinstance(obj_set, (set, frozenset))
+    return obj_set
 
 
-def _validate_dict(obj: Mapping[Any, Any], frame: ValidationFrame) -> dict[Any, Any]:
-    return cast(dict[Any, Any], process_mapping(obj, frame))
+def _validate_dict(obj: Mapping[Any, Any], frame: ValidationFrame) -> dict:
+    obj_dict = convert_to_mapping(obj, frame)
+    assert isinstance(obj_dict, dict)
+    return obj_dict
 
 
 BUILTIN_REGISTRY = ValidatorRegistry(

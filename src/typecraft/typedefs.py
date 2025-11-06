@@ -12,24 +12,24 @@ from typing import (
 
 from .inspecting.annotations import Annotation, flatten_union
 
-type ValueCollectionTargetType[T] = Sequence[T] | Set[T] | tuple[T]
+type ValueCollectionTargetType = Sequence | Set | tuple
 """
 Collections which contain values rather than key-value mappings.
 """
 
-type ValueCollectionSourceType[T] = ValueCollectionTargetType[T] | range | Generator[
-    T, None, None
+type ValueCollectionSourceType = ValueCollectionTargetType | range | Generator[
+    Any, None, None
 ]
 """
 Types convertible to `ValueCollectionType`.
 """
 
-type CollectionTargetType = ValueCollectionTargetType[Any] | Mapping[Any, Any]
+type CollectionTargetType = ValueCollectionTargetType | Mapping
 """
 Superset of all collection types.
 """
 
-type CollectionSourceType = ValueCollectionSourceType[Any] | Mapping[Any, Any]
+type CollectionSourceType = ValueCollectionSourceType | Mapping
 """
 Superset of all types convertible to `CollectionType`.
 """

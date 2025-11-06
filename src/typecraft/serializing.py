@@ -24,8 +24,8 @@ from .converting import (
     BaseConverterRegistry,
     ConverterFuncMixin,
     ConverterFuncType,
+    convert_to_sequence,
     normalize_to_registry,
-    process_sequence,
 )
 from .inspecting.annotations import Annotation
 from .typedefs import ValueCollectionSourceType
@@ -257,18 +257,15 @@ class SupportsComparison(Protocol[_T_contra]):
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
-def _serialize_list(
-    obj: ValueCollectionSourceType, frame: SerializationFrame
-) -> list[Any]:
-    obj_list = cast(
-        list[Any], process_sequence(obj, frame, JSON_SERIALIZABLE_ANNOTATION)
-    )
+def _serialize_list(obj: ValueCollectionSourceType, frame: SerializationFrame) -> list:
+    obj_list = convert_to_sequence(obj, frame, JSON_SERIALIZABLE_ANNOTATION)
+    assert isinstance(obj_list, list)
 
     if isinstance(obj, Set) and frame.params.sort_sets:
         for o in obj_list:
             if not isinstance(o, SupportsComparison):
                 raise ValueError(
-                    f"Object '{o}' does not support comparison, so containing object cannot be converted to a sorted list"
+                    f"Object '{o}' does not support comparison, so containing collection cannot be converted to a sorted list"
                 )
         return sorted(cast(list[SupportsComparison], obj_list))
     else:

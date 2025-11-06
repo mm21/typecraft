@@ -637,14 +637,14 @@ class BaseConversionEngine[
         assert isinstance(obj, target_type)  # should have gotten converted otherwise
 
         if issubclass(target_type, tuple):
-            return process_tuple(cast(ValueCollectionSourceType, obj), frame)
+            return convert_to_tuple(cast(ValueCollectionSourceType, obj), frame)
         elif issubclass(target_type, Sequence):
-            return process_sequence(cast(ValueCollectionSourceType, obj), frame)
+            return convert_to_sequence(cast(ValueCollectionSourceType, obj), frame)
         elif issubclass(target_type, (set, frozenset)):
-            return process_set(cast(ValueCollectionSourceType, obj), frame)
+            return convert_to_set(cast(ValueCollectionSourceType, obj), frame)
         else:
             assert issubclass(target_type, Mapping)
-            return process_mapping(cast(Mapping, obj), frame)
+            return convert_to_mapping(cast(Mapping, obj), frame)
 
     def _find_converter(self, obj: Any, frame: FrameT) -> BaseConverter | None:
         for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
@@ -674,11 +674,11 @@ def normalize_to_registry[ConverterT, RegistryT](
     return registry
 
 
-def process_tuple[T](
-    obj: ValueCollectionSourceType[T], frame: BaseConversionFrame
-) -> tuple[T]:
+def convert_to_tuple(
+    obj: ValueCollectionSourceType, frame: BaseConversionFrame
+) -> tuple:
     """
-    Process a tuple, converting items if necessary.
+    Convert collection to tuple.
     """
     target_type = frame.target_annotation.concrete_type
 
@@ -727,7 +727,7 @@ def process_tuple[T](
         o is v for o, v in zip(obj, converted_objs)
     ):
         # have correct type and no conversions were done; return the original object
-        return cast(tuple[T], obj)
+        return cast(tuple, obj)
     elif target_type is tuple:
         # have a tuple (not a subclass thereof), return the newly created tuple
         return converted_objs
@@ -737,13 +737,13 @@ def process_tuple[T](
     )
 
 
-def process_sequence[T](
-    obj: ValueCollectionSourceType[T],
+def convert_to_sequence(
+    obj: ValueCollectionSourceType,
     frame: BaseConversionFrame,
     default_target_annotation: Annotation = ANY,
-) -> Sequence[T]:
+) -> Sequence:
     """
-    Process a sequence, converting items if necessary.
+    Convert collection to sequence.
     """
     target_type = frame.target_annotation.concrete_type
     # TODO: handle conversion from tuple
@@ -754,24 +754,21 @@ def process_sequence[T](
     )
 
     # create list of validated items
-    converted_objs = cast(
-        list[T],
-        [
-            frame.recurse(
-                o,
-                i,
-                source_annotation=source_item_ann,
-                target_annotation=target_item_ann,
-            )
-            for i, o in enumerate(obj)
-        ],
-    )
+    converted_objs = [
+        frame.recurse(
+            o,
+            i,
+            source_annotation=source_item_ann,
+            target_annotation=target_item_ann,
+        )
+        for i, o in enumerate(obj)
+    ]
 
     if isinstance(obj, target_type) and all(
         o is n for o, n in zip(obj, converted_objs)
     ):
         # have correct type and no conversions were done; return the original object
-        return cast(Sequence[T], obj)
+        return cast(Sequence, obj)
     elif target_type is list:
         # have a list (not a subclass thereof), return the newly created list
         return converted_objs
@@ -781,11 +778,9 @@ def process_sequence[T](
     )
 
 
-def process_set[T](
-    obj: ValueCollectionSourceType[T], frame: BaseConversionFrame
-) -> Set[T]:
+def convert_to_set(obj: ValueCollectionSourceType, frame: BaseConversionFrame) -> Set:
     """
-    Process a set, converting items if necessary.
+    Convert collection to set.
     """
     target_type = frame.target_annotation.concrete_type
     source_item_ann = _extract_sequence_item_ann(frame.source_annotation)
@@ -803,7 +798,7 @@ def process_set[T](
         obj_ids = {id(o) for o in obj}
         if all(id(o) in obj_ids for o in converted_objs):
             # have correct type and no conversions were done; return the original object
-            return cast(Set[T], obj)
+            return cast(Set, obj)
     if target_type in (set, frozenset):
         # have a set (not a subclass thereof), return the newly created set
         return converted_objs if target_type is set else frozenset(converted_objs)
@@ -813,11 +808,9 @@ def process_set[T](
     )
 
 
-def process_mapping[K, V](
-    obj: Mapping[K, V], frame: BaseConversionFrame
-) -> Mapping[K, V]:
+def convert_to_mapping(obj: Mapping, frame: BaseConversionFrame) -> Mapping:
     """
-    Process a mapping, converting items if necessary.
+    Convert mapping to mapping, which may be of a different type.
     """
     target_type = frame.target_annotation.concrete_type
     source_key_ann, source_value_ann = _extract_mapping_item_ann(
