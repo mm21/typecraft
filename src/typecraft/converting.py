@@ -598,8 +598,10 @@ class BaseConversionEngine[
         if frame.target_annotation.is_union:
             return self._process_target_union(obj, frame)
 
-        # debug asserts: can't convert from any, can't serialize to any
-        # - can validate to any; is_type() will just return True
+        # debug asserts:
+        # - can't validate/serialize FROM any: need to know the object type
+        # - can't serialize TO any: must have a known supported target type
+        # - can validate TO any: is_type() will just return True
         assert frame.source_annotation != ANY
         if self.__is_serializing:
             assert frame.target_annotation != ANY
