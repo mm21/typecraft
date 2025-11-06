@@ -592,11 +592,11 @@ class BaseConversionEngine[
         Walks the object recursively based on reference annotation,
         invoking type-based converters when conversion is needed.
         """
-        if frame.target_annotation.is_union:
-            return self._convert_union(obj, frame)
-
         if frame.source_annotation.is_union:
-            return self._convert_source_union(obj, frame)
+            return self._process_source_union(obj, frame)
+
+        if frame.target_annotation.is_union:
+            return self._process_target_union(obj, frame)
 
         # debug asserts: can't convert from any, can't serialize to any
         # - can validate to any; is_type() will just return True
@@ -633,9 +633,23 @@ class BaseConversionEngine[
         Get builtin registries to use for conversion based on the parameters.
         """
 
-    def _convert_union(self, obj: Any, frame: FrameT) -> Any:
+    def _process_source_union(self, obj: Any, frame: FrameT) -> Any:
         """
-        Validate constituent types of union by trying each option.
+        Select which annotation the object matches and process it.
+        """
+        source_annotation = next(
+            (a for a in frame.source_annotation.arg_annotations if a.is_type(obj)),
+            None,
+        )
+        if not source_annotation:
+            raise ValueError(
+                f"'{obj}' ({type(obj)}) is not a type of source union {frame.source_annotation}"
+            )
+        return self.process(obj, frame.copy(source_annotation=source_annotation))
+
+    def _process_target_union(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Process constituent types of union by trying each annotation.
         """
         for ann in frame.target_annotation.arg_annotations:
             try:
@@ -643,19 +657,8 @@ class BaseConversionEngine[
             except (ValueError, TypeError):
                 continue
         raise ValueError(
-            f"Object '{obj}' ({type(obj)}) could not be converted to any member of union {frame.target_annotation}"
+            f"'{obj}' ({type(obj)}) could not be converted to any member of target union {frame.target_annotation}"
         )
-
-    def _convert_source_union(self, obj: Any, frame: FrameT) -> Any:
-        # select which annotation this object matches
-        source_annotation = next(
-            (a for a in frame.source_annotation.arg_annotations if a.is_type(obj)),
-            None,
-        )
-        assert (
-            source_annotation
-        ), f"'{obj}' is not a type of union {frame.source_annotation}"
-        return self.process(obj, frame.copy(source_annotation=source_annotation))
 
     def _process_collection(self, obj: Any, frame: FrameT) -> Any:
         """
