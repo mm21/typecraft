@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Generator, Self, cast, overload
+from typing import Any, Generator, Self, Sized, cast, overload
 
 from .inspecting.annotations import ANY, Annotation, extract_tuple_args
 from .inspecting.classes import extract_type_param
@@ -694,19 +694,9 @@ def convert_to_tuple(
     # ensure object is sized
     sized_obj = list(obj) if isinstance(obj, Generator) else obj
 
-    # extract args from source/target annotations and pad to length of input
-    if issubclass(frame.source_annotation.concrete_type, tuple):
-        source_args = extract_tuple_args(frame.source_annotation, length=len(sized_obj))
-    else:
-        source_args = [_extract_sequence_item_ann(frame.source_annotation)] * len(
-            sized_obj
-        )
+    # extract args from source/target annotations
+    source_args = _extract_source_args(sized_obj, frame.source_annotation)
     target_args = extract_tuple_args(frame.target_annotation, length=len(sized_obj))
-
-    if len(sized_obj) != len(source_args):
-        raise ValueError(
-            f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(sized_obj)}: {sized_obj}"
-        )
 
     if len(sized_obj) != len(target_args):
         raise ValueError(
@@ -751,17 +741,8 @@ def convert_to_sequence(
     # ensure object is sized
     sized_obj = list(obj) if isinstance(obj, Generator) else obj
 
-    if issubclass(frame.source_annotation.concrete_type, tuple):
-        source_args = extract_tuple_args(frame.source_annotation, length=len(sized_obj))
-
-        if len(sized_obj) != len(source_args):
-            raise ValueError(
-                f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(sized_obj)}: {sized_obj}"
-            )
-    else:
-        source_args = [_extract_sequence_item_ann(frame.source_annotation)] * len(
-            sized_obj
-        )
+    # extract args from source/target annotations
+    source_args = _extract_source_args(sized_obj, frame.source_annotation)
     target_item_ann = (
         _extract_sequence_item_ann(frame.target_annotation) or default_target_annotation
     )
@@ -795,9 +776,13 @@ def convert_to_set(obj: ValueCollectionSourceType, frame: BaseConversionFrame) -
     """
     Convert collection to set.
     """
-    # TODO: could handle tuple source annotation here
     target_type = frame.target_annotation.concrete_type
-    source_item_ann = _extract_sequence_item_ann(frame.source_annotation)
+
+    # ensure object is sized
+    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+
+    # extract args from source/target annotations
+    source_args = _extract_source_args(sized_obj, frame.source_annotation)
     target_item_ann = _extract_sequence_item_ann(frame.target_annotation) or ANY
 
     # create set of validated items
@@ -805,7 +790,7 @@ def convert_to_set(obj: ValueCollectionSourceType, frame: BaseConversionFrame) -
         frame.recurse(
             o, i, source_annotation=source_item_ann, target_annotation=target_item_ann
         )
-        for i, o in enumerate(obj)
+        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_args))
     }
 
     if isinstance(obj, target_type):
@@ -863,6 +848,27 @@ def convert_to_mapping(obj: Mapping, frame: BaseConversionFrame) -> Mapping:
     raise ValueError(
         f"Cannot construct instance of target type {target_type}; create a custom validator for it"
     )
+
+
+def _extract_source_args(
+    sized_obj: Sized, source_annotation: Annotation
+) -> tuple[Annotation, ...]:
+    """
+    Extract source item annotations for each element in the collection.
+
+    For tuple sources, expands variadic tuples to match the collection length.
+    For other sequences, returns the single item annotation repeated for each element.
+    """
+    if issubclass(source_annotation.concrete_type, tuple):
+        source_args = extract_tuple_args(source_annotation, length=len(sized_obj))
+        if len(sized_obj) != len(source_args):
+            raise ValueError(
+                f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(sized_obj)}: {sized_obj}"
+            )
+        return source_args
+    else:
+        item_ann = _extract_sequence_item_ann(source_annotation) or ANY
+        return tuple([item_ann] * len(sized_obj))
 
 
 def _extract_sequence_item_ann(ann: Annotation) -> Annotation | None:
