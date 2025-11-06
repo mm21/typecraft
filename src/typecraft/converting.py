@@ -695,7 +695,7 @@ def convert_to_tuple(
     sized_obj = list(obj) if isinstance(obj, Generator) else obj
 
     # extract args from source/target annotations and pad to length of input
-    if isinstance(frame.source_annotation.concrete_type, tuple):
+    if issubclass(frame.source_annotation.concrete_type, tuple):
         source_args = extract_tuple_args(frame.source_annotation, length=len(sized_obj))
     else:
         source_args = [_extract_sequence_item_ann(frame.source_annotation)] * len(
@@ -746,9 +746,22 @@ def convert_to_sequence(
     Convert collection to sequence.
     """
     target_type = frame.target_annotation.concrete_type
-    # TODO: handle conversion from tuple
-    # - check why we need target type of ANY
-    source_item_ann = _extract_sequence_item_ann(frame.source_annotation)
+    # TODO: check why we need target type of ANY
+
+    # ensure object is sized
+    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+
+    if issubclass(frame.source_annotation.concrete_type, tuple):
+        source_args = extract_tuple_args(frame.source_annotation, length=len(sized_obj))
+
+        if len(sized_obj) != len(source_args):
+            raise ValueError(
+                f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(sized_obj)}: {sized_obj}"
+            )
+    else:
+        source_args = [_extract_sequence_item_ann(frame.source_annotation)] * len(
+            sized_obj
+        )
     target_item_ann = (
         _extract_sequence_item_ann(frame.target_annotation) or default_target_annotation
     )
@@ -761,11 +774,11 @@ def convert_to_sequence(
             source_annotation=source_item_ann,
             target_annotation=target_item_ann,
         )
-        for i, o in enumerate(obj)
+        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_args))
     ]
 
     if isinstance(obj, target_type) and all(
-        o is n for o, n in zip(obj, converted_objs)
+        o is n for o, n in zip(sized_obj, converted_objs)
     ):
         # have correct type and no conversions were done; return the original object
         return cast(Sequence, obj)
@@ -782,6 +795,7 @@ def convert_to_set(obj: ValueCollectionSourceType, frame: BaseConversionFrame) -
     """
     Convert collection to set.
     """
+    # TODO: could handle tuple source annotation here
     target_type = frame.target_annotation.concrete_type
     source_item_ann = _extract_sequence_item_ann(frame.source_annotation)
     target_item_ann = _extract_sequence_item_ann(frame.target_annotation) or ANY
