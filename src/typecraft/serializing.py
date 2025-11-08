@@ -24,11 +24,11 @@ from .converting import (
     BaseConverterRegistry,
     ConverterFuncMixin,
     ConverterFuncType,
-    convert_to_sequence,
+    convert_to_list,
     normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
-from .typedefs import ValueCollectionSourceType
+from .typedefs import ValueCollectionType
 
 __all__ = [
     "SerializerFuncType",
@@ -257,9 +257,10 @@ class SupportsComparison(Protocol[_T_contra]):
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
-def _serialize_list(obj: ValueCollectionSourceType, frame: SerializationFrame) -> list:
-    obj_list = convert_to_sequence(obj, frame, JSON_SERIALIZABLE_ANNOTATION)
-    assert isinstance(obj_list, list)
+def _serialize_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
+    obj_list = convert_to_list(
+        obj, frame, default_target_annotation=JSON_SERIALIZABLE_ANNOTATION
+    )
 
     if isinstance(obj, Set) and frame.params.sort_sets:
         for o in obj_list:

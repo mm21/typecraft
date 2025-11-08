@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import (
     Any,
-    Union,
     overload,
 )
 
@@ -19,17 +18,16 @@ from .converting import (
     BaseConverterRegistry,
     ConverterFuncMixin,
     ConverterFuncType,
-    convert_to_mapping,
-    convert_to_sequence,
+    convert_to_dict,
+    convert_to_list,
     convert_to_set,
     convert_to_tuple,
     normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
 from .typedefs import (
-    VALUE_COLLECTION_SOURCE_TYPES,
-    VALUE_COLLECTION_TARGET_TYPES,
-    ValueCollectionSourceType,
+    VALUE_COLLECTION_TYPES,
+    ValueCollectionType,
 )
 
 __all__ = [
@@ -240,7 +238,7 @@ def normalize_to_list[T](
     Custom types (even if iterable) are treated as single objects.
     """
     # normalize to a collection of objects
-    if isinstance(obj_or_objs, VALUE_COLLECTION_TARGET_TYPES):
+    if isinstance(obj_or_objs, VALUE_COLLECTION_TYPES):
         objs = obj_or_objs
     else:
         objs = [obj_or_objs]
@@ -266,39 +264,16 @@ def normalize_to_list[T](
     ]
 
 
-def _validate_tuple(obj: ValueCollectionSourceType, frame: ValidationFrame) -> tuple:
-    return convert_to_tuple(obj, frame)
-
-
-def _validate_list(obj: ValueCollectionSourceType, frame: ValidationFrame) -> list:
-    obj_list = convert_to_sequence(obj, frame)
-    assert isinstance(obj_list, list)
-    return obj_list
-
-
-def _validate_set(
-    obj: ValueCollectionSourceType, frame: ValidationFrame
-) -> set | frozenset:
-    obj_set = convert_to_set(obj, frame)
-    assert isinstance(obj_set, (set, frozenset))
-    return obj_set
-
-
-def _validate_dict(obj: Mapping[Any, Any], frame: ValidationFrame) -> dict:
-    obj_dict = convert_to_mapping(obj, frame)
-    assert isinstance(obj_dict, dict)
-    return obj_dict
-
-
+# TODO: add more validators: dataclasses, ...
 BUILTIN_REGISTRY = ValidatorRegistry(
     Validator(Any, str),
     Validator(str | bytes | bytearray, int),
     Validator(str | int, float),
-    Validator(Union[VALUE_COLLECTION_SOURCE_TYPES], tuple, func=_validate_tuple),
-    Validator(Union[VALUE_COLLECTION_SOURCE_TYPES], list, func=_validate_list),
-    Validator(Union[VALUE_COLLECTION_SOURCE_TYPES], set, func=_validate_set),
-    Validator(Union[VALUE_COLLECTION_SOURCE_TYPES], frozenset, func=_validate_set),
-    Validator(Mapping, dict, func=_validate_dict),
+    Validator(ValueCollectionType, list, func=convert_to_list),
+    Validator(ValueCollectionType, tuple, func=convert_to_tuple),
+    Validator(ValueCollectionType, set, func=convert_to_set),
+    Validator(ValueCollectionType, frozenset, func=convert_to_set),
+    Validator(Mapping, dict, func=convert_to_dict),
 )
 """
 Registry of built-in validators.

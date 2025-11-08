@@ -5,7 +5,7 @@ Low-level conversion capability, agnostic of validation vs serialization.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Hashable, Mapping, Sequence, Set
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any, Generator, Self, Sized, cast, overload
@@ -14,9 +14,8 @@ from .inspecting.annotations import ANY, Annotation, extract_tuple_args
 from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import (
-    COLLECTION_TARGET_TYPE_EXCEPTIONS,
-    COLLECTION_TARGET_TYPES,
-    ValueCollectionSourceType,
+    COLLECTION_TYPES,
+    ValueCollectionType,
 )
 
 type ConverterFuncType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
@@ -570,23 +569,6 @@ class BaseConversionEngine[
     def registry(self) -> RegistryT:
         return self.__user_registry
 
-    @property
-    def __registry_cls(self) -> type[RegistryT]:
-        registry_cls = extract_type_param(
-            type(self), BaseConversionEngine, "RegistryT", BaseConverterRegistry
-        )
-        assert registry_cls
-        return cast(type[RegistryT], registry_cls)
-
-    @cached_property
-    def __is_serializing(self) -> bool:
-        """
-        Whether the engine is serializing; for debugging only.
-        """
-        from .serializing import SerializationEngine
-
-        return isinstance(self, SerializationEngine)
-
     def process(self, obj: Any, frame: FrameT) -> Any:
         """
         Main conversion dispatcher with common logic.
@@ -597,7 +579,7 @@ class BaseConversionEngine[
         # if source is a union, select which specific annotation matches the object
         if frame.source_annotation.is_union:
             frame_ = frame.copy(
-                source_annotation=_select_from_union(obj, frame.source_annotation)
+                source_annotation=_select_ann_from_union(obj, frame.source_annotation)
             )
         else:
             frame_ = frame
@@ -617,18 +599,11 @@ class BaseConversionEngine[
         # if target is a union, select which specific annotation matches the object
         if frame_.target_annotation.is_union:
             frame_ = frame_.copy(
-                target_annotation=_select_from_union(obj, frame_.target_annotation)
+                target_annotation=_select_ann_from_union(obj, frame_.target_annotation)
             )
 
         # process collections by recursing into them
-        # - we can only create built-in collection types; the user is responsible for
-        # recursing into custom subclasses thereof in a custom converter as the
-        # custom subclass may have a special construction interface
-        if issubclass(
-            frame_.target_annotation.concrete_type, COLLECTION_TARGET_TYPES
-        ) and not issubclass(
-            frame_.target_annotation.concrete_type, COLLECTION_TARGET_TYPE_EXCEPTIONS
-        ):
+        if issubclass(frame_.target_annotation.concrete_type, COLLECTION_TYPES):
             return self._process_collection(obj, frame_)
 
         # no conversion needed, return as-is
@@ -643,19 +618,23 @@ class BaseConversionEngine[
     def _process_collection(self, obj: Any, frame: FrameT) -> Any:
         """
         Process collection by recursing into items.
+
+        We can only create built-in collection types; the user is responsible for
+        recursing into custom subclasses thereof in a custom converter as the
+        custom subclass may have a special construction interface.
         """
         target_type = frame.target_annotation.concrete_type
         assert isinstance(obj, target_type)  # should have gotten converted otherwise
 
-        if issubclass(target_type, tuple):
-            return convert_to_tuple(cast(ValueCollectionSourceType, obj), frame)
-        elif issubclass(target_type, Sequence):
-            return convert_to_sequence(cast(ValueCollectionSourceType, obj), frame)
+        if issubclass(target_type, list):
+            return convert_to_list(cast(ValueCollectionType, obj), frame)
+        elif issubclass(target_type, tuple):
+            return convert_to_tuple(cast(ValueCollectionType, obj), frame)
         elif issubclass(target_type, (set, frozenset)):
-            return convert_to_set(cast(ValueCollectionSourceType, obj), frame)
+            return convert_to_set(cast(ValueCollectionType, obj), frame)
         else:
-            assert issubclass(target_type, Mapping)
-            return convert_to_mapping(cast(Mapping, obj), frame)
+            assert issubclass(target_type, dict)
+            return convert_to_dict(cast(Mapping, obj), frame)
 
     def _invoke_conversion(self, obj: Any, frame: FrameT) -> Any:
         if frame.target_annotation.is_union:
@@ -686,6 +665,23 @@ class BaseConversionEngine[
                 return converter
         return None
 
+    @property
+    def __registry_cls(self) -> type[RegistryT]:
+        registry_cls = extract_type_param(
+            type(self), BaseConversionEngine, "RegistryT", BaseConverterRegistry
+        )
+        assert registry_cls
+        return cast(type[RegistryT], registry_cls)
+
+    @cached_property
+    def __is_serializing(self) -> bool:
+        """
+        Whether the engine is serializing; for debugging only.
+        """
+        from .serializing import SerializationEngine
+
+        return isinstance(self, SerializationEngine)
+
 
 def normalize_to_registry[ConverterT, RegistryT](
     converter_cls: type[ConverterT],
@@ -706,77 +702,24 @@ def normalize_to_registry[ConverterT, RegistryT](
     return registry
 
 
-def convert_to_tuple(
-    obj: ValueCollectionSourceType, frame: BaseConversionFrame
-) -> tuple:
-    """
-    Convert collection to tuple.
-    """
-    target_type = frame.target_annotation.concrete_type
-
-    # validate variadic tuple: input can't be set
-    if (
-        len(frame.target_annotation.arg_annotations)
-        and frame.target_annotation.arg_annotations[-1].raw is not ...
-    ):
-        assert not isinstance(
-            obj, (set, frozenset)
-        ), f"Can't convert from set to fixed-length tuple as items would be in random order: {obj}"
-
-    # ensure object is sized
-    sized_obj = list(obj) if isinstance(obj, Generator) else obj
-
-    # extract args from source/target annotations
-    source_args = _extract_source_args(sized_obj, frame.source_annotation)
-    target_args = extract_tuple_args(frame.target_annotation, length=len(sized_obj))
-
-    if len(sized_obj) != len(target_args):
-        raise ValueError(
-            f"Tuple length mismatch: expected {len(target_args)} from target annotation, got {len(sized_obj)}: {sized_obj}"
-        )
-
-    # create tuple of validated items
-    converted_objs = tuple(
-        frame.recurse(
-            o, i, source_annotation=source_item_ann, target_annotation=target_item_ann
-        )
-        for i, (o, source_item_ann, target_item_ann) in enumerate(
-            zip(sized_obj, source_args, target_args)
-        )
-    )
-
-    if isinstance(obj, target_type) and all(
-        o is v for o, v in zip(obj, converted_objs)
-    ):
-        # have correct type and no conversions were done; return the original object
-        return cast(tuple, obj)
-    elif target_type is tuple:
-        # have a tuple (not a subclass thereof), return the newly created tuple
-        return converted_objs
-
-    raise ValueError(
-        f"Cannot construct instance of target type {target_type}; create a custom validator for it"
-    )
-
-
-def convert_to_sequence(
-    obj: ValueCollectionSourceType,
+def convert_to_list(
+    obj: ValueCollectionType,
     frame: BaseConversionFrame,
+    *,
     default_target_annotation: Annotation = ANY,
-) -> Sequence:
+) -> list:
     """
-    Convert collection to sequence.
+    Convert collection to list.
     """
     target_type = frame.target_annotation.concrete_type
-    # TODO: check why we need target type of ANY
+    assert issubclass(target_type, list)
 
-    # ensure object is sized
     sized_obj = list(obj) if isinstance(obj, Generator) else obj
 
-    # extract args from source/target annotations
-    source_args = _extract_source_args(sized_obj, frame.source_annotation)
+    # extract item annotations
+    source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
     target_item_ann = (
-        _extract_sequence_item_ann(frame.target_annotation) or default_target_annotation
+        _extract_value_item_ann(frame.target_annotation) or default_target_annotation
     )
 
     # create list of validated items
@@ -787,14 +730,14 @@ def convert_to_sequence(
             source_annotation=source_item_ann,
             target_annotation=target_item_ann,
         )
-        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_args))
+        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_item_anns))
     ]
 
     if isinstance(obj, target_type) and all(
         o is n for o, n in zip(sized_obj, converted_objs)
     ):
         # have correct type and no conversions were done; return the original object
-        return cast(Sequence, obj)
+        return obj
     elif target_type is list:
         # have a list (not a subclass thereof), return the newly created list
         return converted_objs
@@ -804,32 +747,88 @@ def convert_to_sequence(
     )
 
 
-def convert_to_set(obj: ValueCollectionSourceType, frame: BaseConversionFrame) -> Set:
+def convert_to_tuple(obj: ValueCollectionType, frame: BaseConversionFrame) -> tuple:
+    """
+    Convert collection to tuple.
+    """
+    target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, tuple)
+
+    # validate non-variadic tuple: input can't be set
+    if (
+        len(frame.target_annotation.arg_annotations)
+        and frame.target_annotation.arg_annotations[-1].raw is not ...
+    ):
+        if isinstance(obj, (set, frozenset)):
+            raise ValueError(
+                f"Can't convert from set to fixed-length tuple as items would be in random order: {obj}"
+            )
+
+    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+
+    # extract item annotations
+    source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
+    target_item_anns = extract_tuple_args(
+        frame.target_annotation, length=len(sized_obj)
+    )
+
+    if len(target_item_anns) != len(sized_obj):
+        raise ValueError(
+            f"Tuple length mismatch: expected {len(target_item_anns)} from target annotation, got {len(sized_obj)}: {sized_obj}"
+        )
+
+    # create tuple of validated items
+    converted_objs = tuple(
+        frame.recurse(
+            o, i, source_annotation=source_item_ann, target_annotation=target_item_ann
+        )
+        for i, (o, source_item_ann, target_item_ann) in enumerate(
+            zip(sized_obj, source_item_anns, target_item_anns)
+        )
+    )
+
+    if isinstance(obj, target_type) and all(
+        o is v for o, v in zip(sized_obj, converted_objs)
+    ):
+        # have correct type and no conversions were done; return the original object
+        return obj
+    elif target_type is tuple:
+        # have a tuple (not a subclass thereof), return the newly created tuple
+        return converted_objs
+
+    raise ValueError(
+        f"Cannot construct instance of target type {target_type}; create a custom validator for it"
+    )
+
+
+def convert_to_set(
+    obj: ValueCollectionType, frame: BaseConversionFrame
+) -> set | frozenset:
     """
     Convert collection to set.
     """
     target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, (set, frozenset))
 
-    # ensure object is sized
     sized_obj = list(obj) if isinstance(obj, Generator) else obj
 
-    # extract args from source/target annotations
-    source_args = _extract_source_args(sized_obj, frame.source_annotation)
-    target_item_ann = _extract_sequence_item_ann(frame.target_annotation) or ANY
+    # extract item annotations
+    source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
+    target_item_ann = _extract_value_item_ann(frame.target_annotation) or ANY
 
     # create set of validated items
     converted_objs = {
         frame.recurse(
             o, i, source_annotation=source_item_ann, target_annotation=target_item_ann
         )
-        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_args))
+        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_item_anns))
     }
 
     if isinstance(obj, target_type):
-        obj_ids = {id(o) for o in obj}
+        obj_ids = {id(o) for o in sized_obj}
         if all(id(o) in obj_ids for o in converted_objs):
             # have correct type and no conversions were done; return the original object
-            return cast(Set, obj)
+            return obj
     if target_type in (set, frozenset):
         # have a set (not a subclass thereof), return the newly created set
         return converted_objs if target_type is set else frozenset(converted_objs)
@@ -839,11 +838,14 @@ def convert_to_set(obj: ValueCollectionSourceType, frame: BaseConversionFrame) -
     )
 
 
-def convert_to_mapping(obj: Mapping, frame: BaseConversionFrame) -> Mapping:
+def convert_to_dict(obj: Mapping, frame: BaseConversionFrame) -> dict:
     """
-    Convert mapping to mapping, which may be of a different type.
+    Convert mapping to dict.
     """
     target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, dict)
+
+    # extract item annotations
     source_key_ann, source_value_ann = _extract_mapping_item_ann(
         frame.source_annotation
     ) or (ANY, ANY)
@@ -882,28 +884,30 @@ def convert_to_mapping(obj: Mapping, frame: BaseConversionFrame) -> Mapping:
     )
 
 
-def _extract_source_args(
-    sized_obj: Sized, source_annotation: Annotation
-) -> tuple[Annotation, ...]:
+def _extract_value_item_anns(obj: Sized, ann: Annotation) -> tuple[Annotation, ...]:
     """
-    Extract source item annotations for each element in the collection.
+    Extract item annotations for each element in the collection.
 
     For tuple sources, expands variadic tuples to match the collection length.
     For other sequences, returns the single item annotation repeated for each element.
     """
-    if issubclass(source_annotation.concrete_type, tuple):
-        source_args = extract_tuple_args(source_annotation, length=len(sized_obj))
-        if len(sized_obj) != len(source_args):
+    if issubclass(ann.concrete_type, tuple):
+        source_args = extract_tuple_args(ann, length=len(obj))
+        if len(obj) != len(source_args):
             raise ValueError(
-                f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(sized_obj)}: {sized_obj}"
+                f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(obj)}: {obj}"
             )
         return source_args
     else:
-        item_ann = _extract_sequence_item_ann(source_annotation) or ANY
-        return tuple([item_ann] * len(sized_obj))
+        # TODO: handle range: item type int
+        item_ann = _extract_value_item_ann(ann) or ANY
+        return tuple([item_ann] * len(obj))
 
 
-def _extract_sequence_item_ann(ann: Annotation) -> Annotation | None:
+def _extract_value_item_ann(ann: Annotation) -> Annotation | None:
+    """
+    Extract item annotation for value collection.
+    """
     assert (
         len(ann.arg_annotations) <= 1
     ), f"Invalid number of type args for non-mapping collection, must be 0 or 1: {ann}"
@@ -911,6 +915,10 @@ def _extract_sequence_item_ann(ann: Annotation) -> Annotation | None:
 
 
 def _extract_mapping_item_ann(ann: Annotation) -> tuple[Annotation, Annotation] | None:
+    """
+    Extract item annotations as (key annotation, value annotation) for mapping
+    collection.
+    """
     assert len(ann.arg_annotations) in {
         0,
         2,
@@ -921,7 +929,7 @@ def _extract_mapping_item_ann(ann: Annotation) -> tuple[Annotation, Annotation] 
         return None
 
 
-def _select_from_union(obj: Any, union: Annotation) -> Annotation:
+def _select_ann_from_union(obj: Any, union: Annotation) -> Annotation:
     """
     Select the annotation from the union which matches the given object.
     """
@@ -933,5 +941,5 @@ def _select_from_union(obj: Any, union: Annotation) -> Annotation:
     if not ann:
         raise ValueError(f"'{obj}' ({type(obj)}) is not a type of union {union}")
     if ann.is_union:
-        return _select_from_union(obj, ann)
+        return _select_ann_from_union(obj, ann)
     return ann
