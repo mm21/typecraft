@@ -273,14 +273,11 @@ def test_edge_cases():
 def test_tuple_args():
     # fixed-length tuple
     result = extract_tuple_args(Annotation(tuple[int, str]))
+    assert isinstance(result, tuple)
     assert len(result) == 2
     assert result == (Annotation(int), Annotation(str))
 
     # variadic tuple
     result = extract_tuple_args(Annotation(tuple[int, ...]))
-    assert len(result) == 0
-
-    # padded variadic tuple
-    result = extract_tuple_args(Annotation(tuple[int, ...]), length=2)
-    assert len(result) == 2
-    assert result == (Annotation(int), Annotation(int))
+    assert not isinstance(result, tuple)
+    assert result.raw is int

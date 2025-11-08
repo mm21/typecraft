@@ -727,10 +727,14 @@ def convert_to_list(
         frame.recurse(
             o,
             i,
-            source_annotation=source_item_ann,
+            source_annotation=(
+                source_item_anns[i]
+                if isinstance(source_item_anns, tuple)
+                else source_item_anns
+            ),
             target_annotation=target_item_ann,
         )
-        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_item_anns))
+        for i, o in enumerate(sized_obj)
     ]
 
     if isinstance(obj, target_type) and all(
@@ -768,23 +772,30 @@ def convert_to_tuple(obj: ValueCollectionType, frame: BaseConversionFrame) -> tu
 
     # extract item annotations
     source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
-    target_item_anns = extract_tuple_args(
-        frame.target_annotation, length=len(sized_obj)
-    )
+    target_item_anns = extract_tuple_args(frame.target_annotation)
 
-    if len(target_item_anns) != len(sized_obj):
+    if isinstance(target_item_anns, tuple) and len(target_item_anns) != len(sized_obj):
         raise ValueError(
-            f"Tuple length mismatch: expected {len(target_item_anns)} from target annotation, got {len(sized_obj)}: {sized_obj}"
+            f"Tuple length mismatch: expected {len(target_item_anns)} from target annotation {frame.target_annotation}, got {len(sized_obj)}: {sized_obj}"
         )
 
     # create tuple of validated items
     converted_objs = tuple(
         frame.recurse(
-            o, i, source_annotation=source_item_ann, target_annotation=target_item_ann
+            o,
+            i,
+            source_annotation=(
+                source_item_anns[i]
+                if isinstance(source_item_anns, tuple)
+                else source_item_anns
+            ),
+            target_annotation=(
+                target_item_anns[i]
+                if isinstance(target_item_anns, tuple)
+                else target_item_anns
+            ),
         )
-        for i, (o, source_item_ann, target_item_ann) in enumerate(
-            zip(sized_obj, source_item_anns, target_item_anns)
-        )
+        for i, o, in enumerate(sized_obj)
     )
 
     if isinstance(obj, target_type) and all(
@@ -819,9 +830,16 @@ def convert_to_set(
     # create set of validated items
     converted_objs = {
         frame.recurse(
-            o, i, source_annotation=source_item_ann, target_annotation=target_item_ann
+            o,
+            i,
+            source_annotation=(
+                source_item_anns[i]
+                if isinstance(source_item_anns, tuple)
+                else source_item_anns
+            ),
+            target_annotation=target_item_ann,
         )
-        for i, (o, source_item_ann) in enumerate(zip(sized_obj, source_item_anns))
+        for i, o in enumerate(sized_obj)
     }
 
     if isinstance(obj, target_type):
@@ -884,30 +902,31 @@ def convert_to_dict(obj: Mapping, frame: BaseConversionFrame) -> dict:
     )
 
 
-def _extract_value_item_anns(obj: Sized, ann: Annotation) -> tuple[Annotation, ...]:
+def _extract_value_item_anns(
+    obj: Sized, ann: Annotation
+) -> Annotation | tuple[Annotation, ...]:
     """
     Extract item annotations for each element in the collection.
 
-    For tuple sources, expands variadic tuples to match the collection length.
-    For other sequences, returns the single item annotation repeated for each element.
+    - Returns `Annotation` if the annotation applies to each item in obj
+    - Returns `tuple[Annotation, ...]` if obj is a fixed-length tuple
     """
     if issubclass(ann.concrete_type, tuple):
-        source_args = extract_tuple_args(ann, length=len(obj))
-        if len(obj) != len(source_args):
+        source_args = extract_tuple_args(ann)
+        if isinstance(source_args, tuple) and len(obj) != len(source_args):
             raise ValueError(
-                f"Tuple length mismatch: expected {len(source_args)} from source annotation, got {len(obj)}: {obj}"
+                f"Tuple length mismatch: expected {len(source_args)} from annotation {ann}, got {len(obj)}: {obj}"
             )
         return source_args
     else:
-        # TODO: handle range: item type int
-        item_ann = _extract_value_item_ann(ann) or ANY
-        return tuple([item_ann] * len(obj))
+        return _extract_value_item_ann(ann) or ANY
 
 
 def _extract_value_item_ann(ann: Annotation) -> Annotation | None:
     """
-    Extract item annotation for value collection.
+    Extract item annotation for non-tuple value collection.
     """
+    # TODO: handle range: item type int
     assert (
         len(ann.arg_annotations) <= 1
     ), f"Invalid number of type args for non-mapping collection, must be 0 or 1: {ann}"

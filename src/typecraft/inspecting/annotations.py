@@ -145,9 +145,15 @@ class Annotation:
         self.arg_annotations = (
             tuple(Annotation(a) for a in self.args)
             if self.origin not in (Literal, Callable)
-            else ()
+            else cast(tuple[Annotation, ...], ())
         )
         self.concrete_type = get_concrete_type(raw)
+
+        # validate tuple if applicable
+        if issubclass(self.concrete_type, tuple) and len(self.arg_annotations):
+            if self.arg_annotations[-1].raw is ...:
+                if len(self.arg_annotations) != 2 or self.arg_annotations[0].raw is ...:
+                    raise ValueError(f"Invalid variadic tuple: {annotation}")
 
     def __repr__(self) -> str:
         raw = f"{self.raw}"
@@ -406,10 +412,15 @@ class Annotation:
         return all(ann.is_type(o) for o in obj)
 
     def _check_tuple(self, obj: tuple[Any]) -> bool:
-        args = extract_tuple_args(self, length=len(obj))
-        if len(args) != len(obj):
-            return False
-        return all(a.is_type(o) for a, o in zip(args, obj))
+        args = extract_tuple_args(self)
+        if isinstance(args, tuple):
+            # fixed-length tuple
+            if len(args) != len(obj):
+                return False
+            return all(a.is_type(o) for a, o in zip(args, obj))
+        else:
+            # variadic tuple
+            return all(args.is_type(o) for o in obj)
 
     def _check_dict(self, obj: dict[Any, Any]) -> bool:
         assert len(self.arg_annotations) in {0, 2}
@@ -545,31 +556,28 @@ def get_concrete_type(annotation: Any, /) -> type:
 
 
 def extract_tuple_args(
-    annotation: Annotation, /, *, length: int | None = None
-) -> tuple[Annotation, ...]:
+    annotation: Annotation, /
+) -> Annotation | tuple[Annotation, ...]:
     """
-    Extract args from the tuple, trimming "..." and optionally padding to given length
-    if the args end in "...".
+    Extract args from the tuple.
+
+    - Returns `Annotation` if the tuple is variadic (e.g. `tuple[int, ...]`)
+    - Returns a tuple of `Annotation` if the tuple is fixed-length
+    (e.g. tuple[int, str])
     """
     assert issubclass(annotation.concrete_type, tuple)
-    args: list[Annotation] = []
 
-    if (
-        len(annotation.arg_annotations)
-        and annotation.arg_annotations[-1].raw is not ...
-    ):
+    if len(annotation.arg_annotations) == 0:
+        # assume tuple[Any, ...]
+        return ANY
+
+    if annotation.arg_annotations[-1].raw is ...:
+        # variadic tuple like tuple[int, ...]
+        assert len(annotation.arg_annotations) == 2
+        return annotation.arg_annotations[0]
+    else:
         # fixed-length tuple like tuple[int, str]
-        args += annotation.arg_annotations
-    elif length:
-        # empty or homogeneous tuple like tuple[int, ...]
-        assert len(annotation.arg_annotations) in {
-            0,
-            2,
-        }, f"Invalid number of type arguments for variadic tuple, expect 0 or 2: {annotation}"
-        ann = annotation.arg_annotations[0] if len(annotation.arg_annotations) else ANY
-        args += [ann] * length
-
-    return tuple(args)
+        return annotation.arg_annotations
 
 
 def _recurse_union(annotation: Any, /, *, preserve_extras: bool) -> list[Any]:
