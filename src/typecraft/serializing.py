@@ -4,12 +4,10 @@ Serialization capability.
 
 from __future__ import annotations
 
-from collections.abc import Set
 from dataclasses import dataclass
 from types import NoneType
 from typing import (
     Any,
-    Literal,
     Protocol,
     TypeVar,
     cast,
@@ -59,13 +57,6 @@ returns an object of built-in Python type. Can optionally take
 class SerializationParams:
     """
     Serialization params as passed by user.
-    """
-
-    mode: Literal["json", "plain"]
-    """
-    Serialization mode:
-    - "plain": serialize without special handling
-    - "json": apply converters to ensure JSON-serializable output
     """
 
     sort_sets: bool
@@ -178,7 +169,8 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
     def _get_builtin_registries(
         self, frame: SerializationFrame
     ) -> tuple[SerializerRegistry, ...]:
-        return (JSON_REGISTRY,) if frame.params.mode == "json" else ()
+        _ = frame
+        return (JSON_REGISTRY,)
 
 
 @overload
@@ -187,9 +179,8 @@ def serialize(
     /,
     *serializers: Serializer[Any, Any],
     context: Any = None,
-    source_type: Annotation | Any | None = None,
-    mode: Literal["json", "plain"] = "json",
     sort_sets: bool = True,
+    source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType: ...
 
 
@@ -200,9 +191,8 @@ def serialize(
     /,
     *,
     context: Any = None,
-    source_type: Annotation | Any | None = None,
-    mode: Literal["json", "plain"] = "json",
     sort_sets: bool = True,
+    source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType: ...
 
 
@@ -211,9 +201,8 @@ def serialize(
     /,
     *serializers_or_registry: Serializer[Any, Any] | SerializerRegistry,
     context: Any = None,
-    source_type: Annotation | Any | None = None,
-    mode: Literal["json", "plain"] = "json",
     sort_sets: bool = True,
+    source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType:
     """
     Recursively serialize object by type, generally to built-in Python types.
@@ -222,10 +211,10 @@ def serialize(
     at each level based on the actual object types (or optionally specified source type).
 
     :param obj: Object to serialize
-    :param source_type: Optional source type annotation for type-specific serialization. \
-    If None, type is inferred from the object.
-    :param mode: "json" to ensure JSON-compatible output, "plain" for serialization with no coercion
     :param context: User-defined context passed to serializers
+    :param sort_sets: Whether to sort sets for deterministic output
+    :param source_type: Optional source type annotation for type-specific \
+    serialization; if `None`, type is inferred from the object
     """
     source_annotation = (
         Annotation._normalize(source_type)
@@ -236,7 +225,7 @@ def serialize(
         Serializer, SerializerRegistry, *serializers_or_registry
     )
     engine = SerializationEngine(registry=registry)
-    params = SerializationParams(mode=mode, sort_sets=sort_sets)
+    params = SerializationParams(sort_sets=sort_sets)
     frame = SerializationFrame(
         source_annotation=source_annotation,
         target_annotation=JSON_SERIALIZABLE_ANNOTATION,
@@ -262,11 +251,11 @@ def _serialize_list(obj: ValueCollectionType, frame: SerializationFrame) -> list
         obj, frame, default_target_annotation=JSON_SERIALIZABLE_ANNOTATION
     )
 
-    if isinstance(obj, Set) and frame.params.sort_sets:
+    if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
         for o in obj_list:
             if not isinstance(o, SupportsComparison):
                 raise ValueError(
-                    f"Object '{o}' does not support comparison, so containing collection cannot be converted to a sorted list"
+                    f"Object '{o}' does not support comparison, so containing set cannot be converted to a sorted list"
                 )
         return sorted(cast(list[SupportsComparison], obj_list))
     else:
@@ -278,5 +267,5 @@ JSON_REGISTRY = SerializerRegistry(
     Serializer(set | frozenset | tuple, list, func=_serialize_list),
 )
 """
-Registry to use for json-mode serialization.
+Registry to use for json serialization.
 """
