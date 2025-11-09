@@ -45,6 +45,28 @@ class BaseTransformer[InputT, OutputT]:
     """
 
 
+class StringToIntTransformer(BaseTransformer[str, int]):
+    """
+    Concrete class with str and int parameters.
+    """
+
+
+class Input:
+    pass
+
+
+class Output:
+    pass
+
+
+class InputImpl(Input):
+    pass
+
+
+class OutputImpl(Output):
+    pass
+
+
 class UnrelatedClass:
     """
     Class unrelated to any others.
@@ -65,6 +87,37 @@ def test_all_args():
 
     args = extract_args(IntMiddleContainer, BaseContainer)
     assert args == {"T": int}
+
+
+def test_extract_args_with_unresolved():
+    """
+    Test that extract_args includes unresolved TypeVars.
+    """
+
+    class GenericTransformer[T](BaseTransformer[T, int]):
+        pass
+
+    args = extract_args(GenericTransformer, BaseTransformer)
+
+    # should include the unresolved TypeVar
+    assert list(args.keys()) == ["InputT", "OutputT"]
+    assert isinstance(args["InputT"], TypeVar)
+    assert args["OutputT"] is int
+
+
+def test_extract_args_empty_params():
+    """
+    Test extracting args from a base class with no type parameters.
+    """
+
+    class NonGenericBase:
+        pass
+
+    class Derived(NonGenericBase):
+        pass
+
+    with raises(ValueError, match="not found in .*?'s inheritance hierarchy"):
+        extract_args(Derived, BaseContainer)
 
 
 def test_direct_inheritance():
@@ -126,15 +179,108 @@ def test_deeply_nested_inheritance():
     assert result is str
 
 
+def test_extract_by_index():
+    """
+    Test extracting type params by index.
+    """
+    result = extract_arg(StringToIntTransformer, BaseTransformer, 0)
+    assert result is str
+
+    result = extract_arg(StringToIntTransformer, BaseTransformer, 1)
+    assert result is int
+
+
+def test_extract_by_index_with_param_cls():
+    """
+    Test extracting type params by index with param_cls filter.
+    """
+
+    class MyTransformer(BaseTransformer[InputImpl, OutputImpl]):
+        pass
+
+    # extract input type by index
+    result = extract_arg(MyTransformer, BaseTransformer, 0, Input)
+    assert result is InputImpl
+
+    # extract output type by index
+    result = extract_arg(MyTransformer, BaseTransformer, 1, Output)
+    assert result is OutputImpl
+
+
+def test_index_with_partially_resolved():
+    """
+    Test extracting by index when some params are resolved and some aren't.
+    """
+
+    class PartialTransformer[T](BaseTransformer[T, int]):
+        pass
+
+    # index 1 should work (resolved to int)
+    result = extract_arg(PartialTransformer, BaseTransformer, 1)
+    assert result is int
+
+    # index 0 should raise (unresolved TypeVar)
+    with raises(ValueError, match="Type parameter with index 0 is unresolved"):
+        extract_arg(PartialTransformer, BaseTransformer, 0)
+
+
+def test_index_bounds_single_param():
+    """
+    Test index bounds checking with single parameter.
+    """
+
+    class IntContainer(BaseContainer[int]):
+        pass
+
+    # index 0 should work
+    result = extract_arg(IntContainer, BaseContainer, 0)
+    assert result is int
+
+    # index 1 should fail
+    with raises(IndexError, match="has 1 parameter"):
+        extract_arg(IntContainer, BaseContainer, 1)
+
+
+def test_index_param_cls_mismatch():
+    """
+    Test param_cls validation when extracting by index.
+    """
+
+    class MyTransformer(BaseTransformer[Input, Output]):
+        pass
+
+    # should raise TypeError when param_cls doesn't match for index
+    with raises(TypeError, match="does not match required base class"):
+        extract_arg(MyTransformer, BaseTransformer, 0, UnrelatedClass)
+
+
+def test_extract_invalid():
+    """
+    Test extracting with non-existent parameter name.
+    """
+    with raises(KeyError, match="Type parameter 'NonExistent' not found"):
+        extract_arg(StringToIntTransformer, BaseTransformer, "NonExistent")
+
+    with raises(IndexError, match="Type parameter index 2 out of range"):
+        extract_arg(StringToIntTransformer, BaseTransformer, 2)
+
+
+def test_extract_unresolved_typevar():
+    """
+    Test extracting unresolved TypeVar by index raises ValueError.
+    """
+
+    class GenericTransformer[T, U](BaseTransformer[T, U]):
+        pass
+
+    with raises(ValueError, match="Type parameter with index 0 is unresolved"):
+        extract_arg(GenericTransformer, BaseTransformer, 0)
+
+
 def test_multiple_type_params_without_filter():
     """
     Test class with multiple type params without param_cls filter.
     """
-
-    class StringToIntTransformer(BaseTransformer[str, int]):
-        pass
-
-    # without param_cls, returns InputT when name is "InputT"
     result = extract_arg(StringToIntTransformer, BaseTransformer, "InputT")
     assert result is str
 
@@ -143,18 +289,6 @@ def test_multiple_type_params_with_filter():
     """
     Test distinguishing between multiple type params using param_cls.
     """
-
-    class Input:
-        pass
-
-    class Output:
-        pass
-
-    class InputImpl(Input):
-        pass
-
-    class OutputImpl(Output):
-        pass
 
     class MyTransformer(BaseTransformer[InputImpl, OutputImpl]):
         pass
@@ -172,18 +306,6 @@ def test_nested_with_multiple_type_params():
     """
     Test deeply nested inheritance with multiple type params.
     """
-
-    class Input:
-        pass
-
-    class Output:
-        pass
-
-    class InputImpl(Input):
-        pass
-
-    class OutputImpl(Output):
-        pass
 
     class MiddleTransformer[InputT, OutputT](BaseTransformer[InputT, OutputT]):
         pass
@@ -264,24 +386,6 @@ def test_concrete_type_in_middle():
     assert result is int
 
 
-def test_repairing_generic():
-    """
-    Test re-parameterizing a generic in inheritance.
-    """
-
-    class MiddleContainer[T](BaseContainer[T]):
-        pass
-
-    class StrMiddleContainer(MiddleContainer[str]):
-        pass
-
-    class FinalContainer(StrMiddleContainer):
-        pass
-
-    result = extract_arg(FinalContainer, BaseContainer, "T")
-    assert result is str
-
-
 def test_mixed_concrete_and_generic():
     """
     Test mixing concrete types and generics in hierarchy.
@@ -298,26 +402,17 @@ def test_mixed_concrete_and_generic():
     assert result is int
 
 
-def test_param_base_cls_not_matching():
+def test_param_cls_not_matching():
     """
     Test param_cls that doesn't match any type param.
     """
-
-    class Input:
-        pass
-
-    class Output:
-        pass
-
-    class Unrelated:
-        pass
 
     class MyTransformer(BaseTransformer[Input, Output]):
         pass
 
     # should raise TypeError when param_cls doesn't match
     with raises(TypeError, match="does not match required base class"):
-        extract_arg(MyTransformer, BaseTransformer, "InputT", Unrelated)
+        extract_arg(MyTransformer, BaseTransformer, "InputT", UnrelatedClass)
 
 
 def test_any_type_param():
@@ -381,12 +476,6 @@ def test_overload_return_types():
     """
     Test that overloads work correctly with different return types.
     """
-
-    class Input:
-        pass
-
-    class InputImpl(Input):
-        pass
 
     class MyContainer(BaseContainer[InputImpl]):
         pass
