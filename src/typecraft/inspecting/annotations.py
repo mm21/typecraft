@@ -21,6 +21,8 @@ from typing import (
     get_origin,
 )
 
+from .classes import extract_args
+
 __all__ = [
     "ANY",
     "Annotation",
@@ -567,17 +569,24 @@ def extract_tuple_args(
     """
     assert issubclass(annotation.concrete_type, tuple)
 
-    if len(annotation.arg_annotations) == 0:
+    if annotation.concrete_type is tuple:
+        args = annotation.arg_annotations
+    else:
+        # subclass of tuple
+        raw_args = extract_args(annotation.concrete_type, tuple)
+        args = tuple(Annotation(a) for a in raw_args)
+
+    if len(args) == 0:
         # assume tuple[Any, ...]
         return ANY
 
-    if annotation.arg_annotations[-1].raw is ...:
+    if args[-1].raw is ...:
         # variadic tuple like tuple[int, ...]
-        assert len(annotation.arg_annotations) == 2
-        return annotation.arg_annotations[0]
+        assert len(args) == 2
+        return args[0]
     else:
         # fixed-length tuple like tuple[int, str]
-        return annotation.arg_annotations
+        return args
 
 
 def _recurse_union(annotation: Any, /, *, preserve_extras: bool) -> list[Any]:

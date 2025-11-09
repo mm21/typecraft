@@ -15,15 +15,12 @@ from typing import (
 
 __all__ = [
     "extract_args",
+    "extract_arg_map",
     "extract_arg",
 ]
 
 
-def extract_args(
-    cls: type,
-    base_cls: type,
-    /,
-) -> dict[str, type | TypeVar]:
+def extract_args(cls: type, base_cls: type) -> tuple[type | TypeVar, ...]:
     """
     Extract from `cls` the type parameters that were passed to `base_cls`.
 
@@ -32,12 +29,50 @@ def extract_args(
     :raises ValueError: If `base_cls` is not in `cls`'s inheritance hierarchy
     :return: Dict mapping parameter names to their resolved types or unresolved TypeVars
     """
-    result = _find_args(cls, base_cls, {})
-    if result is None:
+    args = _find_args(cls, base_cls)
+    if args is None:
         raise ValueError(
             f"Base class {base_cls} not found in {cls}'s inheritance hierarchy"
         )
-    return result
+
+    args_list: list[type | TypeVar] = []
+    for arg in args:
+        if isinstance(arg, tuple):
+            _, type_ = arg
+            args_list.append(type_)
+        else:
+            args_list.append(arg)
+
+    return tuple(args_list)
+
+
+def extract_arg_map(
+    cls: type,
+    base_cls: type,
+    /,
+) -> dict[str, type | TypeVar]:
+    """
+    Extract from `cls` a mapping of type parameter names to parameters that were
+    passed to `base_cls`.
+
+    :param cls: The class to extract type parameters from
+    :param base_cls: The base class whose type parameters should be extracted
+    :raises ValueError: If `base_cls` is not in `cls`'s inheritance hierarchy
+    :return: Dict mapping parameter names to their resolved types or unresolved TypeVars
+    """
+    args = _find_args(cls, base_cls)
+    if args is None:
+        raise ValueError(
+            f"Base class {base_cls} not found in {cls}'s inheritance hierarchy"
+        )
+
+    arg_map: dict[str, type | TypeVar] = {}
+    for arg in args:
+        if isinstance(arg, tuple):
+            name, type_ = arg
+            arg_map[name] = type_
+
+    return arg_map
 
 
 @overload
@@ -84,7 +119,7 @@ def extract_arg[ParamT](
     :return: The resolved type, optionally constrained to `param_cls`
     """
 
-    args = extract_args(cls, base_cls)
+    args = extract_arg_map(cls, base_cls)
 
     # lookup arg by name or index
     if isinstance(name_or_index, str):
@@ -124,12 +159,13 @@ def _get_bases(cls: type, attr: str) -> list[type]:
 
 
 def _find_args(
-    cls: type, base_cls: type, type_var_map: dict[TypeVar, Any]
-) -> dict[str, type | TypeVar] | None:
+    cls: type, base_cls: type, type_var_map: dict[TypeVar, Any] | None = None
+) -> list[type | tuple[str, type | TypeVar]] | None:
+    tv_map = type_var_map if type_var_map is not None else {}
 
     # check pydantic metadata if applicable
     if metadata := getattr(cls, "__pydantic_generic_metadata__", None):
-        origin, args = metadata["origin"], metadata["args"]
+        origin, args = metadata["origin"], cast(tuple[Any, ...], metadata["args"])
     else:
         origin, args = get_origin(cls), get_args(cls)
 
@@ -140,42 +176,47 @@ def _find_args(
 
         if type_params and args:
             # create mapping from type parameters to their concrete values
-            new_type_var_map = type_var_map.copy()
+            new_tv_map = tv_map.copy()
 
             for type_param, arg in zip(type_params, args):
                 if isinstance(type_param, TypeVar):
                     if isinstance(arg, TypeVar):
                         # chain TypeVar substitutions
-                        if arg in type_var_map:
-                            new_type_var_map[type_param] = type_var_map[arg]
+                        if arg in tv_map:
+                            new_tv_map[type_param] = tv_map[arg]
                     else:
-                        new_type_var_map[type_param] = arg
+                        new_tv_map[type_param] = arg
 
-            type_var_map = new_type_var_map
+            tv_map = new_tv_map
 
     if origin is base_cls:
         # get type parameters of base_cls to find the one with matching name
         base_type_params = cast(tuple[Any], getattr(base_cls, "__parameters__", ()))
 
-        assert len(base_type_params) == len(
-            args
-        ), f"Type parameters of {origin} mismatched with args: parameters={base_type_params}, args={args}"
+        args_list: list[type | tuple[str, type | TypeVar]] = []
 
-        arg_map: dict[str, type | TypeVar] = {}
+        if not len(base_type_params):
+            # builtin, e.g. list[int] or tuple[int, str]
+            args_list += list(args)
+        else:
+            # should have typevars and args
+            assert len(base_type_params) == len(
+                args
+            ), f"Type parameters of {origin} mismatched with args: parameters={base_type_params}, args={args}"
 
-        for type_param, arg in zip(base_type_params, args):
-            assert isinstance(type_param, TypeVar)
+            for type_param, arg in zip(base_type_params, args):
+                assert isinstance(type_param, TypeVar)
 
-            # resolve TypeVar to concrete type if we have a substitution
-            if isinstance(arg, TypeVar) and arg in type_var_map:
-                arg = type_var_map[arg]
+                # resolve TypeVar to concrete type if we have a substitution
+                if isinstance(arg, TypeVar) and arg in tv_map:
+                    arg = tv_map[arg]
 
-            # arg could technically be a list[int] (GenericAlias),
-            # int | str (UnionType), etc - not a concrete type, but a type which
-            # type checkers will understand
-            arg_map[type_param.__name__] = arg
+                # arg could technically be a list[int] (GenericAlias),
+                # int | str (UnionType), etc - not a concrete type, but a type which
+                # type checkers will understand
+                args_list.append((type_param.__name__, arg))
 
-        return arg_map
+        return args_list
 
     # recurse into bases - use origin's bases if we have a generic alias
     base_check = origin if isinstance(origin, type) else cls
@@ -184,7 +225,7 @@ def _find_args(
     )
 
     for base in bases:
-        if args := _find_args(base, base_cls, type_var_map):
+        if (args := _find_args(base, base_cls, tv_map)) is not None:
             return args
 
     return None

@@ -6,7 +6,7 @@ from typing import Any, TypeVar
 
 from pytest import raises
 
-from typecraft.inspecting.classes import extract_arg, extract_args
+from typecraft.inspecting.classes import extract_arg, extract_arg_map, extract_args
 
 
 class BaseContainer[T]:
@@ -82,27 +82,37 @@ def test_all_args():
     """
     Test extracting all args.
     """
-    args = extract_args(IntContainer, BaseContainer)
-    assert args == {"T": int}
+    result = extract_arg_map(IntContainer, BaseContainer)
+    assert result == {"T": int}
 
-    args = extract_args(IntMiddleContainer, BaseContainer)
-    assert args == {"T": int}
+    result = extract_args(IntContainer, BaseContainer)
+    assert result == (int,)
+
+    result = extract_arg_map(IntMiddleContainer, BaseContainer)
+    assert result == {"T": int}
+
+    result = extract_args(IntMiddleContainer, BaseContainer)
+    assert result == (int,)
 
 
-def test_extract_args_with_unresolved():
+def test_extract_args_with_typevar():
     """
-    Test that extract_args includes unresolved TypeVars.
+    Test that extract_arg_map includes unresolved TypeVars.
     """
 
-    class GenericTransformer[T](BaseTransformer[T, int]):
+    class GenericTransformer(BaseTransformer[T, int]):
         pass
 
-    args = extract_args(GenericTransformer, BaseTransformer)
+    result = extract_arg_map(GenericTransformer, BaseTransformer)
 
     # should include the unresolved TypeVar
-    assert list(args.keys()) == ["InputT", "OutputT"]
-    assert isinstance(args["InputT"], TypeVar)
-    assert args["OutputT"] is int
+    assert list(result.keys()) == ["InputT", "OutputT"]
+    assert isinstance(result["InputT"], TypeVar)
+    assert result["InputT"] is T
+    assert result["OutputT"] is int
+
+    result = extract_args(GenericTransformer, BaseTransformer)
+    assert result == (T, int)
 
 
 def test_extract_args_empty_params():
@@ -117,7 +127,7 @@ def test_extract_args_empty_params():
         pass
 
     with raises(ValueError, match="not found in .*?'s inheritance hierarchy"):
-        extract_args(Derived, BaseContainer)
+        extract_arg_map(Derived, BaseContainer)
 
 
 def test_direct_inheritance():
@@ -222,36 +232,6 @@ def test_index_with_partially_resolved():
     # index 0 should raise (unresolved TypeVar)
     with raises(ValueError, match="Type parameter with index 0 is unresolved"):
         extract_arg(PartialTransformer, BaseTransformer, 0)
-
-
-def test_index_bounds_single_param():
-    """
-    Test index bounds checking with single parameter.
-    """
-
-    class IntContainer(BaseContainer[int]):
-        pass
-
-    # index 0 should work
-    result = extract_arg(IntContainer, BaseContainer, 0)
-    assert result is int
-
-    # index 1 should fail
-    with raises(IndexError, match="has 1 parameter"):
-        extract_arg(IntContainer, BaseContainer, 1)
-
-
-def test_index_param_cls_mismatch():
-    """
-    Test param_cls validation when extracting by index.
-    """
-
-    class MyTransformer(BaseTransformer[Input, Output]):
-        pass
-
-    # should raise TypeError when param_cls doesn't match for index
-    with raises(TypeError, match="does not match required base class"):
-        extract_arg(MyTransformer, BaseTransformer, 0, UnrelatedClass)
 
 
 def test_extract_invalid():
@@ -481,9 +461,42 @@ def test_overload_return_types():
         pass
 
     # without param_cls
-    result1 = extract_arg(MyContainer, BaseContainer, "T")
-    assert result1 is InputImpl
+    result = extract_arg(MyContainer, BaseContainer, "T")
+    assert result is InputImpl
 
     # with param_cls
-    result2 = extract_arg(MyContainer, BaseContainer, "T", Input)
-    assert result2 is InputImpl
+    result = extract_arg(MyContainer, BaseContainer, "T", Input)
+    assert result is InputImpl
+
+
+def test_builtins():
+    """
+    Test extracting args from builtins, which have no typevars.
+    """
+
+    class MyList(list[int]):
+        pass
+
+    class MyTuple(tuple[int, str]):
+        pass
+
+    class MyDict(dict[int, str]):
+        pass
+
+    result = extract_args(MyList, list)
+    assert result == (int,)
+
+    result = extract_arg_map(MyList, list)
+    assert result == {}
+
+    result = extract_args(MyTuple, tuple)
+    assert result == (int, str)
+
+    result = extract_arg_map(MyTuple, tuple)
+    assert result == {}
+
+    result = extract_args(MyDict, dict)
+    assert result == (int, str)
+
+    result = extract_arg_map(MyDict, dict)
+    assert result == {}
