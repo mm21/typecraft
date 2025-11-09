@@ -115,6 +115,14 @@ def test_extract_args_with_typevar():
     assert result == (T, int)
 
 
+def test_direct_inheritance():
+    """
+    Test extracting type param from direct inheritance.
+    """
+    result = extract_arg(IntContainer, BaseContainer, "T")
+    assert result is int
+
+
 def test_extract_args_empty_params():
     """
     Test extracting args from a base class with no type parameters.
@@ -126,25 +134,15 @@ def test_extract_args_empty_params():
     class Derived(NonGenericBase):
         pass
 
-    with raises(ValueError, match="not found in .*?'s inheritance hierarchy"):
+    with raises(TypeError, match="not found in .*?'s inheritance hierarchy"):
         extract_arg_map(Derived, BaseContainer)
-
-
-def test_direct_inheritance():
-    """
-    Test extracting type param from direct inheritance.
-    """
-    result = extract_arg(IntContainer, BaseContainer, "T")
-    assert result is int
 
 
 def test_no_type_param():
     """
     Test class that doesn't inherit from base_cls.
     """
-    with raises(
-        ValueError, match="Base class .*? not found in .*?'s inheritance hierarchy"
-    ):
+    with raises(TypeError, match="not found in .*?'s inheritance hierarchy"):
         _ = extract_arg(UnrelatedClass, BaseContainer, "T")
 
 
@@ -477,10 +475,16 @@ def test_builtins():
     class MyList(list[int]):
         pass
 
+    class MyParameterizedList[T](list[T]):
+        pass
+
     class MyTuple(tuple[int, str]):
         pass
 
     class MyDict(dict[int, str]):
+        pass
+
+    class MyParameterizedDict[K, V](dict[K, V]):
         pass
 
     result = extract_args(MyList, list)
@@ -491,6 +495,12 @@ def test_builtins():
 
     result = extract_arg(MyList, list, 0)
     assert result is int
+
+    result = extract_args(MyParameterizedList[int], list)
+    assert result == (int,)
+
+    result = extract_arg_map(MyParameterizedList, list)
+    assert list(result.keys()) == ["T"]
 
     result = extract_args(MyTuple, tuple)
     assert result == (int, str)
@@ -503,3 +513,25 @@ def test_builtins():
 
     result = extract_arg_map(MyDict, dict)
     assert result == {}
+
+    result = extract_args(MyParameterizedDict[int, str], dict)
+    assert result == (int, str)
+
+    result = extract_arg_map(MyParameterizedDict[int, str], dict)
+    assert list(result.keys()) == ["K", "V"]
+
+
+def test_from_self():
+    """
+    Test extracting args from same base class.
+    """
+
+    result = extract_arg_map(BaseContainer, BaseContainer)
+    assert len(result) == 1
+    assert result["T"].__name__ == "T"
+
+    result = extract_args(list[int], list)
+    assert result == (int,)
+
+    result = extract_arg(list[int], list, 0)
+    assert result is int

@@ -246,9 +246,7 @@ class SupportsComparison(Protocol[_T_contra]):
 
 
 def _serialize_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
-    obj_list = convert_to_list(
-        obj, frame, default_target_annotation=JSON_SERIALIZABLE_ANNOTATION
-    )
+    obj_list = convert_to_list(obj, frame)
 
     if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
         for o in obj_list:

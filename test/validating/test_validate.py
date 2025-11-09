@@ -15,6 +15,18 @@ from typecraft.validating import (
 )
 
 
+class IntList(list[int]):
+    """
+    List subclass with int type parameter.
+    """
+
+
+class IntStrDict(dict[int, str]):
+    """
+    Dict subclass with int, str type parameters.
+    """
+
+
 def test_valid():
     """
     Test with no conversions: the validated type should be the same object as the
@@ -32,23 +44,7 @@ def test_valid():
     # builtin list type
     obj = [0, 1, 2]
     result = validate(obj, list[int])
-    assert obj is result
-    assert obj == result
-
-    class MyList[T](list[T]):
-        pass
-
-    # custom list type
-    obj = MyList([0, 1, 2])
-    result = validate(obj, MyList[int])
-    assert obj is result
-    assert obj == result
-
-    # custom list type -> builtin list type, still satisfies type without conversion
-    obj = MyList([0, 1, 2])
-    result = validate(obj, list[int])
-    assert obj is result
-    assert obj == result
+    assert result is obj
 
 
 def test_invalid():
@@ -131,6 +127,53 @@ def test_conversion():
     obj = gen()
     result = validate(obj, tuple[int, int, int], strict=False)
     assert result == (0, 1, 2)
+
+
+def test_collection_subclass():
+    """
+    Test subclass of list and dict with extraction of type param.
+    """
+    obj = IntList([0, 1, 2])
+    result = validate(obj, IntList)
+    assert result is obj
+
+    with raises(
+        ValueError, match=r"Object '2' \(<class 'str'>\) could not be converted"
+    ):
+        obj = IntList([0, 1, "2"])  # type: ignore
+        _ = validate(obj, IntList)
+
+    obj = IntStrDict({0: "a"})
+    result = validate(obj, IntStrDict)
+    assert result is obj
+
+
+def test_generic_subclass():
+    """
+    Test generic subclasses of builtins.
+    """
+
+    class MyList[T](list[T]):
+        pass
+
+    class MyDict[K, V](dict[K, V]):
+        pass
+
+    # custom list type
+    obj = MyList([0, 1, 2])
+    result = validate(obj, MyList[int])
+    assert result is obj
+
+    result = validate(obj, list[int])
+    assert result is obj
+
+    # custom dict type
+    obj = MyDict({0: "a"})
+    result = validate(obj, MyDict[int, str])
+    assert result is obj
+
+    result = validate(obj, dict[int, str])
+    assert result is obj
 
 
 def test_registry():

@@ -11,7 +11,7 @@ from typing import (
 
 from .inspecting.annotations import Annotation, flatten_union
 
-type ValueCollectionType = list | tuple | set | range | Generator
+type ValueCollectionType = list | tuple | set | frozenset | range | Generator
 """
 Collections which contain values rather than key-value mappings.
 """

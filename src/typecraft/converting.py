@@ -10,7 +10,7 @@ from functools import cached_property
 from typing import Any, Generator, Self, Sized, cast, overload
 
 from .inspecting.annotations import ANY, Annotation, extract_tuple_args
-from .inspecting.classes import extract_arg
+from .inspecting.classes import extract_arg, extract_args
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import (
     COLLECTION_TYPES,
@@ -723,8 +723,6 @@ def normalize_to_registry[ConverterT, RegistryT](
 def convert_to_list(
     obj: ValueCollectionType,
     frame: BaseConversionFrame,
-    *,
-    default_target_annotation: Annotation = ANY,
 ) -> list:
     """
     Convert collection to list.
@@ -736,9 +734,7 @@ def convert_to_list(
 
     # extract item annotations
     source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
-    target_item_ann = (
-        _extract_value_item_ann(frame.target_annotation) or default_target_annotation
-    )
+    target_item_ann = _extract_value_item_ann(frame.target_annotation, list)
 
     # create list of validated items
     converted_objs = [
@@ -843,7 +839,7 @@ def convert_to_set(
 
     # extract item annotations
     source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
-    target_item_ann = _extract_value_item_ann(frame.target_annotation) or ANY
+    target_item_ann = _extract_value_item_ann(frame.target_annotation, set)
 
     # create set of validated items
     converted_objs = {
@@ -883,11 +879,11 @@ def convert_to_dict(obj: Mapping, frame: BaseConversionFrame) -> dict:
 
     # extract item annotations
     source_key_ann, source_value_ann = _extract_mapping_item_ann(
-        frame.source_annotation
-    ) or (ANY, ANY)
+        frame.source_annotation, default=ANY
+    )
     target_key_ann, target_value_ann = _extract_mapping_item_ann(
         frame.target_annotation
-    ) or (ANY, ANY)
+    )
 
     # create dict of validated items
     converted_objs = {
@@ -937,33 +933,56 @@ def _extract_value_item_anns(
             )
         return source_args
     else:
-        return _extract_value_item_ann(ann) or ANY
+        # determine which collection type this is a subclass of
+        collection_cls = next(
+            (t for t in COLLECTION_TYPES if issubclass(ann.concrete_type, t)), None
+        )
+        assert collection_cls
+        return _extract_value_item_ann(ann, collection_cls, default=ANY)
 
 
-def _extract_value_item_ann(ann: Annotation) -> Annotation | None:
+def _extract_value_item_ann(
+    ann: Annotation, base_cls: type, default: Annotation | None = None
+) -> Annotation:
     """
     Extract item annotation for non-tuple value collection.
     """
-    # TODO: handle range: item type int
-    assert (
-        len(ann.arg_annotations) <= 1
-    ), f"Invalid number of type args for non-mapping collection, must be 0 or 1: {ann}"
-    return ann.arg_annotations[0] if len(ann.arg_annotations) == 1 else None
+    # handle special cases
+    if issubclass(ann.concrete_type, Generator):
+        return ann.arg_annotations[0] if len(ann.arg_annotations) else ANY
+    if issubclass(ann.concrete_type, range):
+        return Annotation(int)
+
+    # extract item annotation from collection
+    args = extract_args(ann.raw, base_cls)
+    assert len(args) <= 1
+
+    if len(args) == 1:
+        return Annotation(args[0])
+
+    if default:
+        return default
+
+    raise TypeError(f"Could not find item annotation of collection {ann}")
 
 
-def _extract_mapping_item_ann(ann: Annotation) -> tuple[Annotation, Annotation] | None:
+def _extract_mapping_item_ann(
+    ann: Annotation, default: Annotation | None = None
+) -> tuple[Annotation, Annotation]:
     """
     Extract item annotations as (key annotation, value annotation) for mapping
     collection.
     """
-    assert len(ann.arg_annotations) in {
-        0,
-        2,
-    }, f"Invalid number of type args for mapping, must be 0 or 2: {ann}"
-    if len(ann.arg_annotations) == 2:
-        return ann.arg_annotations
-    else:
-        return None
+    args = extract_args(ann.raw, dict)
+    assert len(args) in {0, 2}
+
+    if len(args) == 2:
+        return Annotation(args[0]), Annotation(args[1])
+
+    if default:
+        return default, default
+
+    raise TypeError(f"Could not find item annotation of dict {ann}")
 
 
 def _select_ann_from_union(obj: Any, union: Annotation) -> Annotation:

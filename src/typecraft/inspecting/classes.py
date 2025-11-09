@@ -26,12 +26,12 @@ def extract_args(cls: type, base_cls: type) -> tuple[type | TypeVar, ...]:
 
     :param cls: The class to extract type parameters from
     :param base_cls: The base class whose type parameters should be extracted
-    :raises ValueError: If `base_cls` is not in `cls`'s inheritance hierarchy
+    :raises TypeError: If `base_cls` is not in `cls`'s inheritance hierarchy
     :return: Dict mapping parameter names to their resolved types or unresolved TypeVars
     """
     args = _find_args(cls, base_cls)
     if args is None:
-        raise ValueError(
+        raise TypeError(
             f"Base class {base_cls} not found in {cls}'s inheritance hierarchy"
         )
 
@@ -57,12 +57,12 @@ def extract_arg_map(
 
     :param cls: The class to extract type parameters from
     :param base_cls: The base class whose type parameters should be extracted
-    :raises ValueError: If `base_cls` is not in `cls`'s inheritance hierarchy
+    :raises TypeError: If `base_cls` is not in `cls`'s inheritance hierarchy
     :return: Dict mapping parameter names to their resolved types or unresolved TypeVars
     """
     args = _find_args(cls, base_cls)
     if args is None:
-        raise ValueError(
+        raise TypeError(
             f"Base class {base_cls} not found in {cls}'s inheritance hierarchy"
         )
 
@@ -107,10 +107,11 @@ def extract_arg[ParamT](
     for its parameter by name or index, optionally ensuring it's a subclass of
     `param_cls`.
     
-    :param cls: The class to extract the type parameter from
+    :param cls: The class or annotation to extract the type parameter from
     :param base_cls: The base class whose type parameter should be extracted
     :param name_or_index: Parameter name (str) or index (int) to extract
     :param param_cls: Optional base class that the extracted type must be a subclass of
+    :raises TypeError: If `base_cls` is not in `cls`'s inheritance hierarchy
     :raises ValueError: If `base_cls` not found or type parameter is unresolved \
     (TypeVar)
     :raises KeyError: If parameter name not found
@@ -142,7 +143,9 @@ def extract_arg[ParamT](
         desc = f"index {index}"
 
     if isinstance(arg, TypeVar):
-        raise ValueError(f"Type parameter with {desc} is unresolved (TypeVar {arg})")
+        raise ValueError(
+            f"Type parameter with {desc} is unresolved (TypeVar {arg}): cls={cls}, base_cls={base_cls}"
+        )
 
     if param_cls and not (isinstance(arg, type) and issubclass(arg, param_cls)):
         raise TypeError(
@@ -167,6 +170,13 @@ def _find_args(
         origin, args = metadata["origin"], cast(tuple[Any, ...], metadata["args"])
     else:
         origin, args = get_origin(cls), get_args(cls)
+
+    # handle the case where cls is directly base_cls (not a generic alias)
+    # but only if it's not a parameterized version of something else
+    if cls is base_cls and origin is None:
+        base_type_params = cast(tuple[Any], getattr(base_cls, "__parameters__", ()))
+        # return unresolved TypeVars with their names
+        return [(t.__name__, t) for t in base_type_params]
 
     # build type_var_map for this level first
     if origin and isinstance(origin, type):
@@ -196,7 +206,13 @@ def _find_args(
 
         if not len(base_type_params):
             # builtin, e.g. list[int] or tuple[int, str]
-            args_list += list(args)
+            # still need to resolve TypeVars if present
+            for arg in args:
+                a = tv_map.get(arg, arg) if isinstance(arg, TypeVar) else arg
+                if isinstance(arg, TypeVar):
+                    args_list.append((arg.__name__, a))
+                else:
+                    args_list.append(cast(type, a))
         else:
             # should have typevars and args
             assert len(base_type_params) == len(
