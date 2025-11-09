@@ -10,8 +10,8 @@ from functools import cached_property
 from typing import Any, Generator, Self, Sized, cast, overload
 
 from .inspecting.annotations import ANY, Annotation, extract_tuple_args
-from .inspecting.classes import extract_arg, extract_args
 from .inspecting.functions import ParameterInfo, SignatureInfo
+from .inspecting.generics import extract_arg, extract_args
 from .typedefs import (
     COLLECTION_TYPES,
     ValueCollectionType,

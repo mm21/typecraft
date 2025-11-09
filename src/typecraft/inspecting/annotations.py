@@ -21,7 +21,7 @@ from typing import (
     get_origin,
 )
 
-from .classes import extract_args
+from .generics import extract_args
 
 __all__ = [
     "ANY",

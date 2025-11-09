@@ -6,7 +6,7 @@ from typing import Any, TypeVar
 
 from pytest import raises
 
-from typecraft.inspecting.classes import extract_arg, extract_arg_map, extract_args
+from typecraft.inspecting.generics import extract_arg, extract_arg_map, extract_args
 
 
 class BaseContainer[T]:

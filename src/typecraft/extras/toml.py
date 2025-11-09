@@ -39,7 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..inspecting.classes import extract_arg
+from ..inspecting.generics import extract_arg
 from ..models import BaseModel, FieldInfo, ModelConfig
 from ..validating import ValidationFrame, Validator
 
