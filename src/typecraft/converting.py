@@ -490,11 +490,30 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
                 # provided conversion function
                 converted_obj = func.invoke(obj, frame)
             else:
-                # direct object construction
-                concrete_type = cast(
-                    Callable[[SourceT], TargetT], self._target_annotation.concrete_type
-                )
-                converted_obj = concrete_type(obj)
+                # direct object construction, handling builtin collections
+                # - this relies on the user passing the right source annotation
+                # (a ValueCollectionType/CollectionType or subset thereof)
+                # - could alternatively force user to call convert_to_*() directly,
+                # e.g.:
+                # result = validate(obj, IntList,
+                #     Validator(
+                #         list,
+                #         IntList,
+                #         func=lambda obj, frame: convert_to_list(obj, frame, construct=True)
+                #     )
+                # )
+                concrete_type = self._target_annotation.concrete_type
+                if issubclass(concrete_type, list):
+                    converted_obj = convert_to_list(obj, frame, construct=True)
+                elif issubclass(concrete_type, tuple):
+                    converted_obj = convert_to_tuple(obj, frame, construct=True)
+                elif issubclass(concrete_type, (set, frozenset)):
+                    converted_obj = convert_to_set(obj, frame, construct=True)
+                elif issubclass(concrete_type, dict):
+                    converted_obj = convert_to_dict(obj, frame, construct=True)
+                else:
+                    callable = cast(Callable[[SourceT], TargetT], concrete_type)
+                    converted_obj = callable(obj)
         except (ValueError, TypeError) as e:
             raise ValueError(
                 f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}): {e}"
@@ -721,8 +740,7 @@ def normalize_to_registry[ConverterT, RegistryT](
 
 
 def convert_to_list(
-    obj: ValueCollectionType,
-    frame: BaseConversionFrame,
+    obj: ValueCollectionType, frame: BaseConversionFrame, /, *, construct: bool = False
 ) -> list:
     """
     Convert collection to list.
@@ -759,13 +777,17 @@ def convert_to_list(
     elif target_type is list:
         # have a list (not a subclass thereof), return the newly created list
         return converted_objs
+    elif construct:
+        return target_type(converted_objs)
 
     raise ValueError(
         f"Cannot construct instance of target type {target_type}; create a custom validator for it"
     )
 
 
-def convert_to_tuple(obj: ValueCollectionType, frame: BaseConversionFrame) -> tuple:
+def convert_to_tuple(
+    obj: ValueCollectionType, frame: BaseConversionFrame, /, *, construct: bool = False
+) -> tuple:
     """
     Convert collection to tuple.
     """
@@ -820,6 +842,8 @@ def convert_to_tuple(obj: ValueCollectionType, frame: BaseConversionFrame) -> tu
     elif target_type is tuple:
         # have a tuple (not a subclass thereof), return the newly created tuple
         return converted_objs
+    elif construct:
+        return target_type(converted_objs)
 
     raise ValueError(
         f"Cannot construct instance of target type {target_type}; create a custom validator for it"
@@ -827,7 +851,7 @@ def convert_to_tuple(obj: ValueCollectionType, frame: BaseConversionFrame) -> tu
 
 
 def convert_to_set(
-    obj: ValueCollectionType, frame: BaseConversionFrame
+    obj: ValueCollectionType, frame: BaseConversionFrame, /, *, construct: bool = False
 ) -> set | frozenset:
     """
     Convert collection to set.
@@ -864,13 +888,17 @@ def convert_to_set(
     if target_type in (set, frozenset):
         # have a set (not a subclass thereof), return the newly created set
         return converted_objs if target_type is set else frozenset(converted_objs)
+    elif construct:
+        return target_type(converted_objs)
 
     raise ValueError(
         f"Cannot construct instance of target type {target_type}; create a custom validator for it"
     )
 
 
-def convert_to_dict(obj: Mapping, frame: BaseConversionFrame) -> dict:
+def convert_to_dict(
+    obj: Mapping, frame: BaseConversionFrame, /, *, construct: bool = False
+) -> dict:
     """
     Convert mapping to dict.
     """
@@ -910,6 +938,8 @@ def convert_to_dict(obj: Mapping, frame: BaseConversionFrame) -> dict:
     elif target_type is dict:
         # have a dict (not a subclass thereof), return the newly created dict
         return converted_objs
+    elif construct:
+        return target_type(converted_objs)
 
     raise ValueError(
         f"Cannot construct instance of target type {target_type}; create a custom validator for it"

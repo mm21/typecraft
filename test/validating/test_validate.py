@@ -143,9 +143,29 @@ def test_collection_subclass():
         obj = IntList([0, 1, "2"])  # type: ignore
         _ = validate(obj, IntList)
 
+    obj = [0, 1, 2]
+    result = validate(obj, IntList, Validator(list, IntList))
+    assert isinstance(result, IntList)
+    assert result == [0, 1, 2]
+
+    obj = [0, 1, "2"]
+    result = validate(obj, IntList, Validator(list, IntList), strict=False)
+    assert isinstance(result, IntList)
+    assert result == [0, 1, 2]
+
     obj = IntStrDict({0: "a"})
     result = validate(obj, IntStrDict)
     assert result is obj
+
+    obj = {0: "a"}
+    result = validate(obj, IntStrDict, Validator(dict, IntStrDict))
+    assert isinstance(result, IntStrDict)
+    assert result == {0: "a"}
+
+    obj = {"0": "a"}
+    result = validate(obj, IntStrDict, Validator(dict, IntStrDict), strict=False)
+    assert isinstance(result, IntStrDict)
+    assert result == {0: "a"}
 
 
 def test_generic_subclass():
