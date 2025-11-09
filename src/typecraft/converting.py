@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Mapping, Sequence
-from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any, Generator, Self, Sized, cast, overload
 
@@ -87,7 +86,6 @@ class ConverterFunctionWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
             return func(obj)
 
 
-@dataclass(kw_only=True)
 class BaseConversionFrame[ParamsT]:
 
     source_annotation: Annotation
@@ -102,28 +100,47 @@ class BaseConversionFrame[ParamsT]:
 
     context: Any
     """
-    User context passed at validation entry point.
+    User context passed at validation/serialization entry point.
     """
 
     params: ParamsT
     """
-    Parameters passed at validation entry point.
+    Parameters passed at validation/serialization entry point.
     """
 
-    engine: BaseConversionEngine
+    __engine: BaseConversionEngine
     """
     Conversion engine for recursion.
     """
 
-    path: tuple[str | int, ...] = field(default_factory=tuple)
+    __path: tuple[str | int, ...]
     """
     Field path at this level in recursion.
     """
 
-    seen: set[int] = field(default_factory=set)
+    __seen: set[int]
     """
     Object ids for cycle detection.
     """
+
+    def __init__(
+        self,
+        *,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        context: Any,
+        params: ParamsT,
+        engine: BaseConversionEngine,
+        path: tuple[str | int, ...] | None = None,
+        seen: set[int] | None = None,
+    ):
+        self.source_annotation = source_annotation
+        self.target_annotation = target_annotation
+        self.context = context
+        self.params = params
+        self.__engine = engine
+        self.__path = path or ()
+        self.__seen = seen or set()
 
     def recurse(
         self,
@@ -133,7 +150,7 @@ class BaseConversionFrame[ParamsT]:
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation,
-        context: Any | None = None,
+        context: Any = ...,
     ) -> Any:
         """
         Create a new frame and recurse using the engine.
@@ -156,12 +173,12 @@ class BaseConversionFrame[ParamsT]:
 
         # recurse and add/remove this object for cycle detection
         if check_cycle:
-            if id(obj) in next_frame.seen:
+            if id(obj) in next_frame.__seen:
                 raise ValueError(f"Already processed object: '{obj}', can't recurse")
-            next_frame.seen.add(id(obj))
-        next_obj = self.engine.process(obj, next_frame)
+            next_frame.__seen.add(id(obj))
+        next_obj = self.__engine.process(obj, next_frame)
         if check_cycle:
-            next_frame.seen.remove(id(obj))
+            next_frame.__seen.remove(id(obj))
 
         return next_obj
 
@@ -170,23 +187,25 @@ class BaseConversionFrame[ParamsT]:
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation | None = None,
-        context: Any | None = None,
+        context: Any = ...,
         path_append: str | int | None = None,
     ) -> Self:
         """
         Create a new frame with the arguments replaced if not None.
         """
         path = (
-            self.path if path_append is None else tuple(list(self.path) + [path_append])
+            self.__path
+            if path_append is None
+            else tuple(list(self.__path) + [path_append])
         )
         return type(self)(
             source_annotation=source_annotation or self.source_annotation,
             target_annotation=target_annotation or self.target_annotation,
-            context=context or self.context,
+            context=context if context is not ... else self.context,
             params=self.params,
-            engine=self.engine,
+            engine=self.__engine,
             path=path,
-            seen=self.seen,
+            seen=self.__seen,
         )
 
 

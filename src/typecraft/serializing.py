@@ -65,7 +65,6 @@ class SerializationParams:
     """
 
 
-@dataclass(kw_only=True)
 class SerializationFrame(BaseConversionFrame[SerializationParams]):
     """
     Internal recursion state per frame.
