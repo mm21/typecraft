@@ -10,7 +10,7 @@ from functools import cached_property
 from typing import Any, Generator, Self, Sized, cast, overload
 
 from .inspecting.annotations import ANY, Annotation, extract_tuple_args
-from .inspecting.classes import extract_type_param
+from .inspecting.classes import extract_arg
 from .inspecting.functions import ParameterInfo, SignatureInfo
 from .typedefs import (
     COLLECTION_TYPES,
@@ -557,7 +557,7 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
 
     @cached_property
     def _converter_cls(self) -> type[ConverterT]:
-        converter_cls = extract_type_param(
+        converter_cls = extract_arg(
             type(self), BaseConverterRegistry, "ConverterT", BaseConverter
         )
         return cast(type[ConverterT], converter_cls)
@@ -686,10 +686,9 @@ class BaseConversionEngine[
 
     @property
     def __registry_cls(self) -> type[RegistryT]:
-        registry_cls = extract_type_param(
+        registry_cls = extract_arg(
             type(self), BaseConversionEngine, "RegistryT", BaseConverterRegistry
         )
-        assert registry_cls
         return cast(type[RegistryT], registry_cls)
 
     @cached_property

@@ -39,7 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..inspecting.classes import extract_type_param
+from ..inspecting.classes import extract_arg
 from ..models import BaseModel, FieldInfo, ModelConfig
 from ..validating import ValidationFrame, Validator
 
@@ -117,8 +117,7 @@ class BaseTomlWrapper[TomlkitT](ABC):
         """
         Get corresponding tomlkit class.
         """
-        tomlkit_cls = extract_type_param(cls, BaseTomlWrapper, "TomlkitT")
-        assert tomlkit_cls, f"Could not get type param for {cls}"
+        tomlkit_cls = extract_arg(cls, BaseTomlWrapper, "TomlkitT")
         return tomlkit_cls
 
     @cached_property

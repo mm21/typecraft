@@ -6,7 +6,7 @@ from typing import Any, TypeVar
 
 from pytest import raises
 
-from typecraft.inspecting.classes import extract_type_param
+from typecraft.inspecting.classes import extract_arg, extract_args
 
 
 class BaseContainer[T]:
@@ -17,7 +17,25 @@ class BaseContainer[T]:
 
 class BaseContainer2[T]:
     """
-    Other base generic serializer.
+    Other base generic container.
+    """
+
+
+class IntContainer(BaseContainer[int]):
+    """
+    Container of int.
+    """
+
+
+class MiddleContainer[T](BaseContainer[T]):
+    """
+    Intermediate between concrete and base container.
+    """
+
+
+class IntMiddleContainer(MiddleContainer[int]):
+    """
+    Container of int with middle container.
     """
 
 
@@ -27,20 +45,33 @@ class BaseTransformer[InputT, OutputT]:
     """
 
 
+class UnrelatedClass:
+    """
+    Class unrelated to any others.
+    """
+
+
 # type parameters
 T = TypeVar("T")
 U = TypeVar("U")
+
+
+def test_all_args():
+    """
+    Test extracting all args.
+    """
+    args = extract_args(IntContainer, BaseContainer)
+    assert args == {"T": int}
+
+    args = extract_args(IntMiddleContainer, BaseContainer)
+    assert args == {"T": int}
 
 
 def test_direct_inheritance():
     """
     Test extracting type param from direct inheritance.
     """
-
-    class IntContainer(BaseContainer[int]):
-        pass
-
-    result = extract_type_param(IntContainer, BaseContainer, "T")
+    result = extract_arg(IntContainer, BaseContainer, "T")
     assert result is int
 
 
@@ -48,12 +79,10 @@ def test_no_type_param():
     """
     Test class that doesn't inherit from base_cls.
     """
-
-    class UnrelatedClass:
-        pass
-
-    result = extract_type_param(UnrelatedClass, BaseContainer, "T")
-    assert result is None
+    with raises(
+        ValueError, match="Base class .*? not found in .*?'s inheritance hierarchy"
+    ):
+        _ = extract_arg(UnrelatedClass, BaseContainer, "T")
 
 
 def test_generic_without_concrete_type():
@@ -64,23 +93,15 @@ def test_generic_without_concrete_type():
     class GenericContainer(BaseContainer[T]):
         pass
 
-    # should return None since TypeVar is skipped
-    result = extract_type_param(GenericContainer, BaseContainer, "T")
-    assert result is None
+    with raises(ValueError, match="Type parameter with name .*? is unresolved"):
+        _ = extract_arg(GenericContainer, BaseContainer, "T")
 
 
 def test_nested_inheritance():
     """
     Test extracting type param from nested inheritance hierarchy.
     """
-
-    class MiddleContainer[T](BaseContainer[T]):
-        pass
-
-    class IntMiddleContainer(MiddleContainer[int]):
-        pass
-
-    result = extract_type_param(IntMiddleContainer, BaseContainer, "T")
+    result = extract_arg(IntMiddleContainer, BaseContainer, "T")
     assert result is int
 
 
@@ -101,26 +122,26 @@ def test_deeply_nested_inheritance():
     class StrLevel3(Level3[str]):
         pass
 
-    result = extract_type_param(StrLevel3, BaseContainer, "T")
+    result = extract_arg(StrLevel3, BaseContainer, "T")
     assert result is str
 
 
 def test_multiple_type_params_without_filter():
     """
-    Test class with multiple type params without param_base_cls filter.
+    Test class with multiple type params without param_cls filter.
     """
 
     class StringToIntTransformer(BaseTransformer[str, int]):
         pass
 
-    # without param_base_cls, returns InputT when name is "InputT"
-    result = extract_type_param(StringToIntTransformer, BaseTransformer, "InputT")
+    # without param_cls, returns InputT when name is "InputT"
+    result = extract_arg(StringToIntTransformer, BaseTransformer, "InputT")
     assert result is str
 
 
 def test_multiple_type_params_with_filter():
     """
-    Test distinguishing between multiple type params using param_base_cls.
+    Test distinguishing between multiple type params using param_cls.
     """
 
     class Input:
@@ -139,11 +160,11 @@ def test_multiple_type_params_with_filter():
         pass
 
     # extract input type
-    result = extract_type_param(MyTransformer, BaseTransformer, "InputT", Input)
+    result = extract_arg(MyTransformer, BaseTransformer, "InputT", Input)
     assert result is InputImpl
 
     # extract output type
-    result = extract_type_param(MyTransformer, BaseTransformer, "OutputT", Output)
+    result = extract_arg(MyTransformer, BaseTransformer, "OutputT", Output)
     assert result is OutputImpl
 
 
@@ -170,10 +191,10 @@ def test_nested_with_multiple_type_params():
     class ConcreteTransformer(MiddleTransformer[InputImpl, OutputImpl]):
         pass
 
-    result = extract_type_param(ConcreteTransformer, BaseTransformer, "InputT", Input)
+    result = extract_arg(ConcreteTransformer, BaseTransformer, "InputT", Input)
     assert result is InputImpl
 
-    result = extract_type_param(ConcreteTransformer, BaseTransformer, "OutputT", Output)
+    result = extract_arg(ConcreteTransformer, BaseTransformer, "OutputT", Output)
     assert result is OutputImpl
 
 
@@ -191,7 +212,7 @@ def test_complex_nested_hierarchy():
     class DoubleWrapped(BaseContainer[IntWrapper]):
         pass
 
-    result = extract_type_param(DoubleWrapped, BaseContainer, "T")
+    result = extract_arg(DoubleWrapped, BaseContainer, "T")
     assert result is IntWrapper
 
 
@@ -203,10 +224,10 @@ def test_multiple_bases():
     class MultiContainer(BaseContainer[int], BaseContainer2[str]):
         pass
 
-    result = extract_type_param(MultiContainer, BaseContainer, "T")
+    result = extract_arg(MultiContainer, BaseContainer, "T")
     assert result is int
 
-    result = extract_type_param(MultiContainer, BaseContainer2, "T")
+    result = extract_arg(MultiContainer, BaseContainer2, "T")
     assert result is str
 
 
@@ -224,7 +245,7 @@ def test_diamond_inheritance():
     class Diamond(Left[int], Right[int]):
         pass
 
-    result = extract_type_param(Diamond, BaseContainer, "T")
+    result = extract_arg(Diamond, BaseContainer, "T")
     assert result is int
 
 
@@ -239,7 +260,7 @@ def test_concrete_type_in_middle():
     class FinalContainer(MiddleContainer):
         pass
 
-    result = extract_type_param(FinalContainer, BaseContainer, "T")
+    result = extract_arg(FinalContainer, BaseContainer, "T")
     assert result is int
 
 
@@ -257,7 +278,7 @@ def test_repairing_generic():
     class FinalContainer(StrMiddleContainer):
         pass
 
-    result = extract_type_param(FinalContainer, BaseContainer, "T")
+    result = extract_arg(FinalContainer, BaseContainer, "T")
     assert result is str
 
 
@@ -273,13 +294,13 @@ def test_mixed_concrete_and_generic():
         pass
 
     # should find int since that's what's passed to BaseContainer
-    result = extract_type_param(FinalContainer, BaseContainer, "T")
+    result = extract_arg(FinalContainer, BaseContainer, "T")
     assert result is int
 
 
 def test_param_base_cls_not_matching():
     """
-    Test param_base_cls that doesn't match any type param.
+    Test param_cls that doesn't match any type param.
     """
 
     class Input:
@@ -294,9 +315,9 @@ def test_param_base_cls_not_matching():
     class MyTransformer(BaseTransformer[Input, Output]):
         pass
 
-    # should raise TypeError when param_base_cls doesn't match
+    # should raise TypeError when param_cls doesn't match
     with raises(TypeError, match="does not match required base class"):
-        extract_type_param(MyTransformer, BaseTransformer, "InputT", Unrelated)
+        extract_arg(MyTransformer, BaseTransformer, "InputT", Unrelated)
 
 
 def test_any_type_param():
@@ -307,7 +328,7 @@ def test_any_type_param():
     class AnyContainer(BaseContainer[Any]):
         pass
 
-    result = extract_type_param(AnyContainer, BaseContainer, "T")
+    result = extract_arg(AnyContainer, BaseContainer, "T")
     assert result is Any
 
 
@@ -319,7 +340,7 @@ def test_nested_generic_type_param():
     class ListContainer(BaseContainer[list[int]]):
         pass
 
-    result = extract_type_param(ListContainer, BaseContainer, "T")
+    result = extract_arg(ListContainer, BaseContainer, "T")
     assert result == list[int]
 
 
@@ -331,7 +352,7 @@ def test_union_type_param():
     class UnionContainer(BaseContainer[int | str]):
         pass
 
-    result = extract_type_param(UnionContainer, BaseContainer, "T")
+    result = extract_arg(UnionContainer, BaseContainer, "T")
     assert result == (int | str)
 
 
@@ -350,7 +371,7 @@ def test_multiple_inheritance_with_same_base():
     class MultiInherit(Container1, Container2):
         pass
 
-    result = extract_type_param(MultiInherit, BaseContainer, "T")
+    result = extract_arg(MultiInherit, BaseContainer, "T")
 
     # should find int first through Container1
     assert result is int
@@ -370,10 +391,10 @@ def test_overload_return_types():
     class MyContainer(BaseContainer[InputImpl]):
         pass
 
-    # without param_base_cls
-    result1 = extract_type_param(MyContainer, BaseContainer, "T")
+    # without param_cls
+    result1 = extract_arg(MyContainer, BaseContainer, "T")
     assert result1 is InputImpl
 
-    # with param_base_cls
-    result2 = extract_type_param(MyContainer, BaseContainer, "T", Input)
+    # with param_cls
+    result2 = extract_arg(MyContainer, BaseContainer, "T", Input)
     assert result2 is InputImpl
