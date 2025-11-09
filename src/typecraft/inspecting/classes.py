@@ -119,10 +119,9 @@ def extract_arg[ParamT](
     :return: The resolved type, optionally constrained to `param_cls`
     """
 
-    args = extract_arg_map(cls, base_cls)
-
-    # lookup arg by name or index
     if isinstance(name_or_index, str):
+        # lookup by name
+        args = extract_arg_map(cls, base_cls)
         name = name_or_index
         if name not in args:
             raise KeyError(
@@ -132,14 +131,14 @@ def extract_arg[ParamT](
         arg = args[name]
         desc = f"name '{name}'"
     else:
+        args = extract_args(cls, base_cls)
         index = name_or_index
-        values = list(args.values())
-        if index >= len(values):
+        if index >= len(args):
             raise IndexError(
                 f"Type parameter index {index} out of range. "
-                f"{base_cls} has {len(values)} parameter(s): {list(args.keys())}"
+                f"{base_cls} has {len(args)} parameter(s): {args}"
             )
-        arg = values[index]
+        arg = args[index]
         desc = f"index {index}"
 
     if isinstance(arg, TypeVar):

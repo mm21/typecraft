@@ -489,6 +489,9 @@ def test_builtins():
     result = extract_arg_map(MyList, list)
     assert result == {}
 
+    result = extract_arg(MyList, list, 0)
+    assert result is int
+
     result = extract_args(MyTuple, tuple)
     assert result == (int, str)
 
