@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from typecraft.inspecting.annotations import (
     Annotation,
+    LiteralType,
+    extract_tuple_args,
     flatten_union,
     get_concrete_type,
     is_instance,
@@ -24,7 +26,9 @@ type AnnotatedAlias = Annotated[int, "doc"]
 type ListAlias = list[int]
 type AnnotatedListAlias = Annotated[ListAlias, "doc"]
 type UnionWithAnnotatedAlias = Union[Annotated[int, "positive"], str]
-type DeepAlias = Annotated[Union[int, str], "constraint"]
+type AnnotatedUnionAlias = Annotated[Union[int, str], "constraint"]
+type ParameterizedUnionAlias[T] = Annotated[list[T] | tuple[T], "test"]
+type DeepParameterizedUnionAlias[T] = ParameterizedUnionAlias[T] | set[T]
 
 
 def test_is_subtype():
@@ -34,9 +38,19 @@ def test_is_subtype():
     assert is_subtype(int, Annotation(Any))
     assert is_subtype(int, Any)
 
+    # Any is BOTH top and bottom type - bidirectional relationships
+    assert is_subtype(Any, int)  # bottom type behavior
+    assert is_subtype(Any, object)  # bottom type behavior
+    assert is_subtype(Annotation(Any), Annotation(int))  # bottom type
+    assert is_subtype(Any, Any)  # top and bottom meet
+
     # verify with alias
     assert is_subtype(SimpleAlias, UnionAlias)
     assert is_subtype(ListAlias, AnnotatedListAlias)
+
+    # verify with Any in generics - bidirectional
+    assert is_subtype(list[int], list[Any])  # top type
+    assert is_subtype(list[Any], list[int])  # bottom type
 
 
 def test_is_instance():
@@ -45,6 +59,11 @@ def test_is_instance():
     assert is_instance(1, int)
     assert is_instance(1, Annotation(Any))
     assert is_instance(1, Annotation(int))
+
+    # Any accepts all values
+    assert is_instance("hello", Any)
+    assert is_instance([1, 2, 3], Any)
+    assert is_instance(None, Any)
 
     # verify with alias
     assert is_instance(1, UnionAlias)
@@ -164,6 +183,15 @@ def test_flatten_union():
     result = flatten_union(Union[SimpleAlias, str])
     assert result == (int, str)
 
+    result = flatten_union(ParameterizedUnionAlias)
+    assert len(result) == 2
+    assert tuple(get_origin(r) for r in result) == (list, tuple)
+
+    # union in type alias
+    result = flatten_union(DeepParameterizedUnionAlias)
+    assert len(result) == 3
+    assert tuple(get_origin(r) for r in result) == (list, tuple, set)
+
 
 def test_flatten_union_with_annotated():
     # annotated in union (preserve_extras=False)
@@ -195,7 +223,7 @@ def test_get_concrete_type():
     assert get_concrete_type(Annotated[list[int], "doc"]) is list
 
     # special cases return object
-    assert get_concrete_type(Literal[1, 2, 3]) is object
+    assert get_concrete_type(Literal[1, 2, 3]) is LiteralType
     assert get_concrete_type(Any) is object
 
     # singleton mapping
@@ -221,11 +249,11 @@ def test_compositions():
     flattened = flatten_union(UnionWithAnnotatedAlias)
     assert flattened == (int, str)
 
-    # deeply nested
-    normalized = normalize_annotation(DeepAlias)
+    # union nested in annotated
+    normalized = normalize_annotation(AnnotatedUnionAlias)
     assert is_union(normalized)
 
-    flattened = flatten_union(DeepAlias)
+    flattened = flatten_union(AnnotatedUnionAlias)
     assert flattened == (int, str)
 
 
@@ -240,3 +268,16 @@ def test_edge_cases():
     # mixed union syntaxes in nested structures
     result = flatten_union(Union[int | str, float])
     assert result == (int, str, float)
+
+
+def test_tuple_args():
+    # fixed-length tuple
+    result = extract_tuple_args(Annotation(tuple[int, str]))
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result == (Annotation(int), Annotation(str))
+
+    # variadic tuple
+    result = extract_tuple_args(Annotation(tuple[int, ...]))
+    assert not isinstance(result, tuple)
+    assert result.raw is int

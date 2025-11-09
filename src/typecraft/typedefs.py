@@ -4,34 +4,32 @@ Basic definitions for type-based converting.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import (
+    Any,
     Generator,
-    Literal,
 )
 
-from .inspecting.annotations import flatten_union
+from .inspecting.annotations import Annotation, flatten_union
 
-__all__ = [
-    "VarianceType",
-]
-
-
-type VarianceType = Literal["contravariant", "invariant"]
+type ValueCollectionType = list | tuple | set | range | Generator
 """
-Variance supported by a converter.
+Collections which contain values rather than key-value mappings.
 """
 
-type ValueCollectionType = list | tuple | set | frozenset | range | Generator
+
+type CollectionType = ValueCollectionType | dict
 """
-Types convertible to lists, tuples, and sets; collections which contain values
-rather than key-value mappings.
+Superset of all collection types.
 """
 
-type CollectionType = ValueCollectionType | Mapping
-"""
-Types convertible to collection types.
-"""
 
-VALUE_COLLECTION_TYPES = flatten_union(ValueCollectionType)
-COLLECTION_TYPES = flatten_union(CollectionType)
+def _extract_types(type_: Any) -> tuple[type, ...]:
+    """
+    Extract concrete types from annotation.
+    """
+    types = flatten_union(type_)
+    return tuple(Annotation(t).concrete_type for t in types)
+
+
+VALUE_COLLECTION_TYPES = _extract_types(ValueCollectionType)
+COLLECTION_TYPES = _extract_types(CollectionType)

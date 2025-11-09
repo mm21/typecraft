@@ -5,159 +5,108 @@ Serialization capability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import EllipsisType
+from types import NoneType
 from typing import (
     Any,
-    Callable,
+    Protocol,
+    TypeVar,
     cast,
     overload,
+    runtime_checkable,
 )
 
 from .converting import (
-    BaseConversionContext,
+    BaseConversionEngine,
+    BaseConversionFrame,
+    BaseConverter,
     BaseConverterRegistry,
-    BaseTypedConverter,
-    ConverterFunctionWrapper,
+    ConverterFuncMixin,
     ConverterFuncType,
+    convert_to_list,
     normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
-from .typedefs import (
-    COLLECTION_TYPES,
-    CollectionType,
-    VarianceType,
-)
+from .typedefs import ValueCollectionType
 
 __all__ = [
     "SerializerFuncType",
-    "SerializationContext",
-    "TypedSerializer",
-    "TypedSerializerRegistry",
+    "SerializationParams",
+    "SerializationFrame",
+    "SerializationEngine",
+    "BaseSerializer",
+    "Serializer",
+    "SerializerRegistry",
     "serialize",
 ]
 
+type JsonSerializableType = str | int | float | bool | NoneType | list[
+    JsonSerializableType
+] | dict[str | int | float | bool, JsonSerializableType]
 
-type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationInfo]
+JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
+
+type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationFrame]
 """
 Function which serializes the given object from a specific source type and generally
 returns an object of built-in Python type. Can optionally take
-`SerializationInfo` as the second argument.
+`SerializationFrame` as the second argument.
 """
 
 
-@dataclass
-class SerializationInfo:
+@dataclass(kw_only=True)
+class SerializationParams:
     """
-    Info passed to a serialization function.
-    """
-
-    source_annotation: Annotation
-    context: SerializationContext
-
-
-class TypedSerializer[SourceT](BaseTypedConverter[SourceT, Any, SerializationInfo]):
-    """
-    Encapsulates serialization parameters from a source annotation.
+    Serialization params as passed by user.
     """
 
-    @overload
-    def __init__(
+    sort_sets: bool
+    """
+    Whether to sort sets, produces deterministic output.
+    """
+
+
+class SerializationFrame(BaseConversionFrame[SerializationParams]):
+    """
+    Internal recursion state per frame.
+    """
+
+    def recurse(
         self,
-        source_annotation: type[SourceT],
-        target_annotation: Annotation | Any = Any,
+        obj: Any,
+        path_segment: str | int,
         /,
         *,
-        func: SerializerFuncType[SourceT] | None = None,
-        variance: VarianceType = "contravariant",
-    ): ...
-
-    @overload
-    def __init__(
-        self,
-        source_annotation: Annotation | Any,
-        target_annotation: Annotation | Any = Any,
-        /,
-        *,
-        func: SerializerFuncType | None = None,
-        variance: VarianceType = "contravariant",
-    ): ...
-
-    def __init__(
-        self,
-        source_annotation: Any,
-        target_annotation: Annotation | Any = Any,
-        /,
-        *,
-        func: SerializerFuncType | None = None,
-        variance: VarianceType = "contravariant",
-    ):
-        super().__init__(
-            source_annotation, target_annotation, func=func, variance=variance
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation | None = None,
+        context: Any | None = None,
+    ) -> Any:
+        return super().recurse(
+            obj,
+            path_segment,
+            source_annotation=source_annotation,
+            target_annotation=target_annotation or JSON_SERIALIZABLE_ANNOTATION,
+            context=context,
         )
 
-    def __repr__(self) -> str:
-        return f"TypedSerializer(source={self._source_annotation}, func={self._func}, variance={self._variance})"
 
-    @classmethod
-    def from_func(
-        cls,
-        func: SerializerFuncType[SourceT],
-        *,
-        variance: VarianceType = "contravariant",
-    ) -> TypedSerializer[SourceT]:
-        """
-        Create a TypedSerializer from a function by inspecting its signature.
-        """
-        sig = ConverterFunctionWrapper[SourceT, Any, SerializationContext](func)
-
-        # validate sig: must take source type
-        assert sig.obj_param.annotation
-
-        return TypedSerializer(sig.obj_param.annotation, func=func, variance=variance)
-
-    def serialize(self, obj: Any, info: SerializationInfo, /) -> Any:
-        """
-        Serialize object or raise `ValueError`.
-
-        `source_annotation` is required because some serializers may inspect it
-        to recurse into items of collections.
-        """
-
-        # invoke serialization function
-        try:
-            if func := self._func:
-                # provided validation function
-                serialized_obj = func.invoke(obj, info)
-            else:
-                # direct object construction
-                concrete_type = cast(
-                    Callable[[SourceT], Any], self._target_annotation.concrete_type
-                )
-                serialized_obj = concrete_type(obj)
-        except (ValueError, TypeError) as e:
-            raise ValueError(
-                f"TypedSerializer {self} failed to serialize {obj} ({type(obj)}): {e}"
-            ) from None
-
-        return serialized_obj
-
-    def can_convert(self, obj: Any, annotation: Annotation, /) -> bool:
-        """
-        Check if this serializer can serialize the given object from the given
-        source annotation.
-        """
-        source_ann = Annotation._normalize(annotation)
-
-        if not self._check_variance_match(source_ann, self._source_annotation):
-            return False
-
-        return source_ann.is_type(obj)
-
-    def _get_context_cls(self) -> type[Any]:
-        return SerializationContext
+class BaseSerializer[SourceT, TargetT](
+    BaseConverter[SourceT, TargetT, SerializationFrame]
+):
+    """
+    Base class for type-based serializers.
+    """
 
 
-class TypedSerializerRegistry(BaseConverterRegistry[TypedSerializer]):
+class Serializer[SourceT, TargetT](
+    ConverterFuncMixin[SourceT, TargetT, SerializationFrame],
+    BaseSerializer[SourceT, TargetT],
+):
+    """
+    Type-based serializer with type inference from functions.
+    """
+
+
+class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
     """
     Registry for managing type serializers.
 
@@ -166,250 +115,156 @@ class TypedSerializerRegistry(BaseConverterRegistry[TypedSerializer]):
     """
 
     def __repr__(self) -> str:
-        return f"TypedSerializerRegistry(serializers={self._converters})"
+        return f"SerializerRegistry(serializers={self._converters})"
 
     @property
-    def serializers(self) -> list[TypedSerializer]:
+    def serializers(self) -> list[BaseSerializer]:
         """
         Get serializers currently registered.
         """
         return self._converters
 
-    def _get_map_key_type(self, converter: TypedSerializer) -> type:
-        """
-        Get the source type to use as key in the serializer map.
-        """
-        return converter.source_annotation.concrete_type
-
     @overload
-    def register(self, serializer: TypedSerializer, /): ...
+    def register(self, serializer: BaseSerializer, /): ...
 
     @overload
     def register(
-        self, func: SerializerFuncType, /, *, variance: VarianceType = "contravariant"
+        self,
+        func: SerializerFuncType,
+        /,
+        *,
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
     ): ...
 
     def register(
         self,
-        serializer_or_func: TypedSerializer | SerializerFuncType,
+        serializer_or_func: BaseSerializer | SerializerFuncType,
         /,
         *,
-        variance: VarianceType = "contravariant",
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
     ):
         """
         Register a serializer.
         """
         serializer = (
             serializer_or_func
-            if isinstance(serializer_or_func, TypedSerializer)
-            else TypedSerializer.from_func(serializer_or_func, variance=variance)
+            if isinstance(serializer_or_func, BaseSerializer)
+            else Serializer.from_func(
+                serializer_or_func,
+                match_source_subtype=match_source_subtype,
+                match_target_subtype=match_target_subtype,
+            )
         )
         self._register_converter(serializer)
 
 
-class SerializationContext(BaseConversionContext[TypedSerializerRegistry]):
+class SerializationEngine(BaseConversionEngine[SerializerRegistry, SerializationFrame]):
     """
-    Encapsulates serialization parameters, propagated throughout the
-    serialization process.
+    Orchestrates serialization process. Not exposed to user.
     """
 
-    def __repr__(self) -> str:
-        return f"SerializationContext(registry={self._registry})"
-
-    def _create_default_registry(self) -> TypedSerializerRegistry:
-        return TypedSerializerRegistry()
-
-    def serialize(self, obj: Any, source_type: Annotation | Any, /) -> Any:
-        """
-        Serialize object using registered typed serializers.
-
-        Walks the object recursively in lockstep with the source annotation,
-        invoking type-based serializers when they match.
-        """
-        source_ann = Annotation._normalize(source_type)
-        info = SerializationInfo(source_ann, self)
-        return _dispatch_serialization(obj, info)
+    def _get_builtin_registries(
+        self, frame: SerializationFrame
+    ) -> tuple[SerializerRegistry, ...]:
+        _ = frame
+        return (JSON_REGISTRY,)
 
 
 @overload
 def serialize(
     obj: Any,
-    source_type: Annotation | Any,
     /,
-    *serializers: TypedSerializer,
-) -> Any: ...
+    *serializers: Serializer[Any, Any],
+    context: Any = None,
+    sort_sets: bool = True,
+    source_type: Annotation | Any | None = None,
+) -> JsonSerializableType: ...
 
 
 @overload
 def serialize(
     obj: Any,
-    source_type: Annotation | Any,
-    registry: TypedSerializerRegistry,
+    registry: SerializerRegistry,
     /,
-) -> Any: ...
+    *,
+    context: Any = None,
+    sort_sets: bool = True,
+    source_type: Annotation | Any | None = None,
+) -> JsonSerializableType: ...
 
 
 def serialize(
     obj: Any,
-    source_type: Annotation | Any,
     /,
-    *serializers_or_registry: TypedSerializer | TypedSerializerRegistry,
-) -> Any:
+    *serializers_or_registry: Serializer[Any, Any] | SerializerRegistry,
+    context: Any = None,
+    sort_sets: bool = True,
+    source_type: Annotation | Any | None = None,
+) -> JsonSerializableType:
     """
     Recursively serialize object by type, generally to built-in Python types.
 
-    Handles nested parameterized types like list[MyClass] by recursively
-    applying serialization at each level.
+    Handles nested parameterized types by recursively applying serialization
+    at each level based on the actual object types (or optionally specified source type).
+
+    :param obj: Object to serialize
+    :param context: User-defined context passed to serializers
+    :param sort_sets: Whether to sort sets for deterministic output
+    :param source_type: Optional source type annotation for type-specific \
+    serialization; if `None`, type is inferred from the object
     """
+    source_annotation = (
+        Annotation._normalize(source_type)
+        if source_type is not None
+        else Annotation(type(obj))
+    )
     registry = normalize_to_registry(
-        TypedSerializer, TypedSerializerRegistry, *serializers_or_registry
+        Serializer, SerializerRegistry, *serializers_or_registry
     )
-    context = SerializationContext(registry=registry)
-    return context.serialize(obj, source_type)
+    engine = SerializationEngine(registry=registry)
+    params = SerializationParams(sort_sets=sort_sets)
+    frame = SerializationFrame(
+        source_annotation=source_annotation,
+        target_annotation=JSON_SERIALIZABLE_ANNOTATION,
+        context=context,
+        params=params,
+        engine=engine,
+    )
+    return engine.process(obj, frame)
 
 
-def _dispatch_serialization(
-    obj: Any,
-    info: SerializationInfo,
-) -> Any:
-    """
-    Main serialization dispatcher.
-    """
-
-    # handle None
-    if obj is None:
-        return None
-
-    # handle union type
-    if info.source_annotation.is_union:
-        return _serialize_union(obj, info)
-
-    # try user-provided serializers first (even for primitives/collections)
-    if serializer := info.context.registry.find(obj, info.source_annotation):
-        return serializer.serialize(obj, info)
-
-    # handle builtin collections
-    if issubclass(info.source_annotation.concrete_type, COLLECTION_TYPES):
-        return _serialize_collection(obj, info)
-
-    # no serializer found, return as-is
-    return obj
+_T_contra = TypeVar("_T_contra", contravariant=True)
 
 
-def _serialize_union(obj: Any, info: SerializationInfo) -> Any:
-    """
-    Serialize union types by finding the matching constituent type.
-    """
-    for arg in info.source_annotation.arg_annotations:
-        if arg.is_type(obj):
-            return _dispatch_serialization(obj, SerializationInfo(arg, info.context))
+# technically only one of __lt__/__gt__ is required
+@runtime_checkable
+class SupportsComparison(Protocol[_T_contra]):
+    def __lt__(self, other: _T_contra, /) -> bool: ...
+    def __gt__(self, other: _T_contra, /) -> bool: ...
 
-    # no matching union member, serialize with inferred type
-    return _dispatch_serialization(
-        obj, SerializationInfo(Annotation(type(obj)), info.context)
+
+def _serialize_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
+    obj_list = convert_to_list(
+        obj, frame, default_target_annotation=JSON_SERIALIZABLE_ANNOTATION
     )
 
-
-def _serialize_collection(
-    obj: CollectionType,
-    info: SerializationInfo,
-) -> Any:
-    """
-    Serialize collection of objects.
-    """
-
-    assert len(
-        info.source_annotation.arg_annotations
-    ), f"Collection annotation has no type parameter: {info.source_annotation}"
-
-    type_ = info.source_annotation.concrete_type
-
-    # handle conversion from mappings
-    if issubclass(type_, dict):
-        assert isinstance(obj, type_)
-        return _serialize_dict(obj, info)
-
-    # handle conversion from value collections
-    if issubclass(type_, list):
-        assert isinstance(obj, type_)
-        return _serialize_list(obj, info)
-    elif issubclass(type_, tuple):
-        assert isinstance(obj, type_)
-        return _serialize_tuple(obj, info)
+    if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
+        for o in obj_list:
+            if not isinstance(o, SupportsComparison):
+                raise ValueError(
+                    f"Object '{o}' does not support comparison, so containing set cannot be converted to a sorted list"
+                )
+        return sorted(cast(list[SupportsComparison], obj_list))
     else:
-        assert issubclass(type_, (set, frozenset))
-        assert isinstance(obj, type_)
-        return _serialize_set(obj, info)
+        return obj_list
 
 
-def _serialize_list(
-    obj: list[Any],
-    info: SerializationInfo,
-) -> list[Any]:
-    """
-    Serialize list to a list.
-    """
-    ann, context = info.source_annotation, info.context
-
-    assert len(ann.arg_annotations) >= 1
-    item_ann = ann.arg_annotations[0]
-
-    return [context.serialize(o, item_ann) for o in obj]
-
-
-def _serialize_tuple(
-    obj: tuple[Any],
-    info: SerializationInfo,
-) -> list[Any]:
-    """
-    Serialize tuple to a list.
-    """
-    ann, context = info.source_annotation, info.context
-
-    assert len(ann.arg_annotations) >= 1
-
-    # check for Ellipsis (tuple[T, ...])
-    if ann.arg_annotations[-1].concrete_type is EllipsisType:
-        # variable-length tuple: use first annotation for all items
-        item_ann = ann.arg_annotations[0]
-        return [context.serialize(o, item_ann) for o in obj]
-    else:
-        # fixed-length tuple: match annotations to items
-        assert len(ann.arg_annotations) == len(obj), (
-            f"Tuple length mismatch: expected {len(ann.arg_annotations)} items, "
-            f"got {len(obj)}"
-        )
-        return [context.serialize(o, ann) for o, ann in zip(obj, ann.arg_annotations)]
-
-
-def _serialize_set(
-    obj: set[Any] | frozenset[Any],
-    info: SerializationInfo,
-) -> list[Any]:
-    """
-    Serialize set to a list (sets aren't JSON-serializable).
-    """
-    ann, context = info.source_annotation, info.context
-
-    assert len(ann.arg_annotations) == 1
-    item_ann = ann.arg_annotations[0]
-
-    return [context.serialize(o, item_ann) for o in obj]
-
-
-def _serialize_dict(
-    obj: dict[Any, Any],
-    info: SerializationInfo,
-) -> dict[Any, Any]:
-    """
-    Serialize dict.
-    """
-    ann, context = info.source_annotation, info.context
-
-    assert len(ann.arg_annotations) == 2
-    key_ann, value_ann = ann.arg_annotations
-
-    return {
-        context.serialize(k, key_ann): context.serialize(v, value_ann)
-        for k, v in obj.items()
-    }
+# TODO: add more serializers: dataclasses, ...
+JSON_REGISTRY = SerializerRegistry(
+    Serializer(set | frozenset | tuple, list, func=_serialize_list),
+)
+"""
+Registry to use for json serialization.
+"""

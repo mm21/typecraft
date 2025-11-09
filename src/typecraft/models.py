@@ -25,7 +25,7 @@ from typing import (
 )
 
 from .inspecting.annotations import Annotation
-from .validating import TypedValidator, ValidationInfo, validate
+from .validating import ValidationFrame, Validator, validate
 
 __all__ = [
     "Field",
@@ -111,7 +111,7 @@ class FieldInfo:
     Dataclass field.
     """
 
-    annotation_info: Annotation
+    annotation: Annotation
     """
     Annotation info.
     """
@@ -151,9 +151,7 @@ class FieldInfo:
         metadata = field.metadata.get("metadata") or FieldMetadata()
         assert isinstance(metadata, FieldMetadata)
 
-        return FieldInfo(
-            field=field, annotation_info=annotation_info, metadata=metadata
-        )
+        return FieldInfo(field=field, annotation=annotation_info, metadata=metadata)
 
 
 @dataclass(kw_only=True)
@@ -179,9 +177,9 @@ class ModelConfig:
     Configures model.
     """
 
-    lenient: bool = False
+    strict: bool = True
     """
-    Coerce values to expected type if possible.
+    Don't attempt to coerce values to the expected type; just validate.
     """
 
     validate_on_assignment: bool = False
@@ -231,9 +229,9 @@ class BaseModel:
             value_ = self.model_pre_validate(field_info, value)
             value_ = validate(
                 value_,
-                field_info.annotation_info.raw,
-                *self.__converters,
-                lenient=self.model_config.lenient,
+                field_info.annotation.raw,
+                *self.__validators,
+                strict=self.model_config.strict,
             )
             value_ = self.model_post_validate(field_info, value_)
         else:
@@ -280,7 +278,7 @@ class BaseModel:
             value = getattr(self, name)
 
             # recurse if this is a nested model
-            if issubclass(field_info.annotation_info.concrete_type, BaseModel):
+            if issubclass(field_info.annotation.concrete_type, BaseModel):
                 assert isinstance(value, BaseModel)
                 value = value.model_dump()
 
@@ -289,7 +287,7 @@ class BaseModel:
 
         return values
 
-    def model_get_converters(self) -> tuple[TypedValidator[Any], ...]:
+    def model_get_validators(self) -> tuple[Validator[Any, Any], ...]:
         """
         Override to provide converters for values by type, including inner values like
         elements of lists.
@@ -320,23 +318,25 @@ class BaseModel:
         return {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
 
     @cached_property
-    def __converters(self) -> tuple[TypedValidator[Any], ...]:
+    def __validators(self) -> tuple[Validator[Any, Any], ...]:
         """
         Converters to use for validation.
         """
         # add converter for nested dataclasses at end in case user passes a
         # converter for a subclass
-        return (*self.model_get_converters(), MODEL_VALIDATOR)
+        return (*self.model_get_validators(), MODEL_CONVERTER)
 
 
-def validate_model(obj: Any, info: ValidationInfo) -> BaseModel:
-    type_ = info.target_annotation.concrete_type
+def validate_model(obj: Mapping[Any, Any], frame: ValidationFrame) -> BaseModel:
+    type_ = frame.target_annotation.concrete_type
     assert issubclass(type_, BaseModel)
     assert isinstance(obj, Mapping)
     return type_(**obj)
 
 
-MODEL_VALIDATOR = TypedValidator(Mapping, BaseModel, func=validate_model)
+MODEL_CONVERTER = Validator(
+    Mapping, BaseModel, func=validate_model, match_target_subtype=True
+)
 """
 Converts a mapping (e.g. dict) to a model.
 """

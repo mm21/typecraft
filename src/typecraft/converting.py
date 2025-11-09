@@ -5,29 +5,33 @@ Low-level conversion capability, agnostic of validation vs serialization.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from collections.abc import Callable, Sequence
-from typing import Any, cast
+from collections.abc import Callable, Hashable, Mapping, Sequence
+from functools import cached_property
+from typing import Any, Generator, Self, Sized, cast, overload
 
-from .inspecting.annotations import Annotation
+from .inspecting.annotations import ANY, Annotation, extract_tuple_args
+from .inspecting.classes import extract_type_param
 from .inspecting.functions import ParameterInfo, SignatureInfo
-from .typedefs import VarianceType
+from .typedefs import (
+    COLLECTION_TYPES,
+    ValueCollectionType,
+)
 
-type ConverterFuncType[SourceT, TargetT, InfoT] = Callable[
+type ConverterFuncType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
     [SourceT], TargetT
-] | Callable[[SourceT, InfoT], TargetT]
+] | Callable[[SourceT, FrameT], TargetT]
 """
 Function which converts an object. Can take the source object by itself or
 source object with info.
 """
 
 
-class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
+class ConverterFunctionWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     """
     Encapsulates a validator or serializer function.
     """
 
-    func: ConverterFuncType[SourceT, TargetT, InfoT]
+    func: ConverterFuncType[SourceT, TargetT, FrameT]
     """
     Converter function.
     """
@@ -42,9 +46,9 @@ class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
     Parameter for object to be validated/serialized, must be positional.
     """
 
-    info_param: ParameterInfo | None
+    frame_param: ParameterInfo | None
     """
-    Parameter for additional info, must be positional.
+    Optional parameter for conversion frame, must be positional.
     """
 
     def __init__(self, func: Callable[..., Any]):
@@ -59,35 +63,155 @@ class ConverterFunctionWrapper[SourceT, TargetT, InfoT]:
             obj_param
         ), f"Function {func} does not take any positional params, must take obj as positional"
 
-        # get info parameter
-        info_param = sig_info.get_param("info")
-        if info_param:
+        # get frame parameter
+        frame_param = sig_info.get_param("frame")
+        if frame_param:
             assert (
-                info_param.index == 1
-            ), f"Function {func} must take info as second positional argument"
+                frame_param.index == 1
+            ), f"Function {func} must take frame as second positional argument, got index {frame_param.index}"
 
         self.func = func
         self.sig_info = sig_info
         self.obj_param = obj_param
-        self.info_param = info_param
+        self.frame_param = frame_param
 
-    def invoke(self, obj: SourceT, info: InfoT) -> TargetT:
-        if self.info_param:
-            # invoke with info
-            func = cast(Callable[[SourceT, InfoT], TargetT], self.func)
-            return func(obj, info)
+    def invoke(self, obj: SourceT, frame: FrameT, /) -> TargetT:
+        if self.frame_param:
+            # invoke with frame
+            func = cast(Callable[[SourceT, FrameT], TargetT], self.func)
+            return func(obj, frame)
         else:
-            # invoke without info
+            # invoke without frame
             func = cast(Callable[[SourceT], TargetT], self.func)
             return func(obj)
 
 
-class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
-    """
-    Base class for typed converters (validators and serializers).
+class BaseConversionFrame[ParamsT]:
 
-    Encapsulates common conversion parameters and logic for type-based
-    conversion between source and target annotations.
+    source_annotation: Annotation
+    """
+    Source type we're converting from.
+    """
+
+    target_annotation: Annotation
+    """
+    Target type we're converting to.
+    """
+
+    context: Any
+    """
+    User context passed at validation/serialization entry point.
+    """
+
+    params: ParamsT
+    """
+    Parameters passed at validation/serialization entry point.
+    """
+
+    __engine: BaseConversionEngine
+    """
+    Conversion engine for recursion.
+    """
+
+    __path: tuple[str | int, ...]
+    """
+    Field path at this level in recursion.
+    """
+
+    __seen: set[int]
+    """
+    Object ids for cycle detection.
+    """
+
+    def __init__(
+        self,
+        *,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        context: Any,
+        params: ParamsT,
+        engine: BaseConversionEngine,
+        path: tuple[str | int, ...] | None = None,
+        seen: set[int] | None = None,
+    ):
+        self.source_annotation = source_annotation
+        self.target_annotation = target_annotation
+        self.context = context
+        self.params = params
+        self.__engine = engine
+        self.__path = path or ()
+        self.__seen = seen or set()
+
+    def recurse(
+        self,
+        obj: Any,
+        path_segment: str | int,
+        /,
+        *,
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation,
+        context: Any = ...,
+    ) -> Any:
+        """
+        Create a new frame and recurse using the engine.
+        """
+        source_annotation_ = (
+            Annotation(type(obj))
+            if source_annotation in (None, ANY)
+            else source_annotation
+        )
+        next_frame = self.copy(
+            source_annotation=source_annotation_,
+            target_annotation=target_annotation,
+            context=context,
+            path_append=path_segment,
+        )
+
+        # whether to check for cycles: assume hashable == immutable, and only
+        # check cycles for mutable objects
+        check_cycle = not isinstance(obj, Hashable)
+
+        # recurse and add/remove this object for cycle detection
+        if check_cycle:
+            if id(obj) in next_frame.__seen:
+                raise ValueError(f"Already processed object: '{obj}', can't recurse")
+            next_frame.__seen.add(id(obj))
+        next_obj = self.__engine.process(obj, next_frame)
+        if check_cycle:
+            next_frame.__seen.remove(id(obj))
+
+        return next_obj
+
+    def copy(
+        self,
+        *,
+        source_annotation: Annotation | None = None,
+        target_annotation: Annotation | None = None,
+        context: Any = ...,
+        path_append: str | int | None = None,
+    ) -> Self:
+        """
+        Create a new frame with the arguments replaced if not None.
+        """
+        path = (
+            self.__path
+            if path_append is None
+            else tuple(list(self.__path) + [path_append])
+        )
+        return type(self)(
+            source_annotation=source_annotation or self.source_annotation,
+            target_annotation=target_annotation or self.target_annotation,
+            context=context if context is not ... else self.context,
+            params=self.params,
+            engine=self.__engine,
+            path=path,
+            seen=self.__seen,
+        )
+
+
+class ConverterInterface:
+    """
+    Defines the interface for converters and mixins.
     """
 
     _source_annotation: Annotation
@@ -100,15 +224,14 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
     Annotation specifying type to convert to.
     """
 
-    _func: ConverterFunctionWrapper[SourceT, TargetT, InfoT] | None
+    _match_source_subtype: bool
     """
-    Function taking source type and returning an instance of target type.
+    Whether to match subtypes of the source annotation.
     """
 
-    _variance: VarianceType
+    _match_target_subtype: bool
     """
-    Variance with respect to a reference annotation, either source or target depending
-    on serialization vs validation.
+    Whether to match subtypes of the target annotation.
     """
 
     def __init__(
@@ -117,13 +240,52 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
         target_annotation: Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, InfoT] | None = None,
-        variance: VarianceType = "contravariant",
+        match_source_subtype: bool,
+        match_target_subtype: bool,
+    ):
+        _ = (
+            source_annotation,
+            target_annotation,
+            match_source_subtype,
+            match_target_subtype,
+        )
+
+    @property
+    def _params_str(self) -> str:
+        s = f"source={self._source_annotation}"
+        t = f"target={self._target_annotation}"
+        m_s = f"match_source_subtype={self._match_source_subtype}"
+        m_t = f"match_target_subtype={self._match_target_subtype}"
+        return ", ".join((s, t, m_s, m_t))
+
+
+class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
+    ConverterInterface, ABC
+):
+    """
+    Base class for typed converters (validators and serializers).
+
+    Encapsulates common conversion parameters and logic for type-based
+    conversion between source and target annotations.
+    """
+
+    # TODO: for custom subclass, get annotations using extract_type_param()
+    def __init__(
+        self,
+        source_annotation: Any,
+        target_annotation: Any,
+        /,
+        *,
+        match_source_subtype: bool,
+        match_target_subtype: bool,
     ):
         self._source_annotation = Annotation._normalize(source_annotation)
         self._target_annotation = Annotation._normalize(target_annotation)
-        self._func = ConverterFunctionWrapper(func) if func else None
-        self._variance = variance
+        self._match_source_subtype = match_source_subtype
+        self._match_target_subtype = match_target_subtype
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._params_str})"
 
     @property
     def source_annotation(self) -> Annotation:
@@ -134,95 +296,250 @@ class BaseTypedConverter[SourceT, TargetT, InfoT](ABC):
         return self._target_annotation
 
     @property
-    def variance(self) -> VarianceType:
-        return self._variance
+    def match_source_subtype(self) -> bool:
+        return self._match_source_subtype
+
+    @property
+    def match_target_subtype(self) -> bool:
+        return self._match_target_subtype
+
+    def check_match(
+        self,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        /,
+    ) -> bool:
+        """
+        Check if this converter matches for the given object and annotation.
+
+        Checks whether source and target annotations are compatible with this converter,
+        taking into account match_source_subtype and match_target_subtype settings.
+
+        :param source_annotation: Annotation of the source object
+        :param target_annotation: Target type to convert to
+        :return: True if converter matches
+        """
+        source_match = self.__check_match(
+            self._source_annotation, source_annotation, self._match_source_subtype
+        )
+        target_match = self.__check_match(
+            self._target_annotation,
+            target_annotation,
+            self._match_target_subtype,
+            covariant=True,
+        )
+        return source_match and target_match
+
+    def can_convert(
+        self,
+        obj: SourceT,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        /,
+    ) -> bool:
+        """
+        Check if converter can convert the given object. Can be overridden by custom
+        subclasses.
+
+        Called internally by the framework after check_match() succeeds.
+
+        :param obj: Object to potentially convert
+        :param source_annotation: Annotation of source object
+        :param target_annotation: Annotation to convert to
+        :return: True if converter can handle conversion
+        """
+        _ = obj, source_annotation, target_annotation
+        return True
 
     @abstractmethod
-    def can_convert(self, obj: Any, annotation: Annotation, /) -> bool:
+    def convert(
+        self,
+        obj: SourceT,
+        frame: FrameT,
+        /,
+    ) -> TargetT:
         """
-        Check if this converter can convert the given object with the given annotation.
+        Convert object.
 
-        The meaning of 'annotation' depends on the converter type:
-        - For validators: target annotation (converting TO)
-        - For serializers: source annotation (converting FROM)
+        Subclass must define conversion logic. Expected to always succeed since
+        check_match() and can_convert() returned True.
+
+        :param obj: Object to convert
+        :param source_annotation: Annotation of source object
+        :param target_annotation: Annotation to convert to
+        :param frame: Frame for conversion operations
+        :return: Converted object
         """
 
-    @abstractmethod
-    def _get_context_cls(self) -> type[BaseConversionContext]:
-        """
-        Get the context class for this converter.
-        """
-
-    def _check_variance_match(
+    def __check_match(
         self,
         annotation: Annotation,
-        reference_annotation: Annotation,
+        check_annotation: Annotation,
+        match_subtype: bool,
+        covariant: bool = False,
     ) -> bool:
-        """Check if annotation matches reference based on variance."""
-        if self._variance == "invariant":
-            # exact match only
-            return annotation == reference_annotation
+        if covariant and annotation.is_subtype(check_annotation):
+            # can match a more specific type (covariant)
+            return True
+        elif match_subtype and check_annotation.is_subtype(annotation):
+            # can match a less specific type (contravariant)
+            return True
         else:
-            # contravariant (default): annotation must be a subclass of reference
-            return annotation.is_subtype(reference_annotation)
+            # must match exactly (invariant)
+            return annotation == check_annotation
 
 
-class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
+class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
+    ConverterInterface
+):
+    """
+    Mixin class for function-based converters.
+    """
+
+    _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, FrameT] | None
+
+    @overload
+    def __init__(
+        self,
+        source_annotation: type[SourceT],
+        target_annotation: type[TargetT],
+        /,
+        *,
+        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
+    ): ...
+
+    @overload
+    def __init__(
+        self,
+        source_annotation: Annotation | Any,
+        target_annotation: Annotation | Any,
+        /,
+        *,
+        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
+    ): ...
+
+    def __init__(
+        self,
+        source_annotation: Any,
+        target_annotation: Any,
+        /,
+        *,
+        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
+    ):
+        super().__init__(
+            source_annotation,
+            target_annotation,
+            match_source_subtype=match_source_subtype,
+            match_target_subtype=match_target_subtype,
+        )
+        self._func_wrapper = ConverterFunctionWrapper(func) if func else None
+
+    def __repr__(self) -> str:
+        func = self._func_wrapper.func.__name__ if self._func_wrapper else None
+        return f"{type(self).__name__}({self._params_str}, func={func})"
+
+    @classmethod
+    def from_func(
+        cls,
+        # TODO: rename: convert_func
+        func: ConverterFuncType[SourceT, TargetT, FrameT],
+        # TODO: can_convert_func
+        /,
+        *,
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
+    ) -> Self:
+        """
+        Create converter from function by inspecting its signature to infer source and
+        target types.
+
+        :param func: Converter function
+        :param match_source_subtype: Match subtypes of source annotation
+        :param match_target_subtype: Match subtypes of target annotation
+        :return: Converter instance
+        """
+        func_wrapper = ConverterFunctionWrapper(func)
+        assert func_wrapper.obj_param.annotation
+        assert func_wrapper.sig_info.return_annotation
+
+        return cls(
+            func_wrapper.obj_param.annotation,
+            func_wrapper.sig_info.return_annotation,
+            func=func,
+            match_source_subtype=match_source_subtype,
+            match_target_subtype=match_target_subtype,
+        )
+
+    def convert(
+        self,
+        obj: Any,
+        frame: FrameT,
+        /,
+    ) -> Any:
+        """
+        Convert object using the wrapped function or direct construction.
+        """
+        try:
+            if func := self._func_wrapper:
+                # provided conversion function
+                converted_obj = func.invoke(obj, frame)
+            else:
+                # direct object construction
+                concrete_type = cast(
+                    Callable[[SourceT], TargetT], self._target_annotation.concrete_type
+                )
+                converted_obj = concrete_type(obj)
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}): {e}"
+            ) from None
+
+        if not frame.target_annotation.is_type(converted_obj):
+            raise ValueError(
+                f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}), got {converted_obj} ({type(converted_obj)})"
+            )
+
+        return converted_obj
+
+
+class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
     """
     Base class for converter registries.
-
-    Provides efficient lookup of converters based on object type and annotation.
-    Converters are indexed by a key type for fast lookup, with fallback to
-    sequential search for contravariant matching.
-    """
-
-    _converter_map: dict[type, list[ConverterT]]
-    """
-    Converters grouped by key type for efficiency.
     """
 
     _converters: list[ConverterT]
     """
-    List of all converters for fallback/contravariant matching.
+    List of all converters.
     """
 
     def __init__(self, *converters: ConverterT):
-        self._converter_map = defaultdict(list)
         self._converters = []
         self.extend(converters)
 
     def __len__(self) -> int:
         return len(self._converters)
 
-    @property
-    def converters(self) -> list[ConverterT]:
-        """
-        Get converters currently registered.
-        """
-        return self._converters
-
-    def find(self, obj: Any, annotation: Annotation) -> ConverterT | None:
+    def find(
+        self,
+        obj: Any,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+    ) -> ConverterT | None:
         """
         Find the first converter that can handle the conversion.
-
-        Searches in order:
-        1. Exact key type matches
-        2. All converters (for contravariant matching)
         """
-        key_type = annotation.concrete_type
-
-        # first try converters registered for the exact key type
-        if key_type in self._converter_map:
-            for converter in self._converter_map[key_type]:
-                if converter.can_convert(obj, annotation):
-                    return converter
-
-        # then try all converters (handles contravariant, generic cases)
+        assert not target_annotation.is_union
         for converter in self._converters:
-            if converter not in self._converter_map.get(key_type, []):
-                if converter.can_convert(obj, annotation):
-                    return converter
-
+            if converter.check_match(
+                source_annotation, target_annotation
+            ) and converter.can_convert(obj, source_annotation, target_annotation):
+                return converter
         return None
 
     def extend(self, converters: Sequence[ConverterT]):
@@ -232,46 +549,157 @@ class BaseConverterRegistry[ConverterT: BaseTypedConverter](ABC):
         for converter in converters:
             self._register_converter(converter)
 
-    @abstractmethod
-    def _get_map_key_type(self, converter: ConverterT) -> type:
-        """
-        Get the type to use as key in the converter map for this converter.
-
-        - For validators: target type
-        - For serializers: source type
-        """
-
     def _register_converter(self, converter: ConverterT):
         """
         Register a converter object.
         """
-        map_key = self._get_map_key_type(converter)
-        self._converter_map[map_key].append(converter)
         self._converters.append(converter)
 
+    @cached_property
+    def _converter_cls(self) -> type[ConverterT]:
+        converter_cls = extract_type_param(
+            type(self), BaseConverterRegistry, "ConverterT", BaseConverter
+        )
+        return cast(type[ConverterT], converter_cls)
 
-class BaseConversionContext[RegistryT: BaseConverterRegistry](ABC):
+
+class BaseConversionEngine[
+    RegistryT: BaseConverterRegistry,
+    FrameT: BaseConversionFrame,
+](ABC):
     """
-    Base class for conversion contexts.
-
-    Encapsulates conversion parameters and provides access to the converter
-    registry, propagated throughout the conversion process.
+    Base class for conversion engines. Orchestrates conversion process, containing
+    common recursion logic with abstract hooks for validation/serialization-specific
+    behavior.
     """
 
-    _registry: RegistryT
+    __user_registry: RegistryT
+    """
+    User-registered converters.
+    """
 
     def __init__(self, *, registry: RegistryT | None = None):
-        self._registry = registry or self._create_default_registry()
+        self.__user_registry = registry or self.__registry_cls()
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(registry={self.__user_registry})"
 
     @property
     def registry(self) -> RegistryT:
-        return self._registry
+        return self.__user_registry
+
+    def process(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Main conversion dispatcher with common logic.
+
+        Walks the object recursively based on reference annotation,
+        invoking type-based converters when conversion is needed.
+        """
+        # if source is a union, select which specific annotation matches the object
+        if frame.source_annotation.is_union:
+            frame_ = frame.copy(
+                source_annotation=_select_ann_from_union(obj, frame.source_annotation)
+            )
+        else:
+            frame_ = frame
+
+        # debug asserts:
+        # - can't validate/serialize FROM any: need to know the object type
+        # - can't serialize TO any: must have a known supported target type
+        # - can validate TO any: is_type() will just return True
+        assert frame_.source_annotation != ANY
+        if self.__is_serializing:
+            assert frame_.target_annotation != ANY
+
+        # invoke conversion if needed
+        if not frame_.target_annotation.is_type(obj, recurse=False):
+            return self._invoke_conversion(obj, frame_)
+
+        # if target is a union, select which specific annotation matches the object
+        if frame_.target_annotation.is_union:
+            frame_ = frame_.copy(
+                target_annotation=_select_ann_from_union(obj, frame_.target_annotation)
+            )
+
+        # process collections by recursing into them
+        if issubclass(frame_.target_annotation.concrete_type, COLLECTION_TYPES):
+            return self._process_collection(obj, frame_)
+
+        # no conversion needed, return as-is
+        return obj
 
     @abstractmethod
-    def _create_default_registry(self) -> RegistryT:
+    def _get_builtin_registries(self, frame: FrameT) -> tuple[RegistryT, ...]:
         """
-        Create a default registry.
+        Get builtin registries to use for conversion based on the parameters.
         """
+
+    def _process_collection(self, obj: Any, frame: FrameT) -> Any:
+        """
+        Process collection by recursing into items.
+
+        We can only create built-in collection types; the user is responsible for
+        recursing into custom subclasses thereof in a custom converter as the
+        custom subclass may have a special construction interface.
+        """
+        target_type = frame.target_annotation.concrete_type
+        assert isinstance(obj, target_type)  # should have gotten converted otherwise
+
+        if issubclass(target_type, list):
+            return convert_to_list(cast(ValueCollectionType, obj), frame)
+        elif issubclass(target_type, tuple):
+            return convert_to_tuple(cast(ValueCollectionType, obj), frame)
+        elif issubclass(target_type, (set, frozenset)):
+            return convert_to_set(cast(ValueCollectionType, obj), frame)
+        else:
+            assert issubclass(target_type, dict)
+            return convert_to_dict(cast(Mapping, obj), frame)
+
+    def _invoke_conversion(self, obj: Any, frame: FrameT) -> Any:
+        if frame.target_annotation.is_union:
+            # handle union
+            for target_option in frame.target_annotation.arg_annotations:
+                if converter := self._find_converter(obj, frame, target_option):
+                    frame_ = frame.copy(target_annotation=target_option)
+                    try:
+                        return converter.convert(obj, frame_)
+                    except (ValueError, TypeError):
+                        # keep trying other converters
+                        continue
+        else:
+            # handle single target type
+            if converter := self._find_converter(obj, frame, frame.target_annotation):
+                return converter.convert(obj, frame)
+        raise ValueError(
+            f"Object '{obj}' ({type(obj)}) could not be converted from {frame.source_annotation} to {frame.target_annotation}"
+        )
+
+    def _find_converter(
+        self, obj: Any, frame: FrameT, target_annotation: Annotation
+    ) -> BaseConverter | None:
+        for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
+            if converter := registry.find(
+                obj, frame.source_annotation, target_annotation
+            ):
+                return converter
+        return None
+
+    @property
+    def __registry_cls(self) -> type[RegistryT]:
+        registry_cls = extract_type_param(
+            type(self), BaseConversionEngine, "RegistryT", BaseConverterRegistry
+        )
+        assert registry_cls
+        return cast(type[RegistryT], registry_cls)
+
+    @cached_property
+    def __is_serializing(self) -> bool:
+        """
+        Whether the engine is serializing; for debugging only.
+        """
+        from .serializing import SerializationEngine
+
+        return isinstance(self, SerializationEngine)
 
 
 def normalize_to_registry[ConverterT, RegistryT](
@@ -291,3 +719,265 @@ def normalize_to_registry[ConverterT, RegistryT](
         converters = cast(tuple[ConverterT, ...], converters_or_registry)
         registry = registry_cls(*converters)
     return registry
+
+
+def convert_to_list(
+    obj: ValueCollectionType,
+    frame: BaseConversionFrame,
+    *,
+    default_target_annotation: Annotation = ANY,
+) -> list:
+    """
+    Convert collection to list.
+    """
+    target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, list)
+
+    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+
+    # extract item annotations
+    source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
+    target_item_ann = (
+        _extract_value_item_ann(frame.target_annotation) or default_target_annotation
+    )
+
+    # create list of validated items
+    converted_objs = [
+        frame.recurse(
+            o,
+            i,
+            source_annotation=(
+                source_item_anns[i]
+                if isinstance(source_item_anns, tuple)
+                else source_item_anns
+            ),
+            target_annotation=target_item_ann,
+        )
+        for i, o in enumerate(sized_obj)
+    ]
+
+    if isinstance(obj, target_type) and all(
+        o is n for o, n in zip(sized_obj, converted_objs)
+    ):
+        # have correct type and no conversions were done; return the original object
+        return obj
+    elif target_type is list:
+        # have a list (not a subclass thereof), return the newly created list
+        return converted_objs
+
+    raise ValueError(
+        f"Cannot construct instance of target type {target_type}; create a custom validator for it"
+    )
+
+
+def convert_to_tuple(obj: ValueCollectionType, frame: BaseConversionFrame) -> tuple:
+    """
+    Convert collection to tuple.
+    """
+    target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, tuple)
+
+    # validate non-variadic tuple: input can't be set
+    if (
+        len(frame.target_annotation.arg_annotations)
+        and frame.target_annotation.arg_annotations[-1].raw is not ...
+    ):
+        if isinstance(obj, (set, frozenset)):
+            raise ValueError(
+                f"Can't convert from set to fixed-length tuple as items would be in random order: {obj}"
+            )
+
+    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+
+    # extract item annotations
+    source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
+    target_item_anns = extract_tuple_args(frame.target_annotation)
+
+    if isinstance(target_item_anns, tuple) and len(target_item_anns) != len(sized_obj):
+        raise ValueError(
+            f"Tuple length mismatch: expected {len(target_item_anns)} from target annotation {frame.target_annotation}, got {len(sized_obj)}: {sized_obj}"
+        )
+
+    # create tuple of validated items
+    converted_objs = tuple(
+        frame.recurse(
+            o,
+            i,
+            source_annotation=(
+                source_item_anns[i]
+                if isinstance(source_item_anns, tuple)
+                else source_item_anns
+            ),
+            target_annotation=(
+                target_item_anns[i]
+                if isinstance(target_item_anns, tuple)
+                else target_item_anns
+            ),
+        )
+        for i, o, in enumerate(sized_obj)
+    )
+
+    if isinstance(obj, target_type) and all(
+        o is v for o, v in zip(sized_obj, converted_objs)
+    ):
+        # have correct type and no conversions were done; return the original object
+        return obj
+    elif target_type is tuple:
+        # have a tuple (not a subclass thereof), return the newly created tuple
+        return converted_objs
+
+    raise ValueError(
+        f"Cannot construct instance of target type {target_type}; create a custom validator for it"
+    )
+
+
+def convert_to_set(
+    obj: ValueCollectionType, frame: BaseConversionFrame
+) -> set | frozenset:
+    """
+    Convert collection to set.
+    """
+    target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, (set, frozenset))
+
+    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+
+    # extract item annotations
+    source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
+    target_item_ann = _extract_value_item_ann(frame.target_annotation) or ANY
+
+    # create set of validated items
+    converted_objs = {
+        frame.recurse(
+            o,
+            i,
+            source_annotation=(
+                source_item_anns[i]
+                if isinstance(source_item_anns, tuple)
+                else source_item_anns
+            ),
+            target_annotation=target_item_ann,
+        )
+        for i, o in enumerate(sized_obj)
+    }
+
+    if isinstance(obj, target_type):
+        obj_ids = {id(o) for o in sized_obj}
+        if all(id(o) in obj_ids for o in converted_objs):
+            # have correct type and no conversions were done; return the original object
+            return obj
+    if target_type in (set, frozenset):
+        # have a set (not a subclass thereof), return the newly created set
+        return converted_objs if target_type is set else frozenset(converted_objs)
+
+    raise ValueError(
+        f"Cannot construct instance of target type {target_type}; create a custom validator for it"
+    )
+
+
+def convert_to_dict(obj: Mapping, frame: BaseConversionFrame) -> dict:
+    """
+    Convert mapping to dict.
+    """
+    target_type = frame.target_annotation.concrete_type
+    assert issubclass(target_type, dict)
+
+    # extract item annotations
+    source_key_ann, source_value_ann = _extract_mapping_item_ann(
+        frame.source_annotation
+    ) or (ANY, ANY)
+    target_key_ann, target_value_ann = _extract_mapping_item_ann(
+        frame.target_annotation
+    ) or (ANY, ANY)
+
+    # create dict of validated items
+    converted_objs = {
+        frame.recurse(
+            k,
+            f"key[{i}]",
+            source_annotation=source_key_ann,
+            target_annotation=target_key_ann,
+        ): frame.recurse(
+            v,
+            str(k),
+            source_annotation=source_value_ann,
+            target_annotation=target_value_ann,
+        )
+        for i, (k, v) in enumerate(obj.items())
+    }
+
+    if isinstance(obj, target_type) and all(
+        k_obj is k_conv and obj[k_obj] is converted_objs[k_conv]
+        for k_obj, k_conv in zip(obj, converted_objs)
+    ):
+        # have correct type and no conversions were done; return the original object
+        return obj
+    elif target_type is dict:
+        # have a dict (not a subclass thereof), return the newly created dict
+        return converted_objs
+
+    raise ValueError(
+        f"Cannot construct instance of target type {target_type}; create a custom validator for it"
+    )
+
+
+def _extract_value_item_anns(
+    obj: Sized, ann: Annotation
+) -> Annotation | tuple[Annotation, ...]:
+    """
+    Extract item annotations for each element in the collection.
+
+    - Returns `Annotation` if the annotation applies to each item in obj
+    - Returns `tuple[Annotation, ...]` if obj is a fixed-length tuple
+    """
+    if issubclass(ann.concrete_type, tuple):
+        source_args = extract_tuple_args(ann)
+        if isinstance(source_args, tuple) and len(obj) != len(source_args):
+            raise ValueError(
+                f"Tuple length mismatch: expected {len(source_args)} from annotation {ann}, got {len(obj)}: {obj}"
+            )
+        return source_args
+    else:
+        return _extract_value_item_ann(ann) or ANY
+
+
+def _extract_value_item_ann(ann: Annotation) -> Annotation | None:
+    """
+    Extract item annotation for non-tuple value collection.
+    """
+    # TODO: handle range: item type int
+    assert (
+        len(ann.arg_annotations) <= 1
+    ), f"Invalid number of type args for non-mapping collection, must be 0 or 1: {ann}"
+    return ann.arg_annotations[0] if len(ann.arg_annotations) == 1 else None
+
+
+def _extract_mapping_item_ann(ann: Annotation) -> tuple[Annotation, Annotation] | None:
+    """
+    Extract item annotations as (key annotation, value annotation) for mapping
+    collection.
+    """
+    assert len(ann.arg_annotations) in {
+        0,
+        2,
+    }, f"Invalid number of type args for mapping, must be 0 or 2: {ann}"
+    if len(ann.arg_annotations) == 2:
+        return ann.arg_annotations
+    else:
+        return None
+
+
+def _select_ann_from_union(obj: Any, union: Annotation) -> Annotation:
+    """
+    Select the annotation from the union which matches the given object.
+    """
+    assert union.is_union
+    ann = next(
+        (a for a in union.arg_annotations if a.is_type(obj, recurse=False)),
+        None,
+    )
+    if not ann:
+        raise ValueError(f"'{obj}' ({type(obj)}) is not a type of union {union}")
+    if ann.is_union:
+        return _select_ann_from_union(obj, ann)
+    return ann

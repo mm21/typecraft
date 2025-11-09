@@ -8,6 +8,7 @@ from typing import Any, Literal, Sequence, Union
 from typecraft.inspecting.annotations import Annotation, is_instance, is_subtype
 
 type ListAlias = list[int]
+type RecursiveAlias = list[RecursiveAlias] | int
 
 
 def test_alias():
@@ -18,6 +19,23 @@ def test_alias():
     assert a.origin is list
     assert len(a.args) == 1
     assert a.args[0] is int
+
+
+def test_recursive_alias():
+    """
+    Test recursive alias.
+    """
+    a = Annotation(RecursiveAlias)
+    assert a.is_union
+    assert len(a.arg_annotations) == 2
+
+    arg1, arg2 = a.arg_annotations
+    assert arg1.concrete_type is list
+    assert arg2.concrete_type is int
+
+    # arg1 should be a list of RecursiveAlias, the same Annotation object
+    assert len(arg1.arg_annotations) == 1
+    assert arg1.arg_annotations[0] is a
 
 
 def test_union():
@@ -35,43 +53,72 @@ def test_is_subtype():
     """
     Test `is_subtype` / `Annotation.is_subtype()` checks.
     """
+    # Any is BOTH top type and bottom type
     a1 = Annotation(int)
     a2 = Annotation(Any)
-    assert a1.is_subtype(a2)
+    assert a1.is_subtype(a2)  # int is subtype of Any (top type)
+    assert a2.is_subtype(a1)  # Any is subtype of int (bottom type)
     assert a1.is_subtype(Any)
-    assert not a2.is_subtype(a1)
+    assert a2.is_subtype(a1)
 
+    # str also has bidirectional relationship with Any
+    a1 = Annotation(str)
+    a2 = Annotation(Any)
+    assert a1.is_subtype(a2)  # str is subtype of Any (top type)
+    assert a2.is_subtype(a1)  # Any is subtype of str (bottom type)
+
+    # Any is a subtype of object (bottom type property)
+    a1 = Annotation(Any)
+    a2 = Annotation(object)
+    assert a1.is_subtype(a2)  # Any is subtype of object
+    # but int is also a subtype of object
+    a1 = Annotation(int)
+    assert a1.is_subtype(a2)
+
+    # list[int] and list[Any] have bidirectional relationship
     a1 = Annotation(list[int])
     a2 = Annotation(list[Any])
-    assert a1.is_subtype(a2)
-    assert not a2.is_subtype(a1)
+    assert a1.is_subtype(a2)  # list[int] subtype of list[Any] (covariance + top)
+    assert a2.is_subtype(a1)  # list[Any] subtype of list[int] (bottom type in params)
 
     # same but with alias
     assert is_subtype(ListAlias, list[Any])
-    assert not is_subtype(list[Any], ListAlias)
+    assert is_subtype(list[Any], ListAlias)  # bidirectional!
 
+    # list[int] is not a subtype of list[float]
     a1 = Annotation(list[int])
     a2 = Annotation(list[float])
     assert not a1.is_subtype(a2)
     assert not a2.is_subtype(a1)
 
+    # nested generics with Any maintain bidirectionality
     a1 = Annotation(list[list[bool]])
     a2 = Annotation(list[list[int]])
     assert a1.is_subtype(a2)
     assert not a2.is_subtype(a1)
 
+    a1 = Annotation(list[list[bool]])
+    a2 = Annotation(list[list[Any]])
+    assert a1.is_subtype(a2)  # top type
+    assert a2.is_subtype(a1)  # bottom type
+
+    a1 = Annotation(list[list[Any]])
+    a2 = Annotation(list[Any])
+    assert a1.is_subtype(a2)  # both work due to Any
+    assert a2.is_subtype(a1)  # bidirectional
+
     # list is assumed to be list[Any]
     a1 = Annotation(list[int])
     a2 = Annotation(list)
     assert a1.is_subtype(a2)
-    assert not a2.is_subtype(a1)
+    assert a2.is_subtype(a1)  # bidirectional now
 
     a1 = Annotation(list[Any])
     a2 = Annotation(list)
     assert a1.is_subtype(a2)
     assert a2.is_subtype(a1)
 
-    # unions
+    # unions with Any are bidirectional
     a1 = Annotation(int)
     a2 = Annotation(int | str)
     assert a1.is_subtype(a2)
@@ -85,9 +132,14 @@ def test_is_subtype():
     a1 = Annotation(list[int | str])
     a2 = Annotation(list)
     assert a1.is_subtype(a2)
-    assert not a2.is_subtype(a1)
+    assert a2.is_subtype(a1)  # bidirectional
 
-    # literals
+    a1 = Annotation(int | str)
+    a2 = Annotation(Any)
+    assert a1.is_subtype(a2)  # top type
+    assert a2.is_subtype(a1)  # bottom type
+
+    # literals with Any
     a1 = Annotation(Literal["a"])
     a2 = Annotation(Literal["a", "b"])
     assert a1.is_subtype(a2)
@@ -103,6 +155,12 @@ def test_is_subtype():
     assert a4.is_subtype(a3)
     assert not a3.is_subtype(a1)
     assert not a3.is_subtype(a4)
+
+    # literals with Any are bidirectional
+    a1 = Annotation(Literal["a", "b"])
+    a2 = Annotation(Any)
+    assert a1.is_subtype(a2)  # top type
+    assert a2.is_subtype(a1)  # bottom type
 
 
 def test_is_instance():
@@ -194,6 +252,15 @@ def test_is_instance():
     assert not a.is_type("c")
     assert not a.is_type(1)
 
+    # no recursion
+    a = Annotation(list[str])
+    assert a.is_type([1], recurse=False)
+    assert not a.is_type([1])
+    a = Annotation(int | str)
+    assert a.is_type(1, recurse=False)
+    assert a.is_type("a", recurse=False)
+    assert not a.is_type(1.0, recurse=False)
+
 
 def test_eq():
     """
@@ -203,6 +270,81 @@ def test_eq():
     assert Annotation(list[Any]) == Annotation(list[Any])
     assert Annotation(list) == Annotation(list[Any])
     assert Annotation(list[str]) != Annotation(list[Any])
+    assert Annotation(Literal["a", "b"]) != Annotation(Any)
+
+
+def test_any_vs_object():
+    """
+    Test the critical distinction between Any (top AND bottom type) and object (concrete type).
+
+    Any is BOTH the top type and bottom type in Python's gradual typing system:
+    - Everything is a subtype of Any (top type behavior)
+    - Any is a subtype of everything (bottom type behavior)
+
+    This dual nature makes Any an "escape hatch" from type checking.
+
+    object is a concrete class - only actual object subclasses are subtypes of object.
+    """
+    # Any as TOP type - everything is a subtype of Any
+    assert Annotation(int).is_subtype(Any)
+    assert Annotation(str).is_subtype(Any)
+    assert Annotation(list).is_subtype(Any)
+    assert Annotation(list[int]).is_subtype(Any)
+    assert Annotation(dict[str, Any]).is_subtype(Any)
+    assert Annotation(Callable[[int], str]).is_subtype(Any)
+
+    # Any as BOTTOM type - Any is a subtype of everything
+    assert Annotation(Any).is_subtype(int)
+    assert Annotation(Any).is_subtype(str)
+    assert Annotation(Any).is_subtype(object)
+    assert Annotation(Any).is_subtype(list)
+    assert Annotation(Any).is_subtype(list[int])
+    assert Annotation(Any).is_subtype(Callable[[str], bool])
+
+    # Any is both a subtype of itself (top meets bottom)
+    assert Annotation(Any).is_subtype(Any)
+
+    # object is a concrete type
+    assert Annotation(int).is_subtype(object)
+    assert Annotation(str).is_subtype(object)
+    assert Annotation(list).is_subtype(object)
+    # Any is ALSO a subtype of object (bottom type property)
+    assert Annotation(Any).is_subtype(object)
+    # and object is a subtype of Any (top type property)
+    assert Annotation(object).is_subtype(Any)
+
+    # in generic type parameters, Any maintains its dual nature
+    assert Annotation(list[int]).is_subtype(list[Any])  # top type
+    assert Annotation(list[Any]).is_subtype(list[int])  # bottom type
+    assert Annotation(dict[str, int]).is_subtype(dict[str, Any])  # top type
+    assert Annotation(dict[Any, Any]).is_subtype(dict[str, int])  # bottom type
+
+    # list[object] is different from list[Any]
+    assert Annotation(list[int]).is_subtype(list[object])  # normal covariance
+    assert not Annotation(list[object]).is_subtype(
+        list[int]
+    )  # object is NOT bottom type
+    # but list[Any] IS a subtype of list[int] (bottom type property)
+    assert Annotation(list[Any]).is_subtype(list[int])
+
+    # with callables, Any in parameters and return types
+    # Any in return (bottom type): can return anything
+    assert Annotation(Callable[[int], Any]).is_subtype(Callable[[int], str])
+    # Any in parameters (bottom type meets contravariance)
+    assert Annotation(Callable[[Any], str]).is_subtype(Callable[[int], str])
+    # Both directions work due to Any's dual nature
+    assert Annotation(Callable[[int], str]).is_subtype(Callable[[Any], Any])
+    assert Annotation(Callable[[Any], Any]).is_subtype(Callable[[int], str])
+
+    # nested generics
+    assert Annotation(list[list[int]]).is_subtype(list[list[Any]])  # top type
+    assert Annotation(list[list[Any]]).is_subtype(list[list[int]])  # bottom type
+    assert Annotation(list[list[int]]).is_subtype(list[Any])  # top type
+    assert Annotation(list[Any]).is_subtype(list[list[int]])  # bottom type
+
+    # unions with Any
+    assert Annotation(int | str).is_subtype(Any)  # top type
+    assert Annotation(Any).is_subtype(int | str)  # bottom type
 
 
 def test_callable():
@@ -241,6 +383,7 @@ def test_callable_is_subtype():
     Test is_subtype for callables.
 
     Callables are contravariant in parameters and covariant in return type.
+    With Any as both top and bottom type, callable relationships become bidirectional with Any.
     """
     # same signature
     a1 = Annotation(Callable[[int], str])
@@ -280,11 +423,23 @@ def test_callable_is_subtype():
     assert a1.is_subtype(a2)  # bool is subclass of int
     assert not a2.is_subtype(a1)
 
-    # Callable with Any
-    a1 = Annotation(Callable[[int], Any])
+    # Callable with Any in return type - bidirectional due to Any
+    a1 = Annotation(Callable[[int], str])
+    a2 = Annotation(Callable[[int], Any])
+    assert a1.is_subtype(a2)  # str is subtype of Any (covariant + top)
+    assert a2.is_subtype(a1)  # Any is subtype of str (bottom type)
+
+    # Callable with Any in parameters - bidirectional due to Any
+    a1 = Annotation(Callable[[Any], str])
     a2 = Annotation(Callable[[int], str])
-    assert a2.is_subtype(a1)  # str is subclass of Any
-    assert not a1.is_subtype(a2)
+    assert a1.is_subtype(a2)  # Any accepts more (contravariant + bottom)
+    assert a2.is_subtype(a1)  # int subtype of Any (top type)
+
+    # Callable[[Any], Any] is bidirectionally related to everything
+    a1 = Annotation(Callable[[Any], Any])
+    a2 = Annotation(Callable[[int], str])
+    assert a1.is_subtype(a2)  # Any dual nature
+    assert a2.is_subtype(a1)  # Any dual nature
 
     # multiple parameters with contravariance
     a1 = Annotation(Callable[[int, str], bool])

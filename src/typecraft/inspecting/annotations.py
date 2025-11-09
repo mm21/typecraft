@@ -7,13 +7,16 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from inspect import Parameter
-from types import EllipsisType, NoneType, UnionType
+from types import EllipsisType, GenericAlias, NoneType, UnionType
 from typing import (
     Annotated,
     Any,
     Literal,
+    Self,
     TypeAliasType,
+    TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
 )
@@ -30,6 +33,8 @@ __all__ = [
     "flatten_union",
     "get_concrete_type",
 ]
+
+LiteralType = type(Literal["sentinel"])
 
 
 class Annotation:
@@ -91,7 +96,35 @@ class Annotation:
     - Otherwise: annotation itself, ensuring it's a type
     """
 
+    __cache: dict[int, Self] = {}
+    """
+    Cache to prevent infinite recursion with recursive type aliases.
+    """
+
+    __init_done: bool = False
+    """
+    Whether initialization has already been completed.
+    """
+
+    def __new__(cls, annotation: Any, /) -> Self:
+        """
+        Create or retrieve cached Annotation instance to support recursive type aliases.
+        """
+        key = id(annotation)
+
+        if obj := cls.__cache.get(key):
+            return obj
+
+        obj = super().__new__(cls)
+        cls.__cache[key] = obj
+        return obj
+
     def __init__(self, annotation: Any, /):
+        # skip initialization if already done or in progress (cached instance)
+        if self.__init_done:
+            return
+
+        self.__init_done = True
         raw, extras = split_annotated(unwrap_alias(annotation))
         raw = unwrap_alias(raw)
 
@@ -112,22 +145,39 @@ class Annotation:
         self.arg_annotations = (
             tuple(Annotation(a) for a in self.args)
             if self.origin not in (Literal, Callable)
-            else ()
+            else cast(tuple[Annotation, ...], ())
         )
         self.concrete_type = get_concrete_type(raw)
+
+        # validate tuple if applicable
+        if issubclass(self.concrete_type, tuple) and len(self.arg_annotations):
+            if self.arg_annotations[-1].raw is ...:
+                if len(self.arg_annotations) != 2 or self.arg_annotations[0].raw is ...:
+                    raise ValueError(f"Invalid variadic tuple: {annotation}")
 
     def __repr__(self) -> str:
         raw = f"{self.raw}"
         extras = f"extras={self.extras}"
-        origin = f"origin={self.origin}"
-        args = f"args={self.args}"
         concrete_type = f"concrete_type={self.concrete_type}"
-        return f"Annotation({", ".join((raw, extras, origin, args, concrete_type))})"
+        return f"Annotation({", ".join((raw, extras, concrete_type))})"
 
     def __eq__(self, other: Any, /) -> bool:
         if not isinstance(other, Annotation):
             return False
-        return self.is_subtype(other) and other.is_subtype(self)
+        if not self.concrete_type is other.concrete_type:
+            return False
+
+        my_args = list(self.arg_annotations)
+        other_args = list(other.arg_annotations)
+
+        if len(my_args) < len(other_args):
+            my_args += [ANY] * (len(other_args) - len(my_args))
+        elif len(other_args) < len(my_args):
+            my_args += [ANY] * (len(my_args) - len(other_args))
+
+        return all(
+            my_arg == other_arg for my_arg, other_arg in zip(my_args, other_args)
+        )
 
     @property
     def is_union(self) -> bool:
@@ -146,14 +196,30 @@ class Annotation:
         Check if this annotation is a subtype of other annotation; loosely
         equivalent to `issubclass(annotation, other)`.
 
+        Any is BOTH a top type and a bottom type in Python's gradual typing:
+        - Top type: Everything is a subtype of Any (you can assign anything TO Any)
+        - Bottom type: Any is a subtype of everything (you can assign anything FROM Any)
+
+        `object` is a concrete type - only actual object subtypes are subtypes of
+        `object`.
+
         Examples:
 
-        - `Annotation(int).is_subtype(Annotation(Any))` returns `True`
+        - `Annotation(int).is_subtype(Annotation(Any))` returns `True` (Any as top type)
+        - `Annotation(Any).is_subtype(Annotation(int))` returns `True` (Any as bottom type)
         - `Annotation(list[int]).is_subtype(list[Any])` returns `True`
-        - `Annotation(list[int]).is_subtype(list[str])` returns `False`
+        - `Annotation(list[Any]).is_subtype(list[int])` returns `True` (Any in params)
         - `Annotation(int).is_subtype(Callable[[Any], int])` returns `True`
         """
         other_ann = Annotation._normalize(other)
+
+        # Any is the top type - everything is a subtype of Any
+        if other_ann.raw is Any:
+            return True
+
+        # Any is also the bottom type - Any is a subtype of everything
+        if self.raw is Any:
+            return True
 
         # handle union for self
         if self.is_union:
@@ -202,7 +268,7 @@ class Annotation:
 
         return True
 
-    def is_type(self, obj: Any, /) -> bool:
+    def is_type(self, obj: Any, /, *, recurse: bool = True) -> bool:
         """
         Check if object is an instance of this annotation; loosely equivalent to
         `isinstance(obj, annotation)`.
@@ -217,7 +283,7 @@ class Annotation:
             return any(obj == value for value in self.args)
 
         if self.is_union:
-            return any(a.is_type(obj) for a in self.arg_annotations)
+            return any(a.is_type(obj, recurse=recurse) for a in self.arg_annotations)
 
         if self.is_callable:
             return self._check_callable(obj)
@@ -225,10 +291,10 @@ class Annotation:
         if not isinstance(obj, self.concrete_type):
             return False
 
-        if issubclass(self.concrete_type, (list, tuple, set, dict)):
+        if recurse and issubclass(self.concrete_type, (list, tuple, set, dict)):
             return self._check_collection(obj)
 
-        # concrete type matches and is not a collection
+        # concrete type matches and is not a collection (or we're not recursing)
         return True
 
     @classmethod
@@ -291,6 +357,7 @@ class Annotation:
         else:
             return_ann = self.arg_annotations[0]
 
+        # TODO: ... considered as type of previous annotation
         # with ... parameters, we accept any parameters, so contravariance always
         # satisfied
         return return_ann.is_subtype(other.return_annotation)
@@ -342,26 +409,24 @@ class Annotation:
     def _check_list_or_set(self, obj: list[Any] | set[Any]) -> bool:
         assert len(self.arg_annotations) in {0, 1}
         ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY
-
         return all(ann.is_type(o) for o in obj)
 
     def _check_tuple(self, obj: tuple[Any]) -> bool:
-        if len(self.arg_annotations) and self.arg_annotations[-1].raw is not ...:
-            # fixed-length tuple like tuple[int, str, float]
-            return all(a.is_type(o) for a, o in zip(self.arg_annotations, obj))
+        args = extract_tuple_args(self)
+        if isinstance(args, tuple):
+            # fixed-length tuple
+            if len(args) != len(obj):
+                return False
+            return all(a.is_type(o) for a, o in zip(args, obj))
         else:
-            # homogeneous tuple like tuple[int, ...]
-            assert len(self.arg_annotations) in {0, 2}
-            ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY
-
-            return all(ann.is_type(o) for o in obj)
+            # variadic tuple
+            return all(args.is_type(o) for o in obj)
 
     def _check_dict(self, obj: dict[Any, Any]) -> bool:
         assert len(self.arg_annotations) in {0, 2}
         key_ann, value_ann = (
             self.arg_annotations if len(self.arg_annotations) == 2 else (ANY, ANY)
         )
-
         return all(key_ann.is_type(k) and value_ann.is_type(v) for k, v in obj.items())
 
 
@@ -409,7 +474,17 @@ def unwrap_alias(annotation: Any, /) -> Any:
     """
     If annotation is a `TypeAlias`, extract the corresponding definition.
     """
-    return annotation.__value__ if isinstance(annotation, TypeAliasType) else annotation
+    if isinstance(annotation, TypeAliasType):
+        return annotation.__value__
+    elif isinstance(annotation, GenericAlias):
+        # might have e.g.:
+        # type MyType[T] = list[T]
+        # unwrap_alias(MyType[T])
+        origin = get_origin(annotation)
+        if isinstance(origin, TypeAliasType):
+            # have e.g. MyType[T], return list[T]
+            return origin.__value__
+    return annotation
 
 
 def split_annotated(annotation: Any, /) -> tuple[Any, tuple[Any, ...]]:
@@ -460,8 +535,14 @@ def get_concrete_type(annotation: Any, /) -> type:
     annotation_ = normalize_annotation(annotation)
     concrete_type = get_origin(annotation_) or annotation_
 
-    if concrete_type in {Literal, Any}:
+    if concrete_type is Literal:
+        return cast(type, LiteralType)
+
+    if concrete_type is Any:
         return object
+
+    if isinstance(concrete_type, TypeVar):
+        concrete_type = concrete_type.__bound__
 
     # convert singletons to respective type so isinstance() works as expected
     singleton_map = {None: NoneType, Ellipsis: EllipsisType, Union: UnionType}
@@ -472,6 +553,31 @@ def get_concrete_type(annotation: Any, /) -> type:
     ), f"Not a type: '{concrete_type}' (from annotation '{annotation}' normalized to '{annotation_}')"
 
     return concrete_type
+
+
+def extract_tuple_args(
+    annotation: Annotation, /
+) -> Annotation | tuple[Annotation, ...]:
+    """
+    Extract args from the tuple.
+
+    - Returns `Annotation` if the tuple is variadic (e.g. `tuple[int, ...]`)
+    - Returns a tuple of `Annotation` if the tuple is fixed-length
+    (e.g. tuple[int, str])
+    """
+    assert issubclass(annotation.concrete_type, tuple)
+
+    if len(annotation.arg_annotations) == 0:
+        # assume tuple[Any, ...]
+        return ANY
+
+    if annotation.arg_annotations[-1].raw is ...:
+        # variadic tuple like tuple[int, ...]
+        assert len(annotation.arg_annotations) == 2
+        return annotation.arg_annotations[0]
+    else:
+        # fixed-length tuple like tuple[int, str]
+        return annotation.arg_annotations
 
 
 def _recurse_union(annotation: Any, /, *, preserve_extras: bool) -> list[Any]:
