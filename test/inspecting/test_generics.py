@@ -2,7 +2,8 @@
 Tests for class inspection utilities.
 """
 
-from typing import Any, TypeVar
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from pytest import raises
 
@@ -525,7 +526,6 @@ def test_from_self():
     """
     Test extracting args from same base class.
     """
-
     result = extract_arg_map(BaseContainer, BaseContainer)
     assert len(result) == 1
     assert result["T"].__name__ == "T"
@@ -535,3 +535,43 @@ def test_from_self():
 
     result = extract_arg(list[int], list, 0)
     assert result is int
+
+
+def test_from_abc():
+    """
+    Test extracting args from an abstract base class which isn't in the inheritance
+    hierarchy.
+    """
+    result = extract_args(list[int], Sequence)
+    assert result == (int,)
+
+    result = extract_args(dict[int, str], Mapping)
+    assert result == (int, str)
+
+    class IntList(list[int]):
+        pass
+
+    result = extract_args(IntList, Sequence)
+    assert result == (int,)
+
+
+def test_from_protocol():
+    """
+    Test extracting args from a protocol which isn't in the inheritance
+    hierarchy.
+    """
+
+    @runtime_checkable
+    class ProtocolTest(Protocol):
+        def test(self):
+            pass
+
+    class Base[T]:
+        def test(self):
+            pass
+
+    class Concrete(Base[int]):
+        pass
+
+    result = extract_args(Concrete, ProtocolTest)
+    assert result == (int,)

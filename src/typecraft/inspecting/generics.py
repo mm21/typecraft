@@ -178,6 +178,25 @@ def _find_args(
         # return unresolved TypeVars with their names
         return [(t.__name__, t) for t in base_type_params]
 
+    # check if base_cls is an ABC/protocol not literally in the hierarchy
+    # but still compatible via issubclass
+    check_origin = origin if isinstance(origin, type) else cls
+    needs_abc_fallback = False
+
+    # handle typing generic aliases like typing.Sequence by getting their origin
+    base_cls_origin = get_origin(base_cls) or base_cls
+
+    if isinstance(check_origin, type) and isinstance(base_cls_origin, type):
+        try:
+            # check if base_cls is in the MRO - if not, we might need ABC fallback
+            if base_cls_origin not in check_origin.__mro__ and issubclass(
+                check_origin, base_cls_origin
+            ):
+                needs_abc_fallback = True
+        except TypeError:
+            # issubclass can raise TypeError for some types
+            pass
+
     # build type_var_map for this level first
     if origin and isinstance(origin, type):
         # get type parameters of the origin class
@@ -198,7 +217,7 @@ def _find_args(
 
             tv_map = new_tv_map
 
-    if origin is base_cls:
+    if origin is base_cls or (needs_abc_fallback and origin is base_cls_origin):
         # get type parameters of base_cls to find the one with matching name
         base_type_params = cast(tuple[Any], getattr(base_cls, "__parameters__", ()))
 
@@ -240,7 +259,40 @@ def _find_args(
     )
 
     for base in bases:
-        if (args := _find_args(base, base_cls, tv_map)) is not None:
-            return args
+        if (result := _find_args(base, base_cls, tv_map)) is not None:
+            return result
+
+    # if we need ABC fallback and didn't find base_cls in the hierarchy,
+    # the args from cls should correspond to the type parameters of base_cls
+    if needs_abc_fallback and args:
+        # for ABCs like Sequence, we need to get type parameters from base_cls_origin
+
+        # if base_cls is a generic alias like Sequence[int], get its args
+        base_type_params = cast(
+            tuple[Any], getattr(base_cls_origin, "__parameters__", ())
+        )
+
+        # if base_cls has no __parameters__ (common for typing ABCs), we need to
+        # figure out the parameter names - for builtins we just use positional
+        if base_type_params:
+            # has named type parameters
+            args_list: list[type | tuple[str, type | TypeVar]] = []
+            for type_param, arg in zip(base_type_params, args):
+                assert isinstance(type_param, TypeVar)
+
+                # resolve TypeVar to concrete type if we have a substitution
+                if isinstance(arg, TypeVar) and arg in tv_map:
+                    arg = tv_map[arg]
+
+                args_list.append((type_param.__name__, arg))
+
+            return args_list
+        else:
+            # treat as builtin-style: no named parameters, just positional args
+            args_list: list[type | tuple[str, type | TypeVar]] = []
+            for arg in args:
+                a = tv_map.get(arg, arg) if isinstance(arg, TypeVar) else arg
+                args_list.append(cast(type, a))
+            return args_list
 
     return None
