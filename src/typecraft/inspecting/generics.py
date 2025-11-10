@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import (
     Any,
+    Literal,
     TypeVar,
     cast,
     get_args,
@@ -156,10 +157,6 @@ def extract_arg[ParamT](
     return arg
 
 
-def _get_bases(cls: type, attr: str) -> list[type]:
-    return list(cast(tuple[type], getattr(cls, attr, ())))
-
-
 def _find_args(
     cls: type, base_cls: type, type_var_map: dict[TypeVar, Any] | None = None
 ) -> list[type | tuple[str, type | TypeVar]] | None:
@@ -174,8 +171,8 @@ def _find_args(
     # handle the case where cls is directly base_cls (not a generic alias)
     # but only if it's not a parameterized version of something else
     if cls is base_cls and origin is None:
-        base_type_params = cast(tuple[Any], getattr(base_cls, "__parameters__", ()))
         # return unresolved TypeVars with their names
+        base_type_params = _get_parameters(base_cls, type_vars=True)
         return [(t.__name__, t) for t in base_type_params]
 
     # check if base_cls is an ABC/protocol not literally in the hierarchy
@@ -199,58 +196,12 @@ def _find_args(
 
     # build type_var_map for this level first
     if origin and isinstance(origin, type):
-        # get type parameters of the origin class
-        type_params = getattr(origin, "__parameters__", ())
-
-        if type_params and args:
-            # create mapping from type parameters to their concrete values
-            new_tv_map = tv_map.copy()
-
-            for type_param, arg in zip(type_params, args):
-                if isinstance(type_param, TypeVar):
-                    if isinstance(arg, TypeVar):
-                        # chain TypeVar substitutions
-                        if arg in tv_map:
-                            new_tv_map[type_param] = tv_map[arg]
-                    else:
-                        new_tv_map[type_param] = arg
-
-            tv_map = new_tv_map
+        type_params = _get_parameters(origin)
+        tv_map = _update_typevar_map(tv_map, type_params, args)
 
     if origin is base_cls or (needs_abc_fallback and origin is base_cls_origin):
-        # get type parameters of base_cls to find the one with matching name
-        base_type_params = cast(tuple[Any], getattr(base_cls, "__parameters__", ()))
-
-        args_list: list[type | tuple[str, type | TypeVar]] = []
-
-        if not len(base_type_params):
-            # builtin, e.g. list[int] or tuple[int, str]
-            # still need to resolve TypeVars if present
-            for arg in args:
-                a = tv_map.get(arg, arg) if isinstance(arg, TypeVar) else arg
-                if isinstance(arg, TypeVar):
-                    args_list.append((arg.__name__, a))
-                else:
-                    args_list.append(cast(type, a))
-        else:
-            # should have typevars and args
-            assert len(base_type_params) == len(
-                args
-            ), f"Type parameters of {origin} mismatched with args: parameters={base_type_params}, args={args}"
-
-            for type_param, arg in zip(base_type_params, args):
-                assert isinstance(type_param, TypeVar)
-
-                # resolve TypeVar to concrete type if we have a substitution
-                if isinstance(arg, TypeVar) and arg in tv_map:
-                    arg = tv_map[arg]
-
-                # arg could technically be a list[int] (GenericAlias),
-                # int | str (UnionType), etc - not a concrete type, but a type which
-                # type checkers will understand
-                args_list.append((type_param.__name__, arg))
-
-        return args_list
+        base_type_params = _get_parameters(base_cls, type_vars=True)
+        return _build_args_list(base_type_params, args, tv_map)
 
     # recurse into bases - use origin's bases if we have a generic alias
     base_check = origin if isinstance(origin, type) else cls
@@ -265,34 +216,103 @@ def _find_args(
     # if we need ABC fallback and didn't find base_cls in the hierarchy,
     # the args from cls should correspond to the type parameters of base_cls
     if needs_abc_fallback and args:
-        # for ABCs like Sequence, we need to get type parameters from base_cls_origin
-
-        # if base_cls is a generic alias like Sequence[int], get its args
-        base_type_params = cast(
-            tuple[Any], getattr(base_cls_origin, "__parameters__", ())
-        )
-
-        # if base_cls has no __parameters__ (common for typing ABCs), we need to
-        # figure out the parameter names - for builtins we just use positional
-        if base_type_params:
-            # has named type parameters
-            args_list: list[type | tuple[str, type | TypeVar]] = []
-            for type_param, arg in zip(base_type_params, args):
-                assert isinstance(type_param, TypeVar)
-
-                # resolve TypeVar to concrete type if we have a substitution
-                if isinstance(arg, TypeVar) and arg in tv_map:
-                    arg = tv_map[arg]
-
-                args_list.append((type_param.__name__, arg))
-
-            return args_list
-        else:
-            # treat as builtin-style: no named parameters, just positional args
-            args_list: list[type | tuple[str, type | TypeVar]] = []
-            for arg in args:
-                a = tv_map.get(arg, arg) if isinstance(arg, TypeVar) else arg
-                args_list.append(cast(type, a))
-            return args_list
+        base_type_params = _get_parameters(base_cls_origin, type_vars=True)
+        return _build_args_list(base_type_params, args, tv_map)
 
     return None
+
+
+@overload
+def _get_parameters(cls: type) -> tuple[Any, ...]: ...
+
+
+@overload
+def _get_parameters(cls: type, *, type_vars: Literal[True]) -> tuple[TypeVar, ...]: ...
+
+
+def _get_parameters(cls: type, *, type_vars: bool = False) -> tuple[Any, ...]:
+    """
+    Get `__parameters__` attribute, defaulting to an empty tuple.
+    """
+    parameters = cast(tuple[Any, ...], getattr(cls, "__parameters__", ()))
+    if type_vars:
+        for p in parameters:
+            assert isinstance(p, TypeVar), f"Not a TypeVar: {p}"
+    return parameters
+
+
+def _get_bases(cls: type, attr: str) -> list[type]:
+    return list(cast(tuple[type], getattr(cls, attr, ())))
+
+
+def _resolve_typevar(arg: Any, tv_map: dict[TypeVar, Any]) -> Any:
+    """
+    Resolve a TypeVar through the substitution map.
+    """
+    return tv_map.get(arg, arg) if isinstance(arg, TypeVar) else arg
+
+
+def _build_args_list(
+    type_params: tuple[TypeVar, ...],
+    args: tuple[Any, ...],
+    tv_map: dict[TypeVar, Any],
+) -> list[type | tuple[str, type | TypeVar]]:
+    """
+    Build an args list from type parameters and arguments, resolving TypeVars.
+
+    :param type_params: Type parameters from the base class
+    :param args: Concrete type arguments
+    :param tv_map: TypeVar substitution map
+    :return: List of resolved types or (name, type) tuples
+    """
+    args_list: list[type | tuple[str, type | TypeVar]] = []
+
+    if type_params:
+        # has named type parameters
+        assert len(type_params) == len(
+            args
+        ), f"Type parameters mismatched with args: parameters={type_params}, args={args}"
+
+        for type_param, arg in zip(type_params, args):
+            resolved = _resolve_typevar(arg, tv_map)
+            args_list.append((type_param.__name__, resolved))
+    else:
+        # builtin-style: no named parameters, just positional args
+        for arg in args:
+            resolved = _resolve_typevar(arg, tv_map)
+            if isinstance(arg, TypeVar):
+                args_list.append((arg.__name__, resolved))
+            else:
+                args_list.append(cast(type, resolved))
+
+    return args_list
+
+
+def _update_typevar_map(
+    tv_map: dict[TypeVar, Any],
+    type_params: tuple[Any, ...],
+    args: tuple[Any, ...],
+) -> dict[TypeVar, Any]:
+    """
+    Update TypeVar substitution map with new mappings from type params to args.
+
+    :param tv_map: Existing TypeVar substitution map
+    :param type_params: Type parameters to map from
+    :param args: Concrete type arguments to map to
+    :return: Updated TypeVar map
+    """
+    if not type_params or not args:
+        return tv_map
+
+    new_tv_map = tv_map.copy()
+
+    for type_param, arg in zip(type_params, args):
+        if isinstance(type_param, TypeVar):
+            if isinstance(arg, TypeVar):
+                # chain TypeVar substitutions
+                if arg in tv_map:
+                    new_tv_map[type_param] = tv_map[arg]
+            else:
+                new_tv_map[type_param] = arg
+
+    return new_tv_map
