@@ -2,8 +2,19 @@
 Tests for low-level annotation utilities.
 """
 
+from collections.abc import Mapping
 from types import EllipsisType, NoneType, UnionType
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    Protocol,
+    Sequence,
+    Union,
+    get_args,
+    get_origin,
+    runtime_checkable,
+)
 
 from typecraft.inspecting.annotations import (
     Annotation,
@@ -51,6 +62,63 @@ def test_is_subtype():
     # verify with Any in generics - bidirectional
     assert is_subtype(list[int], list[Any])  # top type
     assert is_subtype(list[Any], list[int])  # bottom type
+
+
+def test_is_subtype_generics():
+    # direct ABC comparisons
+    assert is_subtype(list[int], Sequence[int])
+
+    assert is_subtype(list[int], Sequence[int])
+    assert is_subtype(dict[str, int], Mapping[str, int])
+
+    class MyList(list[int]):
+        pass
+
+    class MyListSubclass(MyList):
+        pass
+
+    # subclass to builtin comparisons
+    assert is_subtype(MyList, list[int])
+    assert is_subtype(MyList, list[Any])
+    assert is_subtype(MyList, list)
+    assert not is_subtype(MyList, list[str])
+
+    assert is_subtype(MyListSubclass, list[int])
+    assert is_subtype(MyListSubclass, list[Any])
+    assert is_subtype(MyListSubclass, list)
+    assert not is_subtype(MyListSubclass, list[str])
+
+    # subclass to ABC comparisons
+    assert is_subtype(MyList, Sequence[int])
+    assert not is_subtype(MyList, Sequence[str])
+
+    assert is_subtype(MyListSubclass, Sequence[int])
+    assert not is_subtype(MyListSubclass, Sequence[str])
+
+    # subclass to protocol comparisons
+    @runtime_checkable
+    class ProtocolTest(Protocol):
+        def test(self):
+            pass
+
+    class Base[T]:
+        def test(self):
+            pass
+
+    class Concrete(Base[int]):
+        pass
+
+    assert is_subtype(Concrete, ProtocolTest)
+
+    # nested generics with ABCs
+    assert is_subtype(list[list[int]], Sequence[list[int]])
+    assert is_subtype(list[list[int]], Sequence[Sequence[int]])
+
+    class MyListOfLists(list[list[int]]):
+        pass
+
+    assert is_subtype(MyListOfLists, Sequence[list[int]])
+    assert is_subtype(MyListOfLists, Sequence[Sequence[int]])
 
 
 def test_is_instance():

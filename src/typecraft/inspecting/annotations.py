@@ -21,7 +21,7 @@ from typing import (
     get_origin,
 )
 
-from .generics import extract_args
+from .generics import extract_args, normalize_args
 
 __all__ = [
     "ANY",
@@ -246,25 +246,51 @@ class Annotation:
                 return self._is_subtype_callable_type(other_ann)
             return self._is_subtype_callable(other_ann)
 
-        # check concrete type
-        if not issubclass(self.concrete_type, other_ann.concrete_type):
+        # check concrete type relationship
+        # for ABCs/protocols, issubclass may succeed even if not in MRO
+        try:
+            is_concrete_subtype = issubclass(
+                self.concrete_type, other_ann.concrete_type
+            )
+        except TypeError:
+            # issubclass can raise TypeError for some special forms
             return False
 
-        # concrete type matches, check args
-        other_args = other_ann.arg_annotations
+        if not is_concrete_subtype:
+            return False
 
-        # pad missing args in self, assumed to be Any
-        # - no need to pad if other has more args; my args will always be a
-        # subset of Any
-        if len(self.arg_annotations) < len(other_args):
-            my_args = list(self.arg_annotations) + [ANY] * (
-                len(other_args) - len(self.arg_annotations)
+        # concrete type matches, now check type parameters
+        if not other_ann.args:
+            return True
+
+        # other has type parameters, need to extract and compare
+        try:
+            # extract the type args that self passes to other's concrete type
+            # - use extract_args() to handle ABCs/protocols not in MRO
+            my_args = normalize_args(
+                extract_args(self.concrete_type, other_ann.concrete_type)
             )
+        except TypeError:
+            # base class not found in hierarchy, fall back to self's args
+            my_args = self.args
         else:
-            my_args = self.arg_annotations
+            # if extract_args returns empty but self has args, use self's args
+            # (this happens when comparing e.g. list[int] to list[str])
+            if not my_args:
+                my_args = self.args
+
+        # convert to Annotation objects for comparison
+        my_arg_annotations = tuple(Annotation(a) for a in my_args)
+        other_arg_annotations = other_ann.arg_annotations
+
+        # pad missing args in my_arg_annotations, assumed to be Any
+        if len(my_arg_annotations) < len(other_arg_annotations):
+            my_arg_annotations = list(my_arg_annotations) + [ANY] * (
+                len(other_arg_annotations) - len(my_arg_annotations)
+            )
 
         # recurse into args
-        for my_arg, other_arg in zip(my_args, other_args):
+        for my_arg, other_arg in zip(my_arg_annotations, other_arg_annotations):
             if not my_arg.is_subtype(other_arg):
                 return False
 

@@ -18,6 +18,7 @@ __all__ = [
     "extract_args",
     "extract_arg_map",
     "extract_arg",
+    "normalize_args",
 ]
 
 
@@ -155,6 +156,13 @@ def extract_arg[ParamT](
         )
 
     return arg
+
+
+def normalize_args(args: tuple[type | TypeVar, ...]) -> tuple[type, ...]:
+    """
+    Normalize args to types, replacing TypeVars with Any.
+    """
+    return tuple(cast(type, Any) if isinstance(a, TypeVar) else a for a in args)
 
 
 def _find_args(
