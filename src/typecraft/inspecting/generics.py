@@ -14,6 +14,8 @@ from typing import (
     overload,
 )
 
+from ._utils import safe_issubclass
+
 __all__ = [
     "extract_args",
     "extract_arg_map",
@@ -192,15 +194,11 @@ def _find_args(
     base_cls_origin = get_origin(base_cls) or base_cls
 
     if isinstance(check_origin, type) and isinstance(base_cls_origin, type):
-        try:
-            # check if base_cls is in the MRO - if not, we might need ABC fallback
-            if base_cls_origin not in check_origin.__mro__ and issubclass(
-                check_origin, base_cls_origin
-            ):
-                needs_abc_fallback = True
-        except TypeError:
-            # issubclass can raise TypeError for some types
-            pass
+        # check if base_cls is in the MRO - if not, we might need ABC fallback
+        if base_cls_origin not in check_origin.__mro__ and safe_issubclass(
+            check_origin, base_cls_origin
+        ):
+            needs_abc_fallback = True
 
     # build type_var_map for this level first
     if origin and isinstance(origin, type):

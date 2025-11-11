@@ -21,6 +21,7 @@ from typing import (
     get_origin,
 )
 
+from ._utils import safe_issubclass
 from .generics import extract_args, normalize_args
 
 __all__ = [
@@ -247,14 +248,10 @@ class Annotation:
             return self._is_subtype_callable(other_ann)
 
         # check concrete type relationship
-        # for ABCs/protocols, issubclass may succeed even if not in MRO
-        try:
-            is_concrete_subtype = issubclass(
-                self.concrete_type, other_ann.concrete_type
-            )
-        except TypeError:
-            # issubclass can raise TypeError for some special forms
-            return False
+        # - for ABCs/protocols, issubclass may succeed even if not in MRO
+        is_concrete_subtype = safe_issubclass(
+            self.concrete_type, other_ann.concrete_type
+        )
 
         if not is_concrete_subtype:
             return False
