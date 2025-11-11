@@ -7,7 +7,10 @@ from typing import Any
 
 from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
+    BaseGenericSerializer,
+    SerializationEngine,
     SerializationFrame,
+    SerializationParams,
     Serializer,
     serialize,
 )
@@ -131,3 +134,37 @@ def test_union_types():
     # int | Person where object is Person
     result = serialize(person, PERSON_SERIALIZER, source_type=int | Person)
     assert result == {"name": "Alice", "age": 30}
+
+
+def test_subclass():
+    """
+    Test subclass of BaseGenericValidator.
+    """
+
+    class MySerializer(BaseGenericSerializer[int, str]):
+        def convert(self, obj: int, frame: SerializationFrame) -> str:
+            _ = frame
+            return str(obj)
+
+    serializer = MySerializer()
+    obj = 123
+
+    assert serializer.check_match(Annotation(int), Annotation(str))
+    assert serializer.can_convert(obj, Annotation(int), Annotation(str))
+    conv_obj = serializer.convert(obj, _create_frame(int, str))
+    assert conv_obj == "123"
+
+
+def _create_frame(
+    source_annotation: Any,
+    target_annotation: Any,
+    params: SerializationParams | None = None,
+) -> SerializationFrame:
+    engine = SerializationEngine()
+    return SerializationFrame(
+        source_annotation=Annotation(source_annotation),
+        target_annotation=Annotation(target_annotation),
+        context=None,
+        params=params or SerializationParams(sort_sets=True),
+        engine=engine,
+    )

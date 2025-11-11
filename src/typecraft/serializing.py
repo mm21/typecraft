@@ -20,8 +20,9 @@ from .converting import (
     BaseConversionFrame,
     BaseConverter,
     BaseConverterRegistry,
-    ConverterFuncMixin,
     ConverterFuncType,
+    FuncConverterMixin,
+    GenericConverterMixin,
     convert_to_list,
     normalize_to_registry,
 )
@@ -97,12 +98,22 @@ class BaseSerializer[SourceT, TargetT](
     """
 
 
-class Serializer[SourceT, TargetT](
-    ConverterFuncMixin[SourceT, TargetT, SerializationFrame],
+class BaseGenericSerializer[SourceT, TargetT](
+    GenericConverterMixin,
     BaseSerializer[SourceT, TargetT],
 ):
     """
-    Type-based serializer with type inference from functions.
+    Generic-based validator: subclass with type parameters to determine source/target
+    type and implement `convert()`.
+    """
+
+
+class Serializer[SourceT, TargetT](
+    FuncConverterMixin[SourceT, TargetT, SerializationFrame],
+    BaseSerializer[SourceT, TargetT],
+):
+    """
+    Function-based serializer with optional type inference.
     """
 
 

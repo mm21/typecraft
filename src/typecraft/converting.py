@@ -7,11 +7,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from functools import cached_property
-from typing import Any, Generator, Iterable, Self, Sized, cast, overload
+from typing import Any, Generator, Iterable, Self, Sized, TypeVar, cast, overload
 
 from .inspecting.annotations import ANY, Annotation, extract_tuple_args
 from .inspecting.functions import ParameterInfo, SignatureInfo
-from .inspecting.generics import extract_arg, extract_args
+from .inspecting.generics import extract_arg, extract_arg_map, extract_args
 from .typedefs import (
     COLLECTION_TYPES,
     ValueCollectionType,
@@ -236,24 +236,19 @@ class ConverterInterface:
 
     def __init__(
         self,
-        source_annotation: Any,
-        target_annotation: Any,
-        /,
         *,
         match_source_subtype: bool,
         match_target_subtype: bool,
     ):
         _ = (
-            source_annotation,
-            target_annotation,
             match_source_subtype,
             match_target_subtype,
         )
 
     @property
     def _params_str(self) -> str:
-        s = f"source={self._source_annotation}"
-        t = f"target={self._target_annotation}"
+        s = f"source={self._source_annotation.raw}"
+        t = f"target={self._target_annotation.raw}"
         m_s = f"match_source_subtype={self._match_source_subtype}"
         m_t = f"match_target_subtype={self._match_target_subtype}"
         return ", ".join((s, t, m_s, m_t))
@@ -269,18 +264,13 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     conversion between source and target annotations.
     """
 
-    # TODO: for custom subclass, get annotations using extract_type_param()
     def __init__(
         self,
-        source_annotation: Any,
-        target_annotation: Any,
-        /,
         *,
-        match_source_subtype: bool,
-        match_target_subtype: bool,
+        match_source_subtype: bool = True,
+        match_target_subtype: bool = False,
     ):
-        self._source_annotation = Annotation._normalize(source_annotation)
-        self._target_annotation = Annotation._normalize(target_annotation)
+        self._source_annotation, self._target_annotation = self._get_annotations()
         self._match_source_subtype = match_source_subtype
         self._match_target_subtype = match_target_subtype
 
@@ -371,6 +361,12 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         :return: Converted object
         """
 
+    @abstractmethod
+    def _get_annotations(self) -> tuple[Annotation, Annotation]:
+        """
+        Get source and target annotations.
+        """
+
     def __check_match(
         self,
         annotation: Annotation,
@@ -389,14 +385,16 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
             return annotation == check_annotation
 
 
-class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
+class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
     ConverterInterface
 ):
     """
     Mixin class for function-based converters.
     """
 
-    _func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, FrameT] | None
+    __source_annotation: Annotation
+    __target_annotation: Annotation
+    __func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, FrameT] | None
 
     @overload
     def __init__(
@@ -432,16 +430,16 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
+        self.__source_annotation = Annotation._normalize(source_annotation)
+        self.__target_annotation = Annotation._normalize(target_annotation)
         super().__init__(
-            source_annotation,
-            target_annotation,
             match_source_subtype=match_source_subtype,
             match_target_subtype=match_target_subtype,
         )
-        self._func_wrapper = ConverterFunctionWrapper(func) if func else None
+        self.__func_wrapper = ConverterFunctionWrapper(func) if func else None
 
     def __repr__(self) -> str:
-        func = self._func_wrapper.func.__name__ if self._func_wrapper else None
+        func = self.__func_wrapper.func.__name__ if self.__func_wrapper else None
         return f"{type(self).__name__}({self._params_str}, func={func})"
 
     @classmethod
@@ -476,10 +474,10 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
 
     def convert(
         self,
-        obj: Any,
+        obj: SourceT,
         frame: FrameT,
         /,
-    ) -> Any:
+    ) -> TargetT:
         """
         Convert object using the wrapped function or direct construction.
         """
@@ -487,7 +485,7 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         target_type = self._target_annotation.concrete_type
 
         try:
-            if func := self._func_wrapper:
+            if func := self.__func_wrapper:
                 # provided conversion function
                 converted_obj = func.invoke(obj, frame)
             else:
@@ -495,10 +493,12 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
 
                 # handle conversion to subtypes of builtin collections
                 if issubclass(source_type, Mapping) and issubclass(target_type, dict):
+                    assert isinstance(obj, Mapping)
                     converted_obj = convert_to_dict(obj, frame, construct=True)
                 elif issubclass(source_type, Iterable) and issubclass(
                     target_type, (list, tuple, set, frozenset)
                 ):
+                    assert isinstance(obj, Iterable)
                     if issubclass(target_type, list):
                         converted_obj = convert_to_list(obj, frame, construct=True)
                     elif issubclass(target_type, tuple):
@@ -523,7 +523,33 @@ class ConverterFuncMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         # can be an expensive check
         assert frame.target_annotation.is_type(converted_obj)
 
-        return converted_obj
+        return cast(TargetT, converted_obj)
+
+    def _get_annotations(self) -> tuple[Annotation, Annotation]:
+        return self.__source_annotation, self.__target_annotation
+
+
+class GenericConverterMixin:
+    """
+    Mixin class for extracting source/destination types from type parameters.
+    """
+
+    def _get_annotations(self) -> tuple[Annotation, Annotation]:
+        # get annotations from type params
+        arg_map = extract_arg_map(type(self), BaseConverter)
+        source_type = arg_map.get("SourceT")
+        target_type = arg_map.get("TargetT")
+        if not (source_type and target_type):
+            raise TypeError(
+                f"Converter class {type(self)} must be parameterized with source and target types"
+            )
+
+        if isinstance(source_type, TypeVar) or isinstance(target_type, TypeVar):
+            raise TypeError(
+                f"Converter class {type(self)} cannot have unresolved TypeVars: got SourceT={source_type}, TargetT={target_type}"
+            )
+
+        return Annotation(source_type), Annotation(target_type)
 
 
 class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
@@ -739,7 +765,7 @@ def normalize_to_registry[ConverterT, RegistryT](
 
 
 def convert_to_list(
-    obj: ValueCollectionType, frame: BaseConversionFrame, /, *, construct: bool = False
+    obj: Iterable, frame: BaseConversionFrame, /, *, construct: bool = False
 ) -> list:
     """
     Convert collection to list.
@@ -747,7 +773,7 @@ def convert_to_list(
     target_type = frame.target_annotation.concrete_type
     assert issubclass(target_type, list)
 
-    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+    sized_obj = obj if isinstance(obj, Sized) else list(obj)
 
     # extract item annotations
     source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
@@ -785,7 +811,7 @@ def convert_to_list(
 
 
 def convert_to_tuple(
-    obj: ValueCollectionType, frame: BaseConversionFrame, /, *, construct: bool = False
+    obj: Iterable, frame: BaseConversionFrame, /, *, construct: bool = False
 ) -> tuple:
     """
     Convert collection to tuple.
@@ -803,7 +829,7 @@ def convert_to_tuple(
                 f"Can't convert from set to fixed-length tuple as items would be in random order: {obj}"
             )
 
-    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+    sized_obj = obj if isinstance(obj, Sized) else list(obj)
 
     # extract item annotations
     source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)
@@ -850,7 +876,7 @@ def convert_to_tuple(
 
 
 def convert_to_set(
-    obj: ValueCollectionType, frame: BaseConversionFrame, /, *, construct: bool = False
+    obj: Iterable, frame: BaseConversionFrame, /, *, construct: bool = False
 ) -> set | frozenset:
     """
     Convert collection to set.
@@ -858,7 +884,7 @@ def convert_to_set(
     target_type = frame.target_annotation.concrete_type
     assert issubclass(target_type, (set, frozenset))
 
-    sized_obj = list(obj) if isinstance(obj, Generator) else obj
+    sized_obj = obj if isinstance(obj, Sized) else list(obj)
 
     # extract item annotations
     source_item_anns = _extract_value_item_anns(sized_obj, frame.source_annotation)

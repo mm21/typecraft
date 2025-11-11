@@ -16,8 +16,9 @@ from .converting import (
     BaseConversionFrame,
     BaseConverter,
     BaseConverterRegistry,
-    ConverterFuncMixin,
     ConverterFuncType,
+    FuncConverterMixin,
+    GenericConverterMixin,
     convert_to_dict,
     convert_to_list,
     convert_to_set,
@@ -35,7 +36,7 @@ __all__ = [
     "ValidationParams",
     "ValidationFrame",
     "ValidationEngine",
-    "BaseValidator",
+    "BaseGenericValidator",
     "Validator",
     "ValidatorRegistry",
     "validate",
@@ -74,12 +75,22 @@ class BaseValidator[SourceT, TargetT](BaseConverter[SourceT, TargetT, Validation
     """
 
 
-class Validator[SourceT, TargetT](
-    ConverterFuncMixin[SourceT, TargetT, ValidationFrame],
+class BaseGenericValidator[SourceT, TargetT](
+    GenericConverterMixin,
     BaseValidator[SourceT, TargetT],
 ):
     """
-    Type-based validator with type inference from functions.
+    Generic-based validator: subclass with type parameters to determine source/target
+    type and implement `convert()`.
+    """
+
+
+class Validator[SourceT, TargetT](
+    FuncConverterMixin[SourceT, TargetT, ValidationFrame],
+    BaseValidator[SourceT, TargetT],
+):
+    """
+    Function-based validator with optional type inference.
     """
 
 

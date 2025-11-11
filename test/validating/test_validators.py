@@ -6,6 +6,7 @@ from typing import Any
 
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
+    BaseGenericValidator,
     ValidationEngine,
     ValidationFrame,
     ValidationParams,
@@ -105,15 +106,15 @@ def test_any():
     obj = 1
 
     # test both function types
-    converter1 = Validator(Any, Any, func=func1)
-    converter2 = Validator(Any, Any, func=func2)
+    validator1 = Validator(Any, Any, func=func1)
+    validator2 = Validator(Any, Any, func=func2)
 
-    assert converter1.can_convert(obj, ANY, ANY)
-    conv_obj = converter1.convert(obj, _create_frame(Any, Any))
+    assert validator1.can_convert(obj, ANY, ANY)
+    conv_obj = validator1.convert(obj, _create_frame(Any, Any))
     assert conv_obj == -1
 
-    assert converter2.can_convert(obj, ANY, ANY)
-    conv_obj = converter2.convert(obj, _create_frame(Any, Any))
+    assert validator2.can_convert(obj, ANY, ANY)
+    conv_obj = validator2.convert(obj, _create_frame(Any, Any))
     assert conv_obj == -2
 
 
@@ -138,6 +139,25 @@ def test_generic():
     assert conv_obj == ["123"]
 
     conv_obj = validator.convert(obj, _create_frame(list[int], list[Any]))
+
+
+def test_subclass():
+    """
+    Test subclass of BaseGenericValidator.
+    """
+
+    class MyValidator(BaseGenericValidator[str, int]):
+        def convert(self, obj: str, frame: ValidationFrame) -> int:
+            _ = frame
+            return int(obj)
+
+    validator = MyValidator()
+    obj = "123"
+
+    assert validator.check_match(Annotation(str), Annotation(int))
+    assert validator.can_convert(obj, Annotation(str), Annotation(int))
+    conv_obj = validator.convert(obj, _create_frame(str, int))
+    assert conv_obj == 123
 
 
 def test_registry():
