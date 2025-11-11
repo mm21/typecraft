@@ -165,6 +165,8 @@ class Annotation:
         return f"Annotation({", ".join((raw, extras, concrete_type))})"
 
     def __eq__(self, other: Any, /) -> bool:
+        if self is other:
+            return True
         if not isinstance(other, Annotation):
             return False
         if not self.concrete_type is other.concrete_type:
