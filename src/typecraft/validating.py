@@ -80,7 +80,7 @@ class BaseGenericValidator[SourceT, TargetT](
     BaseValidator[SourceT, TargetT],
 ):
     """
-    Generic-based validator: subclass with type parameters to determine source/target
+    Generic validator: subclass with type parameters to determine source/target
     type and implement `convert()`.
     """
 

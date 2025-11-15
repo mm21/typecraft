@@ -103,7 +103,7 @@ class BaseGenericSerializer[SourceT, TargetT](
     BaseSerializer[SourceT, TargetT],
 ):
     """
-    Generic-based validator: subclass with type parameters to determine source/target
+    Generic serializer: subclass with type parameters to determine source/target
     type and implement `convert()`.
     """
 
