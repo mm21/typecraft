@@ -123,10 +123,19 @@ def test_generic():
     Test conversion with generic types.
     """
 
+    # convert list of int to list of str
     def func(obj: list[int]) -> list[str]:
         return [str(o) for o in obj]
 
-    validator = Validator(list[int], list[str], func=func)
+    # only convert positive int
+    def predicate_func(obj: list[int]) -> bool:
+        assert isinstance(obj, list)
+        assert all(isinstance(o, int) for o in obj)
+        return all(o > 0 for o in obj)
+
+    validator = Validator(
+        list[int], list[str], func=func, predicate_func=predicate_func
+    )
     obj = [123]
 
     assert validator.check_match(Annotation(list[int]), Annotation(list[str]))
@@ -135,10 +144,19 @@ def test_generic():
     assert not validator.check_match(Annotation(list[Any]), Annotation(list[int]))
     assert not validator.check_match(Annotation(list[float]), Annotation(list[str]))
 
+    assert validator._check_convert(obj, Annotation(list[int]), Annotation(list[str]))
+    assert not validator._check_convert(
+        [-123], Annotation(list[int]), Annotation(list[str])
+    )
+    assert not validator._check_convert(
+        ["123"], Annotation(list[int]), Annotation(list[str])
+    )
+
     conv_obj = validator.convert(obj, _create_frame(list[int], list[str]))
     assert conv_obj == ["123"]
 
     conv_obj = validator.convert(obj, _create_frame(list[int], list[Any]))
+    assert conv_obj == ["123"]
 
 
 def test_subclass():
@@ -147,6 +165,13 @@ def test_subclass():
     """
 
     class MyValidator(BaseGenericValidator[str, int]):
+
+        def can_convert(
+            self, obj: str, source_annotation: Annotation, target_annotation: Annotation
+        ) -> bool:
+            _ = source_annotation, target_annotation
+            return obj.isnumeric()
+
         def convert(self, obj: str, frame: ValidationFrame) -> int:
             _ = frame
             return int(obj)
@@ -156,6 +181,10 @@ def test_subclass():
 
     assert validator.check_match(Annotation(str), Annotation(int))
     assert validator.can_convert(obj, Annotation(str), Annotation(int))
+    assert not validator.can_convert("abc", Annotation(str), Annotation(int))
+
+    assert validator._check_convert(obj, Annotation(str), Annotation(int))
+
     conv_obj = validator.convert(obj, _create_frame(str, int))
     assert conv_obj == 123
 

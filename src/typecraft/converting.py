@@ -64,7 +64,9 @@ class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
         ), f"Function {func} does not take any positional params, must take obj as positional"
 
         # get frame parameter
-        frame_param = sig_info.get_param("frame")
+        frame_param = next(
+            sig_info.get_params(annotation=BaseConversionFrame, positional=True), None
+        )
         if frame_param:
             assert (
                 frame_param.index == 1
@@ -142,6 +144,9 @@ class BaseConversionFrame[ParamsT]:
         self.__path = path or ()
         self.__seen = seen or set()
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(source={self.source_annotation}, target={self.target_annotation})"
+
     def recurse(
         self,
         obj: Any,
@@ -209,7 +214,7 @@ class BaseConversionFrame[ParamsT]:
         )
 
 
-class ConverterInterface:
+class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
     """
     Defines the interface for converters and mixins.
     """
@@ -244,6 +249,7 @@ class ConverterInterface:
             match_source_subtype,
             match_target_subtype,
         )
+        ...
 
     @property
     def _params_str(self) -> str:
@@ -253,9 +259,50 @@ class ConverterInterface:
         m_t = f"match_target_subtype={self._match_target_subtype}"
         return ", ".join((s, t, m_s, m_t))
 
+    def can_convert(
+        self,
+        obj: SourceT,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        /,
+    ) -> bool:
+        """
+        Can be overridden by custom subclasses. Check if converter can convert the
+        given object.
+
+        Called internally by the framework after check_match() succeeds.
+
+        :param obj: Object to potentially convert
+        :param source_annotation: Annotation of source object
+        :param target_annotation: Annotation to convert to
+        :return: True if converter can handle conversion
+        """
+        _ = obj, source_annotation, target_annotation
+        return True
+
+    @abstractmethod
+    def convert(
+        self,
+        obj: SourceT,
+        frame: FrameT,
+        /,
+    ) -> TargetT:
+        """
+        Convert object.
+
+        Subclass must define conversion logic. Expected to always succeed since
+        check_match() and can_convert() returned True.
+
+        :param obj: Object to convert
+        :param source_annotation: Annotation of source object
+        :param target_annotation: Annotation to convert to
+        :param frame: Frame for conversion operations
+        :return: Converted object
+        """
+
 
 class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
-    ConverterInterface, ABC
+    ConverterInterface[SourceT, TargetT, FrameT], ABC
 ):
     """
     Base class for typed converters (validators and serializers).
@@ -309,63 +356,41 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         :param target_annotation: Target type to convert to
         :return: True if converter matches
         """
-        source_match = self.__check_match(
+        if not self.__check_match(
             self._source_annotation, source_annotation, self._match_source_subtype
-        )
-        target_match = self.__check_match(
+        ):
+            return False
+        if not self.__check_match(
             self._target_annotation,
             target_annotation,
             self._match_target_subtype,
             covariant=True,
-        )
-        return source_match and target_match
-
-    def can_convert(
-        self,
-        obj: SourceT,
-        source_annotation: Annotation,
-        target_annotation: Annotation,
-        /,
-    ) -> bool:
-        """
-        Check if converter can convert the given object. Can be overridden by custom
-        subclasses.
-
-        Called internally by the framework after check_match() succeeds.
-
-        :param obj: Object to potentially convert
-        :param source_annotation: Annotation of source object
-        :param target_annotation: Annotation to convert to
-        :return: True if converter can handle conversion
-        """
-        _ = obj, source_annotation, target_annotation
+        ):
+            return False
         return True
-
-    @abstractmethod
-    def convert(
-        self,
-        obj: SourceT,
-        frame: FrameT,
-        /,
-    ) -> TargetT:
-        """
-        Convert object.
-
-        Subclass must define conversion logic. Expected to always succeed since
-        check_match() and can_convert() returned True.
-
-        :param obj: Object to convert
-        :param source_annotation: Annotation of source object
-        :param target_annotation: Annotation to convert to
-        :param frame: Frame for conversion operations
-        :return: Converted object
-        """
 
     @abstractmethod
     def _get_annotations(self) -> tuple[Annotation, Annotation]:
         """
         Get source and target annotations.
         """
+
+    def _check_convert(
+        self, obj: Any, source_annotation: Annotation, target_annotation: Annotation
+    ) -> bool:
+        """
+        Check if this converter can convert this object.
+        """
+        # check if source/target matches
+        if not self.check_match(source_annotation, target_annotation):
+            return False
+        # check if object matches supported source annotation
+        if not self._source_annotation.is_type(obj):
+            return False
+        # check if converter can convert this specific object
+        if not self.can_convert(obj, source_annotation, target_annotation):
+            return False
+        return True
 
     def __check_match(
         self,
@@ -386,7 +411,7 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
 
 
 class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
-    ConverterInterface
+    ConverterInterface[SourceT, TargetT, FrameT]
 ):
     """
     Mixin class for function-based converters.
@@ -395,6 +420,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
     __source_annotation: Annotation
     __target_annotation: Annotation
     __func_wrapper: FuncConverterWrapper[SourceT, TargetT, FrameT] | None
+    __predicate_func: Callable[[SourceT], bool] | None
 
     @overload
     def __init__(
@@ -404,6 +430,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         /,
         *,
         func: FuncConverterType[SourceT, TargetT, FrameT] | None = None,
+        predicate_func: Callable[[SourceT], bool] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
@@ -416,6 +443,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         /,
         *,
         func: FuncConverterType[SourceT, TargetT, FrameT] | None = None,
+        predicate_func: Callable[[SourceT], bool] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
@@ -427,6 +455,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         /,
         *,
         func: FuncConverterType[SourceT, TargetT, FrameT] | None = None,
+        predicate_func: Callable[[SourceT], bool] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
@@ -437,10 +466,12 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
             match_target_subtype=match_target_subtype,
         )
         self.__func_wrapper = FuncConverterWrapper(func) if func else None
+        self.__predicate_func = predicate_func
 
     def __repr__(self) -> str:
-        func = self.__func_wrapper.func.__name__ if self.__func_wrapper else None
-        return f"{type(self).__name__}({self._params_str}, func={func})"
+        func = self.__func_wrapper.func if self.__func_wrapper else None
+        predicate_func = self.__predicate_func
+        return f"{type(self).__name__}({self._params_str}, func={func}, predicate_func={predicate_func})"
 
     @classmethod
     def from_func(
@@ -470,6 +501,21 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
             func=func,
             match_source_subtype=match_source_subtype,
             match_target_subtype=match_target_subtype,
+        )
+
+    def can_convert(
+        self,
+        obj: SourceT,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        /,
+    ) -> bool:
+        if predicate_func := self.__predicate_func:
+            predicate = predicate_func(obj)
+        else:
+            predicate = True
+        return predicate and super().can_convert(
+            obj, source_annotation, target_annotation
         )
 
     def convert(
@@ -512,7 +558,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         except (ValueError, TypeError) as e:
             raise ValueError(
                 f"{type(self).__name__} {self} failed to convert {obj} ({type(obj)}): {e}"
-            ) from None
+            )
 
         # ensure conversion succeeded
         if not isinstance(converted_obj, target_type):
@@ -580,9 +626,7 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
         """
         assert not target_annotation.is_union
         for converter in self._converters:
-            if converter.check_match(
-                source_annotation, target_annotation
-            ) and converter.can_convert(obj, source_annotation, target_annotation):
+            if converter._check_convert(obj, source_annotation, target_annotation):
                 return converter
         return None
 
