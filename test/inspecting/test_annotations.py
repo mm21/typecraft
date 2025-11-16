@@ -164,104 +164,104 @@ def test_is_subtype():
     assert a2.is_subtype(a1)  # bottom type
 
 
-def test_is_type():
+def test_check_instance():
     """
-    Test `Annotation.is_type()` checks.
+    Test `Annotation.check_instance()` checks.
     """
     # non-generics
     a = Annotation(Any)
-    assert a.is_type(1)
+    assert a.check_instance(1)
 
     a = Annotation(int)
-    assert a.is_type(123)
-    assert not a.is_type("123")
-    assert not a.is_type([123])
+    assert a.check_instance(123)
+    assert not a.check_instance("123")
+    assert not a.check_instance([123])
 
     a = Annotation(list)
-    assert a.is_type([1, "2"])
+    assert a.check_instance([1, "2"])
 
     a = Annotation(set)
-    assert a.is_type({1, "2"})
+    assert a.check_instance({1, "2"})
 
     a = Annotation(tuple)
-    assert a.is_type((1, "2"))
+    assert a.check_instance((1, "2"))
 
     a = Annotation(dict)
-    assert a.is_type({"a": 1})
+    assert a.check_instance({"a": 1})
 
     # parameterized lists
     a = Annotation(list[Any])
-    assert a.is_type([1, "2"])
-    assert a.is_type([])
-    assert not a.is_type(1)
+    assert a.check_instance([1, "2"])
+    assert a.check_instance([])
+    assert not a.check_instance(1)
 
     a = Annotation(list[int])
-    assert a.is_type([1, 2])
-    assert a.is_type([])
-    assert not a.is_type([1, "2"])
+    assert a.check_instance([1, 2])
+    assert a.check_instance([])
+    assert not a.check_instance([1, "2"])
 
     # same but with alias
     a = Annotation(ListAlias)
-    assert a.is_type([1, 2])
-    assert a.is_type([])
-    assert not a.is_type([1, "2"])
+    assert a.check_instance([1, 2])
+    assert a.check_instance([])
+    assert not a.check_instance([1, "2"])
 
     a = Annotation(list[int | str])
-    assert a.is_type([1, "2"])
-    assert not a.is_type([1, "2", 3.0])
+    assert a.check_instance([1, "2"])
+    assert not a.check_instance([1, "2", 3.0])
 
     # parameterized set
     a = Annotation(set[int])
-    assert a.is_type({1, 2, 3})
-    assert a.is_type(set())
-    assert not a.is_type({1, "2"})
+    assert a.check_instance({1, 2, 3})
+    assert a.check_instance(set())
+    assert not a.check_instance({1, "2"})
 
     # parameterized fixed-length tuple
     a = Annotation(tuple[int, str])
-    assert a.is_type((1, "2"))
-    assert not a.is_type((1, 2))
+    assert a.check_instance((1, "2"))
+    assert not a.check_instance((1, 2))
 
     # parameterized homogeneous tuple
     a = Annotation(tuple[int, ...])
-    assert a.is_type((1,))
-    assert a.is_type((1, 2))
-    assert not a.is_type((1, "2"))
+    assert a.check_instance((1,))
+    assert a.check_instance((1, 2))
+    assert not a.check_instance((1, "2"))
 
     # parameterized dicts
     a = Annotation(dict[str, int])
-    assert a.is_type({"a": 1, "b": 2})
-    assert not a.is_type({0: 1})
-    assert not a.is_type({"a": "1"})
+    assert a.check_instance({"a": 1, "b": 2})
+    assert not a.check_instance({0: 1})
+    assert not a.check_instance({"a": "1"})
 
     a = Annotation(dict[str, Any])
-    assert a.is_type({"a": 1, "b": "2"})
-    assert not a.is_type({0: 1})
+    assert a.check_instance({"a": 1, "b": "2"})
+    assert not a.check_instance({0: 1})
 
     # unions
     a = Annotation(int | str)
-    assert a.is_type(1)
-    assert a.is_type("a")
-    assert not a.is_type(1.0)
+    assert a.check_instance(1)
+    assert a.check_instance("a")
+    assert not a.check_instance(1.0)
 
     a = Annotation(Union[int, str])
-    assert a.is_type(1)
-    assert a.is_type("a")
-    assert not a.is_type(1.0)
+    assert a.check_instance(1)
+    assert a.check_instance("a")
+    assert not a.check_instance(1.0)
 
     # literals
     a = Annotation(Literal["a", "b"])
-    assert a.is_type("a")
-    assert not a.is_type("c")
-    assert not a.is_type(1)
+    assert a.check_instance("a")
+    assert not a.check_instance("c")
+    assert not a.check_instance(1)
 
     # no recursion
     a = Annotation(list[str])
-    assert a.is_type([1], recurse=False)
-    assert not a.is_type([1])
+    assert a.check_instance([1], recurse=False)
+    assert not a.check_instance([1])
     a = Annotation(int | str)
-    assert a.is_type(1, recurse=False)
-    assert a.is_type("a", recurse=False)
-    assert not a.is_type(1.0, recurse=False)
+    assert a.check_instance(1, recurse=False)
+    assert a.check_instance("a", recurse=False)
+    assert not a.check_instance(1.0, recurse=False)
 
 
 def test_generic_subclass():
@@ -277,15 +277,15 @@ def test_generic_subclass():
 
     a = Annotation(IntList)
     assert a.is_subtype(list[int])
-    assert a.is_type(IntList([1]))
-    assert not a.is_type(IntList(["a"]))  # type: ignore
-    assert not a.is_type([1])
+    assert a.check_instance(IntList([1]))
+    assert not a.check_instance(IntList(["a"]))  # type: ignore
+    assert not a.check_instance([1])
 
     a = Annotation(IntStrDict)
     assert a.is_subtype(dict[int, str])
-    assert a.is_type(IntStrDict({1: "a"}))
-    assert not a.is_type(IntStrDict({1: 1}))  # type: ignore
-    assert not a.is_type({1: "a"})
+    assert a.check_instance(IntStrDict({1: "a"}))
+    assert not a.check_instance(IntStrDict({1: 1}))  # type: ignore
+    assert not a.check_instance({1: "a"})
 
 
 def test_eq():
@@ -301,15 +301,14 @@ def test_eq():
 
 def test_any_vs_object():
     """
-    Test the critical distinction between Any (top AND bottom type) and object (concrete type).
+    Test the critical distinction between Any (top AND bottom type) and object
+    (concrete top type).
 
     Any is BOTH the top type and bottom type in Python's gradual typing system:
     - Everything is a subtype of Any (top type behavior)
     - Any is a subtype of everything (bottom type behavior)
 
-    This dual nature makes Any an "escape hatch" from type checking.
-
-    object is a concrete class - only actual object subclasses are subtypes of object.
+    `object` is a concrete class - only actual object subclasses are subtypes of object.
     """
     # Any as TOP type - everything is a subtype of Any
     assert Annotation(int).is_subtype(Any)
@@ -347,30 +346,25 @@ def test_any_vs_object():
 
     # list[object] is different from list[Any]
     assert Annotation(list[int]).is_subtype(list[object])  # normal covariance
-    assert not Annotation(list[object]).is_subtype(
-        list[int]
-    )  # object is NOT bottom type
-    # but list[Any] IS a subtype of list[int] (bottom type property)
-    assert Annotation(list[Any]).is_subtype(list[int])
+    assert not Annotation(list[object]).is_subtype(list[int])
 
-    # with callables, Any in parameters and return types
+    # with callables, Any in parameters and return types:
     # Any in return (bottom type): can return anything
     assert Annotation(Callable[[int], Any]).is_subtype(Callable[[int], str])
     # Any in parameters (bottom type meets contravariance)
     assert Annotation(Callable[[Any], str]).is_subtype(Callable[[int], str])
-    # Both directions work due to Any's dual nature
     assert Annotation(Callable[[int], str]).is_subtype(Callable[[Any], Any])
     assert Annotation(Callable[[Any], Any]).is_subtype(Callable[[int], str])
 
     # nested generics
-    assert Annotation(list[list[int]]).is_subtype(list[list[Any]])  # top type
-    assert Annotation(list[list[Any]]).is_subtype(list[list[int]])  # bottom type
-    assert Annotation(list[list[int]]).is_subtype(list[Any])  # top type
-    assert Annotation(list[Any]).is_subtype(list[list[int]])  # bottom type
+    assert Annotation(list[list[int]]).is_subtype(list[list[Any]])
+    assert Annotation(list[list[Any]]).is_subtype(list[list[int]])
+    assert Annotation(list[list[int]]).is_subtype(list[Any])
+    assert Annotation(list[Any]).is_subtype(list[list[int]])
 
     # unions with Any
-    assert Annotation(int | str).is_subtype(Any)  # top type
-    assert Annotation(Any).is_subtype(int | str)  # bottom type
+    assert Annotation(int | str).is_subtype(Any)
+    assert Annotation(Any).is_subtype(int | str)
 
 
 def test_callable():
@@ -409,7 +403,8 @@ def test_callable_is_subtype():
     Test is_subtype for callables.
 
     Callables are contravariant in parameters and covariant in return type.
-    With Any as both top and bottom type, callable relationships become bidirectional with Any.
+    With Any as both top and bottom type, callable relationships become bidirectional
+    with Any.
     """
     # same signature
     a1 = Annotation(Callable[[int], str])
@@ -424,8 +419,8 @@ def test_callable_is_subtype():
     assert not a2.is_subtype(a1)
 
     # contravariant parameters (bool is subclass of int)
-    # - Callable[[int], str] accepts any int, including bool
-    # so it's a subtype of Callable[[bool], str]
+    # - Callable[[int], str] accepts any int, including bool so it's a subtype of
+    # Callable[[bool], str]
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[bool], str])
     assert a1.is_subtype(a2)
@@ -544,9 +539,9 @@ def test_callable_type_is_subtype():
     assert not a1.is_subtype(a2)  # int instances are not callable
 
 
-def test_callable_is_instance():
+def test_callable_check_instance():
     """
-    Test is_type for callables.
+    Test check_instance for callables.
     """
 
     def func1(x: int, y: str) -> bool:
@@ -560,38 +555,38 @@ def test_callable_is_instance():
 
     # check basic callable
     a = Annotation(Callable[[int, str], bool])
-    assert a.is_type(func1)
-    assert not a.is_type(func2)  # wrong parameter count
-    assert not a.is_type(func3)  # wrong parameter count
-    assert not a.is_type(123)  # not callable
+    assert a.check_instance(func1)
+    assert not a.check_instance(func2)  # wrong parameter count
+    assert not a.check_instance(func3)  # wrong parameter count
+    assert not a.check_instance(123)  # not callable
 
     # check Callable[..., T]
     a = Annotation(Callable[..., int])
-    assert a.is_type(func1)  # any parameters acceptable
-    assert a.is_type(func2)
-    assert a.is_type(func3)
-    assert a.is_type(lambda: 42)
-    assert not a.is_type("not callable")
+    assert a.check_instance(func1)  # any parameters acceptable
+    assert a.check_instance(func2)
+    assert a.check_instance(func3)
+    assert a.check_instance(lambda: 42)
+    assert not a.check_instance("not callable")
 
     # test with lambda
     a = Annotation(Callable[[int], str])
-    assert a.is_type(lambda x: str(x))
-    assert not a.is_type(lambda x, y: str(x))  # wrong param count
+    assert a.check_instance(lambda x: str(x))
+    assert not a.check_instance(lambda x, y: str(x))  # wrong param count
 
     # test with no parameters
     a = Annotation(Callable[[], int])
-    assert a.is_type(int)
-    assert a.is_type(func3)
-    assert a.is_type(lambda: 42)
-    assert not a.is_type(func1)
+    assert a.check_instance(int)
+    assert a.check_instance(func3)
+    assert a.check_instance(lambda: 42)
+    assert not a.check_instance(func1)
 
     # test with built-in functions (may not have inspectable signature)
     a = Annotation(Callable[..., Any])
-    assert a.is_type(len)
-    assert a.is_type(print)
+    assert a.check_instance(len)
+    assert a.check_instance(print)
 
     # test with classes (they're callable too)
     a = Annotation(Callable[..., Any])
-    assert a.is_type(int)
-    assert a.is_type(str)
-    assert a.is_type(list)
+    assert a.check_instance(int)
+    assert a.check_instance(str)
+    assert a.check_instance(list)

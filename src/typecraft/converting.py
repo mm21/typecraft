@@ -385,7 +385,7 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         if not self.check_match(source_annotation, target_annotation):
             return False
         # check if object matches supported source annotation
-        if not self._source_annotation.is_type(obj):
+        if not self._source_annotation.check_instance(obj):
             return False
         # check if converter can convert this specific object
         if not self.can_convert(obj, source_annotation, target_annotation):
@@ -567,7 +567,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
             )
 
         # can be an expensive check
-        assert frame.target_annotation.is_type(converted_obj)
+        assert frame.target_annotation.check_instance(converted_obj)
 
         return cast(TargetT, converted_obj)
 
@@ -694,13 +694,13 @@ class BaseConversionEngine[
         # debug asserts:
         # - can't validate/serialize FROM any: need to know the object type
         # - can't serialize TO any: must have a known supported target type
-        # - can validate TO any: is_type() will just return True
+        # - can validate TO any: check_instance() will just return True
         assert frame_.source_annotation != ANY
         if self.__is_serializing:
             assert frame_.target_annotation != ANY
 
         # invoke conversion if needed
-        if not frame_.target_annotation.is_type(obj, recurse=False):
+        if not frame_.target_annotation.check_instance(obj, recurse=False):
             return self._invoke_conversion(obj, frame_)
 
         # if target is a union, select which specific annotation matches the object
@@ -1071,7 +1071,7 @@ def _select_ann_from_union(obj: Any, union: Annotation) -> Annotation:
     """
     assert union.is_union
     ann = next(
-        (a for a in union.arg_annotations if a.is_type(obj, recurse=False)),
+        (a for a in union.arg_annotations if a.check_instance(obj, recurse=False)),
         None,
     )
     if not ann:

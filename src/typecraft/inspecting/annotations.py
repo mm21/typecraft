@@ -198,7 +198,7 @@ class Annotation:
 
     def is_subtype(self, other: Annotation | Any, /) -> bool:
         """
-        Check if this annotation is a subtype of other annotation; loosely
+        Check if this annotation is a subtype of other annotation; roughly
         equivalent to `issubclass(annotation, other)`.
 
         Any is BOTH a top type and a bottom type in Python's gradual typing:
@@ -236,7 +236,7 @@ class Annotation:
 
         # handle literal for self
         if self.is_literal:
-            return all(other_ann.is_type(value) for value in self.args)
+            return all(other_ann.check_instance(value) for value in self.args)
 
         # handle literal for other: non-literal can never be a "subclass" of literal
         if other_ann.is_literal:
@@ -277,22 +277,24 @@ class Annotation:
 
         return True
 
-    def is_type(self, obj: Any, /, *, recurse: bool = True) -> bool:
+    def check_instance(self, obj: Any, /, *, recurse: bool = True) -> bool:
         """
-        Check if object is an instance of this annotation; loosely equivalent to
+        Check if object is an instance of this annotation; roughly equivalent to
         `isinstance(obj, annotation)`.
 
         Examples:
 
-        - `Annotation(Any).is_type(1)` returns `True`
-        - `Annotation(list[int]).is_type([1, 2, 3])` returns `True`
-        - `Annotation(list[int]).is_type([1, 2, "3"])` returns `False`
+        - `Annotation(Any).check_instance(1)` returns `True`
+        - `Annotation(list[int]).check_instance([1, 2, 3])` returns `True`
+        - `Annotation(list[int]).check_instance([1, 2, "3"])` returns `False`
         """
         if self.is_literal:
             return any(obj == value for value in self.args)
 
         if self.is_union:
-            return any(a.is_type(obj, recurse=recurse) for a in self.arg_annotations)
+            return any(
+                a.check_instance(obj, recurse=recurse) for a in self.arg_annotations
+            )
 
         if self.is_callable:
             return self._check_callable(obj)
@@ -422,7 +424,7 @@ class Annotation:
         arg = my_args[0] if len(my_args) else ANY
         if arg == ANY:
             return True
-        return all(arg.is_type(o) for o in obj)
+        return all(arg.check_instance(o) for o in obj)
 
     def _check_tuple(self, obj: tuple[Any]) -> bool:
         args = extract_tuple_args(self)
@@ -430,12 +432,12 @@ class Annotation:
             # fixed-length tuple
             if len(args) != len(obj):
                 return False
-            return all(a.is_type(o) for a, o in zip(args, obj))
+            return all(a.check_instance(o) for a, o in zip(args, obj))
         else:
             # variadic tuple
             if args == ANY:
                 return True
-            return all(args.is_type(o) for o in obj)
+            return all(args.check_instance(o) for o in obj)
 
     def _check_dict(self, obj: dict[Any, Any]) -> bool:
         my_args = self._extract_my_args(dict)
@@ -443,7 +445,10 @@ class Annotation:
         key_ann, value_ann = my_args if len(my_args) == 2 else (ANY, ANY)
         if (key_ann, value_ann) == (ANY, ANY):
             return True
-        return all(key_ann.is_type(k) and value_ann.is_type(v) for k, v in obj.items())
+        return all(
+            key_ann.check_instance(k) and value_ann.check_instance(v)
+            for k, v in obj.items()
+        )
 
     def _extract_my_args(self, other: type) -> tuple[Annotation, ...]:
         """
@@ -493,7 +498,7 @@ def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:
     assert is_instance([1, 2, "3"], list[int | str])
     ```
     """
-    return Annotation._normalize(annotation).is_type(obj)
+    return Annotation._normalize(annotation).check_instance(obj)
 
 
 def is_union(annotation: Any, /) -> bool:

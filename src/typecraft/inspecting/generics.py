@@ -89,13 +89,13 @@ def extract_arg(cls: type, base_cls: type, index: int, /) -> type: ...
 
 @overload
 def extract_arg[ParamT](
-    cls: type, base_cls: type, name: str, param_cls: type[ParamT], /
+    cls: type, base_cls: type, name: str, arg_cls: type[ParamT], /
 ) -> type[ParamT]: ...
 
 
 @overload
 def extract_arg[ParamT](
-    cls: type, base_cls: type, index: int, param_cls: type[ParamT], /
+    cls: type, base_cls: type, index: int, arg_cls: type[ParamT], /
 ) -> type[ParamT]: ...
 
 
@@ -103,21 +103,20 @@ def extract_arg[ParamT](
     cls: type,
     base_cls: type,
     name_or_index: str | int,
-    param_cls: type[ParamT] | None = None,
+    arg_cls: type[ParamT] | None = None,
     /,
 ) -> type | type[ParamT]:
     """
     Extract from `cls` the resolved type parameter that was passed to `base_cls`
     for its parameter by name or index, optionally ensuring it's a subclass of
     `param_cls`.
-    
+
     :param cls: The class or annotation to extract the type parameter from
     :param base_cls: The base class whose type parameter should be extracted
     :param name_or_index: Parameter name (str) or index (int) to extract
     :param param_cls: Optional base class that the extracted type must be a subclass of
     :raises TypeError: If `base_cls` is not in `cls`'s inheritance hierarchy
-    :raises ValueError: If `base_cls` not found or type parameter is unresolved \
-    (TypeVar)
+    :raises ValueError: If type parameter is found, but unresolved (is a TypeVar)
     :raises KeyError: If parameter name not found
     :raises IndexError: If parameter index out of range
     :raises TypeError: If type doesn't match `param_cls` (when provided)
@@ -151,10 +150,10 @@ def extract_arg[ParamT](
             f"Type parameter with {desc} is unresolved (TypeVar {arg}): cls={cls}, base_cls={base_cls}"
         )
 
-    if param_cls and not (isinstance(arg, type) and issubclass(arg, param_cls)):
+    if arg_cls and not (isinstance(arg, type) and issubclass(arg, arg_cls)):
         raise TypeError(
             f"Type parameter with {desc} is {arg}, which does not match "
-            f"required base class {param_cls}"
+            f"required base class {arg_cls}"
         )
 
     return arg
