@@ -263,33 +263,15 @@ class Annotation:
             return True
 
         # other has type parameters, need to extract and compare
-        try:
-            # extract the type args that self passes to other's concrete type
-            # - use extract_args() to handle ABCs/protocols not in MRO
-            my_args = normalize_args(
-                extract_args(self.concrete_type, other_ann.concrete_type)
-            )
-        except TypeError:
-            # base class not found in hierarchy, fall back to self's args
-            my_args = self.args
-        else:
-            # if extract_args returns empty but self has args, use self's args
-            # (this happens when comparing e.g. list[int] to list[str])
-            if not my_args:
-                my_args = self.args
-
-        # convert to Annotation objects for comparison
-        my_arg_annotations = tuple(Annotation(a) for a in my_args)
-        other_arg_annotations = other_ann.arg_annotations
+        my_args = self._extract_my_args(other_ann.concrete_type)
+        other_args = other_ann.arg_annotations
 
         # pad missing args in my_arg_annotations, assumed to be Any
-        if len(my_arg_annotations) < len(other_arg_annotations):
-            my_arg_annotations = list(my_arg_annotations) + [ANY] * (
-                len(other_arg_annotations) - len(my_arg_annotations)
-            )
+        if len(my_args) < len(other_args):
+            my_args = list(my_args) + [ANY] * (len(other_args) - len(my_args))
 
         # recurse into args
-        for my_arg, other_arg in zip(my_arg_annotations, other_arg_annotations):
+        for my_arg, other_arg in zip(my_args, other_args):
             if not my_arg.is_subtype(other_arg):
                 return False
 
@@ -434,9 +416,13 @@ class Annotation:
             return self._check_dict(obj)
 
     def _check_list_or_set(self, obj: list[Any] | set[Any]) -> bool:
-        assert len(self.arg_annotations) in {0, 1}
-        ann = self.arg_annotations[0] if len(self.arg_annotations) else ANY
-        return all(ann.is_type(o) for o in obj)
+        other_type = list if isinstance(obj, list) else set
+        my_args = self._extract_my_args(other_type)
+        assert len(my_args) in {0, 1}
+        arg = my_args[0] if len(my_args) else ANY
+        if arg == ANY:
+            return True
+        return all(arg.is_type(o) for o in obj)
 
     def _check_tuple(self, obj: tuple[Any]) -> bool:
         args = extract_tuple_args(self)
@@ -447,14 +433,35 @@ class Annotation:
             return all(a.is_type(o) for a, o in zip(args, obj))
         else:
             # variadic tuple
+            if args == ANY:
+                return True
             return all(args.is_type(o) for o in obj)
 
     def _check_dict(self, obj: dict[Any, Any]) -> bool:
-        assert len(self.arg_annotations) in {0, 2}
-        key_ann, value_ann = (
-            self.arg_annotations if len(self.arg_annotations) == 2 else (ANY, ANY)
-        )
+        my_args = self._extract_my_args(dict)
+        assert len(my_args) in {0, 2}
+        key_ann, value_ann = my_args if len(my_args) == 2 else (ANY, ANY)
+        if (key_ann, value_ann) == (ANY, ANY):
+            return True
         return all(key_ann.is_type(k) and value_ann.is_type(v) for k, v in obj.items())
+
+    def _extract_my_args(self, other: type) -> tuple[Annotation, ...]:
+        """
+        Get my args as passed to the other class.
+        """
+        try:
+            # extract the type args that self passes to other's concrete type
+            # - use extract_args() to handle ABCs/protocols not in MRO
+            my_args = normalize_args(extract_args(self.concrete_type, other))
+        except TypeError:
+            # base class not found in hierarchy, fall back to self's args
+            my_args = self.args
+        else:
+            # if extract_args returns empty but self has args, use self's args
+            # (this happens when comparing e.g. list[int] to list[str])
+            if not my_args:
+                return self.arg_annotations
+        return tuple(Annotation(a) for a in my_args)
 
 
 def is_subtype(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:

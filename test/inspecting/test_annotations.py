@@ -5,7 +5,7 @@ Tests for `Annotation` class.
 from collections.abc import Callable
 from typing import Any, Literal, Sequence, Union
 
-from typecraft.inspecting.annotations import Annotation, is_instance, is_subtype
+from typecraft.inspecting.annotations import Annotation
 
 type ListAlias = list[int]
 type RecursiveAlias = list[RecursiveAlias] | int
@@ -82,8 +82,9 @@ def test_is_subtype():
     assert a2.is_subtype(a1)  # list[Any] subtype of list[int] (bottom type in params)
 
     # same but with alias
-    assert is_subtype(ListAlias, list[Any])
-    assert is_subtype(list[Any], ListAlias)  # bidirectional!
+    a1 = Annotation(ListAlias)
+    assert a1.is_subtype(list[Any])
+    assert Annotation(list[Any]).is_subtype(a1)
 
     # list[int] is not a subtype of list[float]
     a1 = Annotation(list[int])
@@ -163,9 +164,9 @@ def test_is_subtype():
     assert a2.is_subtype(a1)  # bottom type
 
 
-def test_is_instance():
+def test_is_type():
     """
-    Test `is_instance()` / `Annotation.is_type()` checks.
+    Test `Annotation.is_type()` checks.
     """
     # non-generics
     a = Annotation(Any)
@@ -200,9 +201,10 @@ def test_is_instance():
     assert not a.is_type([1, "2"])
 
     # same but with alias
-    assert is_instance([1, 2], ListAlias)
-    assert is_instance([], ListAlias)
-    assert not is_instance([1, "2"], ListAlias)
+    a = Annotation(ListAlias)
+    assert a.is_type([1, 2])
+    assert a.is_type([])
+    assert not a.is_type([1, "2"])
 
     a = Annotation(list[int | str])
     assert a.is_type([1, "2"])
@@ -260,6 +262,30 @@ def test_is_instance():
     assert a.is_type(1, recurse=False)
     assert a.is_type("a", recurse=False)
     assert not a.is_type(1.0, recurse=False)
+
+
+def test_generic_subclass():
+    """
+    Test subclass of generic types.
+    """
+
+    class IntList(list[int]):
+        pass
+
+    class IntStrDict(dict[int, str]):
+        pass
+
+    a = Annotation(IntList)
+    assert a.is_subtype(list[int])
+    assert a.is_type(IntList([1]))
+    assert not a.is_type(IntList(["a"]))  # type: ignore
+    assert not a.is_type([1])
+
+    a = Annotation(IntStrDict)
+    assert a.is_subtype(dict[int, str])
+    assert a.is_type(IntStrDict({1: "a"}))
+    assert not a.is_type(IntStrDict({1: 1}))  # type: ignore
+    assert not a.is_type({1: "a"})
 
 
 def test_eq():
