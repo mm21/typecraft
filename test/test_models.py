@@ -8,6 +8,7 @@ from typecraft.models import (
     FieldInfo,
     ModelConfig,
 )
+from typecraft.validating import ValidationParams
 
 
 class BasicTest(BaseModel):
@@ -29,7 +30,7 @@ class ValidateOnAssignmentTest(BaseModel):
 
 
 class CoercionTest(BaseModel):
-    model_config = ModelConfig(strict=False)
+    model_config = ModelConfig(validation_params=ValidationParams(strict=False))
 
     a: int = 123
     b: str = "abc"

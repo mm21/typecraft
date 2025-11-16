@@ -24,8 +24,10 @@ from typing import (
     overload,
 )
 
+from typecraft.serializing import SerializationParams
+
 from .inspecting.annotations import Annotation
-from .validating import ValidationFrame, Validator, validate
+from .validating import ValidationFrame, ValidationParams, Validator, validate
 
 __all__ = [
     "Field",
@@ -177,9 +179,14 @@ class ModelConfig:
     Configures model.
     """
 
-    strict: bool = True
+    validation_params: ValidationParams | None = None
     """
-    Don't attempt to coerce values to the expected type; just validate.
+    Params to use for validation.
+    """
+
+    serialization_params: SerializationParams | None = None
+    """
+    Params to use for serialization.
     """
 
     validate_on_assignment: bool = False
@@ -231,7 +238,7 @@ class BaseModel:
                 value_,
                 field_info.annotation.raw,
                 *self.__validators,
-                strict=self.model_config.strict,
+                params=self.model_config.validation_params,
             )
             value_ = self.model_post_validate(field_info, value_)
         else:

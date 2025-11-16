@@ -16,14 +16,13 @@ from .converting import (
     BaseConversionFrame,
     BaseConverter,
     BaseConverterRegistry,
-    ConverterFuncType,
     FuncConverterMixin,
+    FuncConverterType,
     GenericConverterMixin,
     convert_to_dict,
     convert_to_list,
     convert_to_set,
     convert_to_tuple,
-    normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
 from .typedefs import (
@@ -32,7 +31,7 @@ from .typedefs import (
 )
 
 __all__ = [
-    "ValidatorFuncType",
+    "FuncValidatorType",
     "ValidationParams",
     "ValidationFrame",
     "ValidationEngine",
@@ -44,22 +43,27 @@ __all__ = [
 ]
 
 
-type ValidatorFuncType[TargetT] = ConverterFuncType[Any, TargetT, ValidationFrame]
+type FuncValidatorType[TargetT] = FuncConverterType[Any, TargetT, ValidationFrame]
 """
 Function which validates the given object and returns an object of the
-specified type. Can optionally take `ValidationInfo` as the second argument.
+specified type. Can optionally take `ValidationFrame` as the second argument.
 """
 
 
 @dataclass(kw_only=True)
 class ValidationParams:
     """
-    Validation params as passed by user.
+    Validation params passed by user.
     """
 
-    strict: bool
+    strict: bool = True
     """
-    Don't attempt to coerce values to the expected type; just validate.
+    For serializable target types, don't attempt to coerce values; just validate.
+    """
+
+    use_builtins: bool = True
+    """
+    For non-serializable target types, use builtin converters like `str` to `date`.
     """
 
 
@@ -115,7 +119,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
     @overload
     def register(
         self,
-        func: ValidatorFuncType,
+        func: FuncValidatorType,
         /,
         *,
         match_source_subtype: bool = True,
@@ -124,7 +128,7 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
 
     def register(
         self,
-        validator_or_func: BaseValidator | ValidatorFuncType,
+        validator_or_func: BaseValidator | FuncValidatorType,
         /,
         *,
         match_source_subtype: bool = True,
@@ -162,7 +166,7 @@ def validate[T](
     target_type: type[T],
     /,
     *validators: Validator[Any, T],
-    strict: bool = True,
+    params: ValidationParams | None = None,
     context: Any = None,
 ) -> T: ...
 
@@ -171,10 +175,10 @@ def validate[T](
 def validate[T](
     obj: Any,
     target_type: type[T],
-    registry: ValidatorRegistry,
     /,
     *,
-    strict: bool = True,
+    params: ValidationParams | None = None,
+    registry: ValidatorRegistry | None = None,
     context: Any = None,
 ) -> T: ...
 
@@ -185,7 +189,7 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: Validator[Any, Any],
-    strict: bool = True,
+    params: ValidationParams | None = None,
     context: Any = None,
 ) -> Any: ...
 
@@ -194,10 +198,10 @@ def validate(
 def validate(
     obj: Any,
     target_type: Annotation | Any,
-    registry: ValidatorRegistry,
     /,
     *,
-    strict: bool = True,
+    params: ValidationParams | None = None,
+    registry: ValidatorRegistry | None = None,
     context: Any = None,
 ) -> Any: ...
 
@@ -206,9 +210,10 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators_or_registry: Validator[Any, Any] | ValidatorRegistry,
+    *validators: Validator[Any, Any],
+    params: ValidationParams | None = None,
+    registry: ValidatorRegistry | None = None,
     context: Any = None,
-    strict: bool = True,
 ) -> Any:
     """
     Recursively validate object by type, converting to the target type if needed.
@@ -217,16 +222,13 @@ def validate(
     applying validation and conversion at each level.
     """
     target_annotation = Annotation._normalize(target_type)
-    registry = normalize_to_registry(
-        Validator, ValidatorRegistry, *validators_or_registry
-    )
+    registry = registry or ValidatorRegistry(*validators)
     engine = ValidationEngine(registry=registry)
-    params = ValidationParams(strict=strict)
     frame = ValidationFrame(
         source_annotation=Annotation(type(obj)),
         target_annotation=target_annotation,
         context=context,
-        params=params,
+        params=params or DEFAULT_PARAMS,
         engine=engine,
     )
     return engine.process(obj, frame)
@@ -239,7 +241,7 @@ def normalize_to_list[T](
     target_type: type[T],
     /,
     *validators: Validator[Any, T],
-    strict: bool = True,
+    params: ValidationParams | None = None,
     context: Any = None,
 ) -> list[T]:
     """
@@ -255,9 +257,8 @@ def normalize_to_list[T](
         objs = [obj_or_objs]
 
     target_annotation = Annotation._normalize(target_type)
-    registry = normalize_to_registry(Validator, ValidatorRegistry, *validators)
+    registry = ValidatorRegistry(*validators)
     engine = ValidationEngine(registry=registry)
-    params = ValidationParams(strict=strict)
 
     # validate each object and place in a new list
     return [
@@ -267,13 +268,15 @@ def normalize_to_list[T](
                 source_annotation=Annotation(type(o)),
                 target_annotation=target_annotation,
                 context=context,
-                params=params,
+                params=params or DEFAULT_PARAMS,
                 engine=engine,
             ),
         )
         for o in objs
     ]
 
+
+DEFAULT_PARAMS = ValidationParams()
 
 # TODO: add more validators: dataclasses, ...
 BUILTIN_REGISTRY = ValidatorRegistry(

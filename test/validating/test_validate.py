@@ -8,6 +8,7 @@ from typing import Annotated, Generator, Literal
 from pytest import raises
 
 from typecraft.validating import (
+    ValidationParams,
     Validator,
     ValidatorRegistry,
     normalize_to_list,
@@ -62,42 +63,42 @@ def test_invalid():
 def test_conversion():
 
     # list[str | int] -> list[int]
-    result = validate(["1", "2", 3], list[int], strict=False)
+    result = validate(["1", "2", 3], list[int], params=ValidationParams(strict=False))
     assert result == [1, 2, 3]
 
     # list[tuple[str]] -> list[list[int]]
     obj = [("1", "2"), ("3", "4")]
-    result = validate(obj, list[list[int]], strict=False)
+    result = validate(obj, list[list[int]], params=ValidationParams(strict=False))
     assert result == [[1, 2], [3, 4]]
 
     # list[str] -> tuple[int, str]
     obj = ["1", "2"]
-    result = validate(obj, tuple[int, str], strict=False)
+    result = validate(obj, tuple[int, str], params=ValidationParams(strict=False))
     assert result == (1, "2")
 
     # list[int] -> tuple[str, ...]
     obj = [1, 2]
-    result = validate(obj, tuple[str, ...], strict=False)
+    result = validate(obj, tuple[str, ...], params=ValidationParams(strict=False))
     assert result == ("1", "2")
 
     # list[list[tuple[str, str]]] -> list[list[list[int]]]
     obj = [[("1", "2"), ("3", "4")], [("5", "6")]]
-    result = validate(obj, list[list[list[int]]], strict=False)
+    result = validate(obj, list[list[list[int]]], params=ValidationParams(strict=False))
     assert result == [[[1, 2], [3, 4]], [[5, 6]]]
 
     # dict[int, list[str]] -> dict[str, list[int]]
     obj = {1: ["1", "2"], 2: ["3", "4"]}
-    result = validate(obj, dict[str, list[int]], strict=False)
+    result = validate(obj, dict[str, list[int]], params=ValidationParams(strict=False))
     assert result == {"1": [1, 2], "2": [3, 4]}
 
     # list[int] -> set[str]
     obj = [1, 2, 3, 2, 1]
-    result = validate(obj, set[str], strict=False)
+    result = validate(obj, set[str], params=ValidationParams(strict=False))
     assert result == {"1", "2", "3"}
 
     # str -> int | float
     obj = "1.5"
-    result = validate(obj, int | float, strict=False)
+    result = validate(obj, int | float, params=ValidationParams(strict=False))
     assert result == 1.5
 
     # annotated type
@@ -105,13 +106,13 @@ def test_conversion():
     result = validate(
         obj,
         Annotated[list[int], "positive integers"],
-        strict=False,
+        params=ValidationParams(strict=False),
     )
     assert result == [1, 2, 3]
 
     # range -> list[int]
     obj = range(3)
-    result = validate(obj, list[int], strict=False)
+    result = validate(obj, list[int], params=ValidationParams(strict=False))
     assert result == [0, 1, 2]
 
     # generator -> list[int]
@@ -120,12 +121,12 @@ def test_conversion():
             yield i
 
     obj = gen()
-    result = validate(obj, list[int], strict=False)
+    result = validate(obj, list[int], params=ValidationParams(strict=False))
     assert result == [0, 1, 2]
 
     # generator -> tuple[int, int, int]
     obj = gen()
-    result = validate(obj, tuple[int, int, int], strict=False)
+    result = validate(obj, tuple[int, int, int], params=ValidationParams(strict=False))
     assert result == (0, 1, 2)
 
 
@@ -149,7 +150,9 @@ def test_collection_subclass():
     assert result == [0, 1, 2]
 
     obj = [0, 1, "2"]
-    result = validate(obj, IntList, Validator(list, IntList), strict=False)
+    result = validate(
+        obj, IntList, Validator(list, IntList), params=ValidationParams(strict=False)
+    )
     assert isinstance(result, IntList)
     assert result == [0, 1, 2]
 
@@ -163,7 +166,12 @@ def test_collection_subclass():
     assert result == {0: "a"}
 
     obj = {"0": "a"}
-    result = validate(obj, IntStrDict, Validator(dict, IntStrDict), strict=False)
+    result = validate(
+        obj,
+        IntStrDict,
+        Validator(dict, IntStrDict),
+        params=ValidationParams(strict=False),
+    )
     assert isinstance(result, IntStrDict)
     assert result == {0: "a"}
 
@@ -204,7 +212,7 @@ def test_registry():
     registry.register(Validator(str, int))
 
     obj = "1"
-    result = validate(obj, int, registry)
+    result = validate(obj, int, registry=registry)
     assert result == 1
 
 
@@ -216,8 +224,8 @@ def test_normalize_to_list():
     obj1 = [1, 2, "3"]
     obj2 = 1
 
-    norm_obj1 = normalize_to_list(obj1, str, strict=False)
+    norm_obj1 = normalize_to_list(obj1, str, params=ValidationParams(strict=False))
     assert norm_obj1 == ["1", "2", "3"]
 
-    norm_obj2 = normalize_to_list(obj2, str, strict=False)
+    norm_obj2 = normalize_to_list(obj2, str, params=ValidationParams(strict=False))
     assert norm_obj2 == ["1"]

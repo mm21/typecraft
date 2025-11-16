@@ -17,7 +17,7 @@ from .typedefs import (
     ValueCollectionType,
 )
 
-type ConverterFuncType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
+type FuncConverterType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
     [SourceT], TargetT
 ] | Callable[[SourceT, FrameT], TargetT]
 """
@@ -26,12 +26,12 @@ source object with info.
 """
 
 
-class ConverterFunctionWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
+class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     """
     Encapsulates a validator or serializer function.
     """
 
-    func: ConverterFuncType[SourceT, TargetT, FrameT]
+    func: FuncConverterType[SourceT, TargetT, FrameT]
     """
     Converter function.
     """
@@ -394,7 +394,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
 
     __source_annotation: Annotation
     __target_annotation: Annotation
-    __func_wrapper: ConverterFunctionWrapper[SourceT, TargetT, FrameT] | None
+    __func_wrapper: FuncConverterWrapper[SourceT, TargetT, FrameT] | None
 
     @overload
     def __init__(
@@ -403,7 +403,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         target_annotation: type[TargetT],
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
+        func: FuncConverterType[SourceT, TargetT, FrameT] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
@@ -415,7 +415,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         target_annotation: Annotation | Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
+        func: FuncConverterType[SourceT, TargetT, FrameT] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ): ...
@@ -426,7 +426,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         target_annotation: Any,
         /,
         *,
-        func: ConverterFuncType[SourceT, TargetT, FrameT] | None = None,
+        func: FuncConverterType[SourceT, TargetT, FrameT] | None = None,
         match_source_subtype: bool = True,
         match_target_subtype: bool = False,
     ):
@@ -436,7 +436,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
             match_source_subtype=match_source_subtype,
             match_target_subtype=match_target_subtype,
         )
-        self.__func_wrapper = ConverterFunctionWrapper(func) if func else None
+        self.__func_wrapper = FuncConverterWrapper(func) if func else None
 
     def __repr__(self) -> str:
         func = self.__func_wrapper.func.__name__ if self.__func_wrapper else None
@@ -445,7 +445,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
     @classmethod
     def from_func(
         cls,
-        func: ConverterFuncType[SourceT, TargetT, FrameT],
+        func: FuncConverterType[SourceT, TargetT, FrameT],
         /,
         *,
         match_source_subtype: bool = True,
@@ -460,7 +460,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         :param match_target_subtype: Match subtypes of target annotation
         :return: Converter instance
         """
-        func_wrapper = ConverterFunctionWrapper(func)
+        func_wrapper = FuncConverterWrapper(func)
         assert func_wrapper.obj_param.annotation
         assert func_wrapper.sig_info.return_annotation
 
@@ -743,25 +743,6 @@ class BaseConversionEngine[
         from .serializing import SerializationEngine
 
         return isinstance(self, SerializationEngine)
-
-
-def normalize_to_registry[ConverterT, RegistryT](
-    converter_cls: type[ConverterT],
-    registry_cls: type[RegistryT],
-    *converters_or_registry: Any,
-) -> RegistryT:
-    """
-    Take converters or registry and return a registry.
-    """
-    if len(converters_or_registry) == 1 and isinstance(
-        converters_or_registry[0], registry_cls
-    ):
-        registry = cast(RegistryT, converters_or_registry[0])
-    else:
-        assert all(isinstance(v, converter_cls) for v in converters_or_registry)
-        converters = cast(tuple[ConverterT, ...], converters_or_registry)
-        registry = registry_cls(*converters)
-    return registry
 
 
 def convert_to_list(

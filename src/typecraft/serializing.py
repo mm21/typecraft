@@ -20,17 +20,16 @@ from .converting import (
     BaseConversionFrame,
     BaseConverter,
     BaseConverterRegistry,
-    ConverterFuncType,
     FuncConverterMixin,
+    FuncConverterType,
     GenericConverterMixin,
     convert_to_list,
-    normalize_to_registry,
 )
 from .inspecting.annotations import Annotation
 from .typedefs import ValueCollectionType
 
 __all__ = [
-    "SerializerFuncType",
+    "FuncSerializerType",
     "SerializationParams",
     "SerializationFrame",
     "SerializationEngine",
@@ -46,7 +45,7 @@ type JsonSerializableType = str | int | float | bool | NoneType | list[
 
 JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
 
-type SerializerFuncType[SourceT] = ConverterFuncType[SourceT, Any, SerializationFrame]
+type FuncSerializerType[SourceT] = FuncConverterType[SourceT, Any, SerializationFrame]
 """
 Function which serializes the given object from a specific source type and generally
 returns an object of built-in Python type. Can optionally take
@@ -57,12 +56,12 @@ returns an object of built-in Python type. Can optionally take
 @dataclass(kw_only=True)
 class SerializationParams:
     """
-    Serialization params as passed by user.
+    Serialization params passed by user.
     """
 
-    sort_sets: bool
+    sort_sets: bool = True
     """
-    Whether to sort sets, produces deterministic output.
+    Whether to sort sets, producing deterministic output.
     """
 
 
@@ -79,7 +78,7 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation | None = None,
-        context: Any | None = None,
+        context: Any = None,
     ) -> Any:
         return super().recurse(
             obj,
@@ -141,7 +140,7 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
     @overload
     def register(
         self,
-        func: SerializerFuncType,
+        func: FuncSerializerType,
         /,
         *,
         match_source_subtype: bool = True,
@@ -150,7 +149,7 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
 
     def register(
         self,
-        serializer_or_func: BaseSerializer | SerializerFuncType,
+        serializer_or_func: BaseSerializer | FuncSerializerType,
         /,
         *,
         match_source_subtype: bool = True,
@@ -188,8 +187,8 @@ def serialize(
     obj: Any,
     /,
     *serializers: Serializer[Any, Any],
+    params: SerializationParams | None = None,
     context: Any = None,
-    sort_sets: bool = True,
     source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType: ...
 
@@ -197,11 +196,11 @@ def serialize(
 @overload
 def serialize(
     obj: Any,
-    registry: SerializerRegistry,
     /,
     *,
+    params: SerializationParams | None = None,
+    registry: SerializerRegistry | None = None,
     context: Any = None,
-    sort_sets: bool = True,
     source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType: ...
 
@@ -209,9 +208,10 @@ def serialize(
 def serialize(
     obj: Any,
     /,
-    *serializers_or_registry: Serializer[Any, Any] | SerializerRegistry,
+    *serializers: Serializer[Any, Any],
+    params: SerializationParams | None = None,
+    registry: SerializerRegistry | None = None,
     context: Any = None,
-    sort_sets: bool = True,
     source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType:
     """
@@ -231,16 +231,13 @@ def serialize(
         if source_type is not None
         else Annotation(type(obj))
     )
-    registry = normalize_to_registry(
-        Serializer, SerializerRegistry, *serializers_or_registry
-    )
+    registry = registry or SerializerRegistry(*serializers)
     engine = SerializationEngine(registry=registry)
-    params = SerializationParams(sort_sets=sort_sets)
     frame = SerializationFrame(
         source_annotation=source_annotation,
         target_annotation=JSON_SERIALIZABLE_ANNOTATION,
         context=context,
-        params=params,
+        params=params or DEFAULT_PARAMS,
         engine=engine,
     )
     return engine.process(obj, frame)
@@ -269,6 +266,8 @@ def _serialize_list(obj: ValueCollectionType, frame: SerializationFrame) -> list
     else:
         return obj_list
 
+
+DEFAULT_PARAMS = SerializationParams()
 
 # TODO: add more serializers: dataclasses, ...
 JSON_REGISTRY = SerializerRegistry(
