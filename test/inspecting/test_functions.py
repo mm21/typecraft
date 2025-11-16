@@ -136,12 +136,31 @@ def test_parameter_inspection():
     sig = SignatureInfo(func1)
 
     assert len(sig.params) == 2
-    assert sig.params["x"].parameter.kind == Parameter.POSITIONAL_ONLY
-    assert sig.params["y"].parameter.kind == Parameter.POSITIONAL_ONLY
+    x, y = sig.params["x"], sig.params["y"]
+
+    assert x.parameter.kind == Parameter.POSITIONAL_ONLY
+    assert x.annotation
+    assert x.annotation.raw is int
+    assert x.index == 0
+
+    assert y.parameter.kind == Parameter.POSITIONAL_ONLY
+    assert y.annotation
+    assert y.annotation.raw is str
+    assert y.index == 1
 
     params = list(sig.get_params(annotation=int, positional_only=True))
     assert len(params) == 1
-    assert params[0].index == 0
+    x = params[0]
+    assert x.annotation
+    assert x.annotation.raw is int
+    assert x.index == 0
+
+    params = list(sig.get_params(annotation=str, positional_only=True))
+    assert len(params) == 1
+    y = params[0]
+    assert y.annotation
+    assert y.annotation.raw is str
+    assert y.index == 1
 
     def func2(x: int, *, y: str, z: bool) -> None:
         pass
@@ -150,14 +169,16 @@ def test_parameter_inspection():
     sig = SignatureInfo(func2)
 
     assert len(sig.params) == 3
-    assert sig.params["x"].parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
-    assert sig.params["y"].parameter.kind == Parameter.KEYWORD_ONLY
-    assert sig.params["z"].parameter.kind == Parameter.KEYWORD_ONLY
+    x, y, z = sig.params["x"], sig.params["y"], sig.params["z"]
+    assert x.parameter.kind == Parameter.POSITIONAL_OR_KEYWORD
+    assert y.parameter.kind == Parameter.KEYWORD_ONLY
+    assert z.parameter.kind == Parameter.KEYWORD_ONLY
 
     params = list(sig.get_params(keyword_only=True))
     assert len(params) == 2
-    assert params[0] is sig.params["y"]
-    assert params[1] is sig.params["z"]
+    x, y = params
+    assert x is sig.params["y"]
+    assert y is sig.params["z"]
 
     # default values
     def func3(x: int, y: str = "default", z: Optional[bool] = None) -> int:
@@ -166,9 +187,24 @@ def test_parameter_inspection():
     sig = SignatureInfo(func3)
 
     assert len(sig.params) == 3
-    assert sig.params["x"].parameter.default == Parameter.empty
-    assert sig.params["y"].parameter.default == "default"
-    assert sig.params["z"].parameter.default is None
+    x, y, z = sig.params["x"], sig.params["y"], sig.params["z"]
+    assert x.parameter.default == Parameter.empty
+    assert y.parameter.default == "default"
+    assert z.parameter.default is None
+
+    # Any parameter
+    def func4(x: Any, y: str) -> tuple[Any, str]:
+        return (x, y)
+
+    sig = SignatureInfo(func4)
+
+    # specific annotation should not match Any
+    params = list(sig.get_params(annotation=str))
+    assert len(params) == 1
+    y = params[0]
+    assert y.annotation
+    assert y.annotation.raw is str
+    assert y.index == 1
 
 
 def test_bound_method():

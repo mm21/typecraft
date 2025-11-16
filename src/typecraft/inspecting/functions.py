@@ -16,7 +16,7 @@ from typing import (
     overload,
 )
 
-from .annotations import Annotation
+from .annotations import ANY, Annotation
 
 __all__ = [
     "ParameterInfo",
@@ -144,7 +144,7 @@ class SignatureInfo:
         Get params filtered by annotation (or subtype thereof) and kind.
         """
         kinds: set[int] = set()
-        ann = Annotation._normalize(annotation) if annotation else None
+        filter_ann = Annotation._normalize(annotation) if annotation else None
 
         # setup kind filter
         if positional:
@@ -162,17 +162,22 @@ class SignatureInfo:
         if var_keyword:
             kinds.add(Parameter.VAR_KEYWORD)
 
-        def check_annotation(param_ann: Annotation | None) -> bool:
-            if not ann:
+        def check_annotation(check_ann: Annotation | None) -> bool:
+            if not filter_ann:
                 # no annotation filter specified
                 return True
-            if not param_ann:
+            if not check_ann:
                 # annotation filter specified, but this parameter is not annotated
                 return False
-            return param_ann.is_subtype(ann)
+            if filter_ann != ANY and check_ann == ANY:
+                # annotation filter is not Any, but this parameter is Any
+                # - asking for a specific type, which Any would normally match
+                return False
+            return check_ann.is_subtype(filter_ann)
 
         return (
             p
             for p in self.params.values()
-            if p.parameter.kind in kinds and check_annotation(p.annotation)
+            if (len(kinds) == 0 or p.parameter.kind in kinds)
+            and check_annotation(p.annotation)
         )
