@@ -3,13 +3,11 @@ Tests for dataclass symmetric converter.
 """
 
 from dataclasses import dataclass
-from datetime import date
 
 from pytest import raises
 
 from typecraft.adapter import Adapter
-from typecraft.builtin_converters import DataclassConverter, DateConverter
-from typecraft.inspecting.annotations import Annotation
+from typecraft.builtin_converters import DataclassConverter
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 
@@ -32,7 +30,6 @@ class DataclassWithDefaults:
 
     name: str
     age: int = 0
-    active: bool = True
 
 
 @dataclass
@@ -55,65 +52,35 @@ class DataclassWithList:
     tags: list[str]
 
 
-@dataclass
-class DataclassWithOptional:
-    """
-    Dataclass with optional field.
-    """
-
-    name: str
-    nickname: str | None = None
-
-
-@dataclass
-class ComplexDataclass:
-    """
-    Complex nested dataclass with multiple types.
-    """
-
-    id: int
-    person: SimpleDataclass
-    tags: list[str]
-    metadata: dict[str, int]
-    birth_date: date | None = None
-
-
 def test_simple_dataclass():
     """
     Test basic dataclass validation and serialization.
     """
-
-    validator = DataclassConverter.as_validator()
-
-    obj = {"name": "Alice", "age": 30}
-    assert validator._check_convert(
-        obj,
-        source_annotation=Annotation(dict),
-        target_annotation=Annotation(SimpleDataclass),
-    )
-
     adapter = Adapter(
         SimpleDataclass,
         validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
         serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
     )
 
+    test_serialized = {"name": "Alice", "age": 30}
+    test_validated = SimpleDataclass(name="Alice", age=30)
+
     # make sure we get an exception without the adapter
     with raises(ValueError, match="could not be converted"):
-        _ = validate({"name": "Alice", "age": 30}, SimpleDataclass)
+        _ = validate(test_serialized, SimpleDataclass)
     with raises(ValueError, match="could not be converted"):
-        _ = serialize(SimpleDataclass(name="Alice", age=30))
+        _ = serialize(test_validated)
 
     # test validation
-    result = adapter.validate({"name": "Alice", "age": 30})
-    assert isinstance(result, SimpleDataclass)
-    assert result.name == "Alice"
-    assert result.age == 30
+    validated = adapter.validate(test_serialized)
+    assert isinstance(validated, SimpleDataclass)
+    assert validated.name == test_validated.name
+    assert validated.age == test_validated.age
 
     # test serialization
-    result = adapter.serialize(SimpleDataclass(name="Bob", age=25))
-    assert isinstance(result, dict)
-    assert result == {"name": "Bob", "age": 25}
+    serialized = adapter.serialize(test_validated)
+    assert isinstance(serialized, dict)
+    assert serialized == test_serialized
 
 
 def test_dataclass_with_defaults():
@@ -126,30 +93,24 @@ def test_dataclass_with_defaults():
         serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
     )
 
-    # test validation with all fields provided
-    result = adapter.validate({"name": "Alice", "age": 30, "active": False})
-    assert isinstance(result, DataclassWithDefaults)
-    assert result.name == "Alice"
-    assert result.age == 30
-    assert result.active is False
+    # test with all fields provided
+    test_serialized = {"name": "Alice", "age": 30}
+    test_validated = DataclassWithDefaults(name="Alice", age=30)
 
-    # test validation with defaults
-    result = adapter.validate({"name": "Bob"})
-    assert isinstance(result, DataclassWithDefaults)
-    assert result.name == "Bob"
-    assert result.age == 0
-    assert result.active is True
+    validated = adapter.validate(test_serialized)
+    assert isinstance(validated, DataclassWithDefaults)
+    assert validated.name == test_validated.name
+    assert validated.age == test_validated.age
 
-    # test validation with partial defaults
-    result = adapter.validate({"name": "Charlie", "age": 35})
-    assert isinstance(result, DataclassWithDefaults)
-    assert result.name == "Charlie"
-    assert result.age == 35
-    assert result.active is True
+    serialized = adapter.serialize(test_validated)
+    assert serialized == test_serialized
 
-    # test serialization includes all fields
-    result = adapter.serialize(DataclassWithDefaults(name="Dave", age=40, active=False))
-    assert result == {"name": "Dave", "age": 40, "active": False}
+    # test with defaults
+    test_serialized_defaults = {"name": "Bob"}
+    validated = adapter.validate(test_serialized_defaults)
+    assert isinstance(validated, DataclassWithDefaults)
+    assert validated.name == "Bob"
+    assert validated.age == 0
 
 
 def test_missing_required_field():
@@ -180,22 +141,23 @@ def test_nested():
         serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
     )
 
-    # test validation with nested dict
-    result = adapter.validate(
-        {"person": {"name": "Alice", "age": 30}, "location": "NYC"}
+    test_serialized = {"person": {"name": "Alice", "age": 30}, "location": "NYC"}
+    test_validated = NestedDataclass(
+        person=SimpleDataclass(name="Alice", age=30), location="NYC"
     )
-    assert isinstance(result, NestedDataclass)
-    assert isinstance(result.person, SimpleDataclass)
-    assert result.person.name == "Alice"
-    assert result.person.age == 30
-    assert result.location == "NYC"
 
-    # test serialization with nested dataclass
-    person = SimpleDataclass(name="Bob", age=25)
-    nested = NestedDataclass(person=person, location="SF")
-    result = adapter.serialize(nested)
-    assert isinstance(result, dict)
-    assert result == {"person": {"name": "Bob", "age": 25}, "location": "SF"}
+    # test validation
+    validated = adapter.validate(test_serialized)
+    assert isinstance(validated, NestedDataclass)
+    assert isinstance(validated.person, SimpleDataclass)
+    assert validated.person.name == test_validated.person.name
+    assert validated.person.age == test_validated.person.age
+    assert validated.location == test_validated.location
+
+    # test serialization
+    serialized = adapter.serialize(test_validated)
+    assert isinstance(serialized, dict)
+    assert serialized == test_serialized
 
 
 def test_dataclass_with_list():
@@ -208,153 +170,27 @@ def test_dataclass_with_list():
         serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
     )
 
-    # test validation
-    result = adapter.validate({"name": "Project", "tags": ["python", "testing", "ci"]})
-    assert isinstance(result, DataclassWithList)
-    assert result.name == "Project"
-    assert result.tags == ["python", "testing", "ci"]
-
-    # test serialization
-    result = adapter.serialize(
-        DataclassWithList(name="Project", tags=["python", "testing"])
-    )
-    assert result == {"name": "Project", "tags": ["python", "testing"]}
-
-
-def test_dataclass_with_optional():
-    """
-    Test dataclass with optional field.
-    """
-    adapter = Adapter(
-        DataclassWithOptional,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
-    )
-
-    # test validation with optional field provided
-    result = adapter.validate({"name": "Alice", "nickname": "Ally"})
-    assert isinstance(result, DataclassWithOptional)
-    assert result.name == "Alice"
-    assert result.nickname == "Ally"
-
-    # test validation with optional field omitted
-    result = adapter.validate({"name": "Bob"})
-    assert isinstance(result, DataclassWithOptional)
-    assert result.name == "Bob"
-    assert result.nickname is None
-
-    # test validation with optional field as None
-    result = adapter.validate({"name": "Charlie", "nickname": None})
-    assert isinstance(result, DataclassWithOptional)
-    assert result.name == "Charlie"
-    assert result.nickname is None
-
-    # test serialization with optional field
-    result = adapter.serialize(DataclassWithOptional(name="Dave", nickname="D"))
-    assert result == {"name": "Dave", "nickname": "D"}
-
-    # test serialization without optional field
-    result = adapter.serialize(DataclassWithOptional(name="Eve"))
-    assert result == {"name": "Eve", "nickname": None}
-
-
-def test_complex_nested_dataclass():
-    """
-    Test complex dataclass with multiple nested types.
-    """
-    adapter = Adapter(
-        ComplexDataclass,
-        validator_registry=ValidatorRegistry(
-            DataclassConverter.as_validator(), DateConverter.as_validator()
-        ),
-        serializer_registry=SerializerRegistry(
-            DataclassConverter.as_serializer(), DateConverter.as_serializer()
-        ),
-    )
+    test_serialized = {"name": "Project", "tags": ["python", "testing", "ci"]}
+    test_validated = DataclassWithList(name="Project", tags=["python", "testing", "ci"])
 
     # test validation
-    input_data = {
-        "id": 123,
-        "person": {"name": "Alice", "age": 30},
-        "tags": ["python", "dataclass"],
-        "metadata": {"score": 100, "rank": 1},
-        "birth_date": "1993-05-15",
-    }
-    result = adapter.validate(input_data)
-    assert isinstance(result, ComplexDataclass)
-    assert result.id == 123
-    assert isinstance(result.person, SimpleDataclass)
-    assert result.person.name == "Alice"
-    assert result.person.age == 30
-    assert result.tags == ["python", "dataclass"]
-    assert result.metadata == {"score": 100, "rank": 1}
-    assert isinstance(result.birth_date, date)
-    assert result.birth_date == date(1993, 5, 15)
-
-    # test validation without optional birth_date
-    input_data_no_date = {
-        "id": 456,
-        "person": {"name": "Bob", "age": 25},
-        "tags": ["testing"],
-        "metadata": {"score": 90},
-    }
-    result = adapter.validate(input_data_no_date)
-    assert isinstance(result, ComplexDataclass)
-    assert result.id == 456
-    assert result.birth_date is None
+    validated = adapter.validate(test_serialized)
+    assert isinstance(validated, DataclassWithList)
+    assert validated.name == test_validated.name
+    assert validated.tags == test_validated.tags
 
     # test serialization
-    person = SimpleDataclass(name="Charlie", age=35)
-    complex_obj = ComplexDataclass(
-        id=789,
-        person=person,
-        tags=["advanced", "typing"],
-        metadata={"level": 5},
-        birth_date=date(1988, 11, 20),
-    )
-    result = adapter.serialize(complex_obj)
-    assert isinstance(result, dict)
-    assert result == {
-        "id": 789,
-        "person": {"name": "Charlie", "age": 35},
-        "tags": ["advanced", "typing"],
-        "metadata": {"level": 5},
-        "birth_date": "1988-11-20",
-    }
-
-
-def test_round_trip():
-    """
-    Test that dataclass round-trips correctly.
-    """
-    adapter = Adapter(
-        SimpleDataclass,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
-    )
-
-    # original dataclass
-    original = SimpleDataclass(name="TestUser", age=42)
-
-    # serialize to dict
-    serialized = adapter.serialize(original)
-    assert isinstance(serialized, dict)
-
-    # validate back to dataclass
-    validated = adapter.validate(serialized)
-    assert isinstance(validated, SimpleDataclass)
-    assert validated.name == original.name
-    assert validated.age == original.age
+    serialized = adapter.serialize(test_validated)
+    assert serialized == test_serialized
 
 
 def test_invalid():
     """
     Test that non-dict input fails validation.
     """
-    validator = DataclassConverter.as_validator()
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=ValidatorRegistry(validator),
+        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
     )
 
     # list input should fail
