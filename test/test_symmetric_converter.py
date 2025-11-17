@@ -66,7 +66,7 @@ class RangeConverter(BaseSymmetricConverter[list[int], range]):
 
 def test_basic():
     """
-    Test `BaseSymmetricConverter` subclasses.
+    Test basic `BaseSymmetricConverter` subclass.
     """
     validator = BasicConverter.as_validator()
     serializer = BasicConverter.as_serializer()
@@ -99,7 +99,7 @@ def test_basic():
 
 def test_range():
     """
-    Test range adapter for more complex types.
+    Test range converter for more complex types.
     """
     validator = RangeConverter.as_validator()
     serializer = RangeConverter.as_serializer()
