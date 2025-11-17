@@ -21,8 +21,8 @@ from typing import (
     get_origin,
 )
 
-from ._utils import safe_issubclass
 from .generics import extract_args, normalize_args
+from .utils import safe_issubclass
 
 __all__ = [
     "ANY",

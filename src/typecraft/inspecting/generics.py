@@ -14,7 +14,7 @@ from typing import (
     overload,
 )
 
-from ._utils import safe_issubclass
+from .utils import safe_issubclass
 
 __all__ = [
     "extract_args",

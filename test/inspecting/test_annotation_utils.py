@@ -95,9 +95,21 @@ def test_is_subtype_generics():
     assert is_subtype(MyListSubclass, Sequence[int])
     assert not is_subtype(MyListSubclass, Sequence[str])
 
-    # subclass to protocol comparisons
+    # nested generics with ABCs
+    assert is_subtype(list[list[int]], Sequence[list[int]])
+    assert is_subtype(list[list[int]], Sequence[Sequence[int]])
+
+    class MyListOfLists(list[list[int]]):
+        pass
+
+    assert is_subtype(MyListOfLists, Sequence[list[int]])
+    assert is_subtype(MyListOfLists, Sequence[Sequence[int]])
+
+
+def test_is_subtype_protocols():
+    # based on method
     @runtime_checkable
-    class ProtocolTest(Protocol):
+    class TestProtocol(Protocol):
         def test(self):
             pass
 
@@ -108,17 +120,27 @@ def test_is_subtype_generics():
     class Concrete(Base[int]):
         pass
 
-    assert is_subtype(Concrete, ProtocolTest)
+    assert is_subtype(Concrete, TestProtocol)
 
-    # nested generics with ABCs
-    assert is_subtype(list[list[int]], Sequence[list[int]])
-    assert is_subtype(list[list[int]], Sequence[Sequence[int]])
+    # based on attributes and methods (not natively supported)
+    @runtime_checkable
+    class TestAttrProtocol(Protocol):
+        attr: int
 
-    class MyListOfLists(list[list[int]]):
-        pass
+        def method(self):
+            pass
 
-    assert is_subtype(MyListOfLists, Sequence[list[int]])
-    assert is_subtype(MyListOfLists, Sequence[Sequence[int]])
+    class ConcreteAttr:
+        attr: int
+
+        def method(self):
+            pass
+
+    class ConcreteAttr2(ConcreteAttr):
+        attr2: int
+
+    assert is_subtype(ConcreteAttr, TestAttrProtocol)
+    assert is_subtype(ConcreteAttr2, TestAttrProtocol)
 
 
 def test_is_instance():
