@@ -164,7 +164,7 @@ def _create_frame(
     return SerializationFrame(
         source_annotation=Annotation(source_annotation),
         target_annotation=Annotation(target_annotation),
-        context=None,
         params=params or SerializationParams(sort_sets=True),
+        context=None,
         engine=engine,
     )

@@ -166,20 +166,9 @@ def validate[T](
     target_type: type[T],
     /,
     *validators: Validator[Any, T],
-    params: ValidationParams | None = None,
-    context: Any = None,
-) -> T: ...
-
-
-@overload
-def validate[T](
-    obj: Any,
-    target_type: type[T],
-    /,
-    *,
-    params: ValidationParams | None = None,
     registry: ValidatorRegistry | None = None,
-    context: Any = None,
+    params: ValidationParams | None = None,
+    context: Any | None = None,
 ) -> T: ...
 
 
@@ -189,20 +178,9 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: Validator[Any, Any],
-    params: ValidationParams | None = None,
-    context: Any = None,
-) -> Any: ...
-
-
-@overload
-def validate(
-    obj: Any,
-    target_type: Annotation | Any,
-    /,
-    *,
-    params: ValidationParams | None = None,
     registry: ValidatorRegistry | None = None,
-    context: Any = None,
+    params: ValidationParams | None = None,
+    context: Any | None = None,
 ) -> Any: ...
 
 
@@ -211,64 +189,95 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: Validator[Any, Any],
-    params: ValidationParams | None = None,
     registry: ValidatorRegistry | None = None,
-    context: Any = None,
+    params: ValidationParams | None = None,
+    context: Any | None = None,
 ) -> Any:
     """
-    Recursively validate object by type, converting to the target type if needed.
+    Recursively validate object by type, converting to the target type if configured
+    by `params`.
 
-    Handles nested parameterized types like list[list[int]] by recursively
+    If both `validators` and `registry` are passed, a new registry is created with
+    `validators` appended.
+
+    Handles nested parameterized types like `list[list[int]]` by recursively
     applying validation and conversion at each level.
+
+    :param obj: Object to validate
+    :param target_type: Type to validate to
+    :param validators: Custom type-based validators
+    :param registry: Registry of custom type-based validators
+    :param params: Parameters to configure validation behavior
+    :param context: User-defined context passed to validators
     """
-    target_annotation = Annotation._normalize(target_type)
-    registry = registry or ValidatorRegistry(*validators)
-    engine = ValidationEngine(registry=registry)
-    frame = ValidationFrame(
-        source_annotation=Annotation(type(obj)),
-        target_annotation=target_annotation,
+    engine = ValidationEngine._setup(converters=validators, registry=registry)
+    frame = ValidationFrame._setup(
+        obj=obj,
+        source_type=None,
+        target_type=target_type,
+        params=params,
+        default_params=DEFAULT_PARAMS,
         context=context,
-        params=params or DEFAULT_PARAMS,
         engine=engine,
     )
     return engine.process(obj, frame)
 
 
-# TODO: take validators_or_registry
-# TODO: reuse code w/validate: engine constructor/first frame constructor, ...
+@overload
 def normalize_to_list[T](
     obj_or_objs: Any,
-    target_type: type[T],
+    item_type: type[T],
     /,
     *validators: Validator[Any, T],
     params: ValidationParams | None = None,
-    context: Any = None,
-) -> list[T]:
+    registry: ValidatorRegistry | None = None,
+    context: Any | None = None,
+) -> list[T]: ...
+
+
+@overload
+def normalize_to_list(
+    obj_or_objs: Any,
+    item_type: Annotation | Any,
+    /,
+    *validators: Validator[Any, Any],
+    params: ValidationParams | None = None,
+    registry: ValidatorRegistry | None = None,
+    context: Any | None = None,
+) -> list[Any]: ...
+
+
+def normalize_to_list(
+    obj_or_objs: Any,
+    item_type: Annotation | Any,
+    /,
+    *validators: Validator[Any, Any],
+    registry: ValidatorRegistry | None = None,
+    params: ValidationParams | None = None,
+    context: Any | None = None,
+) -> list[Any]:
     """
-    Validate object(s) and normalize to a list of the target type.
+    Validate object(s) and normalize to a list of the item type.
 
     Only built-in collection types and generators are expanded.
     Custom types (even if iterable) are treated as single objects.
     """
-    # normalize to a collection of objects
-    if isinstance(obj_or_objs, VALUE_COLLECTION_TYPES):
-        objs = obj_or_objs
-    else:
-        objs = [obj_or_objs]
-
-    target_annotation = Annotation._normalize(target_type)
-    registry = ValidatorRegistry(*validators)
-    engine = ValidationEngine(registry=registry)
-
-    # validate each object and place in a new list
+    objs = (
+        obj_or_objs
+        if isinstance(obj_or_objs, VALUE_COLLECTION_TYPES)
+        else [obj_or_objs]
+    )
+    engine = ValidationEngine._setup(converters=validators, registry=registry)
     return [
         engine.process(
             o,
-            ValidationFrame(
-                source_annotation=Annotation(type(o)),
-                target_annotation=target_annotation,
+            ValidationFrame._setup(
+                obj=o,
+                source_type=None,
+                target_type=item_type,
+                params=params,
+                default_params=DEFAULT_PARAMS,
                 context=context,
-                params=params or DEFAULT_PARAMS,
                 engine=engine,
             ),
         )

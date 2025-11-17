@@ -234,7 +234,7 @@ def _create_frame(
     return ValidationFrame(
         source_annotation=Annotation(source_annotation),
         target_annotation=Annotation(target_annotation),
-        context=None,
         params=params or ValidationParams(strict=True),
+        context=None,
         engine=engine,
     )

@@ -173,7 +173,7 @@ class Adapter[T]:
         self,
         obj: Any,
         *,
-        context: Any = None,
+        context: Any | None = None,
     ) -> T:
         """
         Validate an object to the validated type.
@@ -194,7 +194,7 @@ class Adapter[T]:
         self,
         obj: T,
         *,
-        context: Any = None,
+        context: Any | None = None,
     ) -> JsonSerializableType:
         """
         Serialize an object from the validated type.

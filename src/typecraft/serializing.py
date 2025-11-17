@@ -78,7 +78,7 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation | None = None,
-        context: Any = None,
+        context: Any | None = ...,
     ) -> Any:
         return super().recurse(
             obj,
@@ -182,62 +182,43 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         return (JSON_REGISTRY,)
 
 
-@overload
 def serialize(
     obj: Any,
     /,
     *serializers: Serializer[Any, Any],
-    params: SerializationParams | None = None,
-    context: Any = None,
-    source_type: Annotation | Any | None = None,
-) -> JsonSerializableType: ...
-
-
-@overload
-def serialize(
-    obj: Any,
-    /,
-    *,
-    params: SerializationParams | None = None,
     registry: SerializerRegistry | None = None,
-    context: Any = None,
-    source_type: Annotation | Any | None = None,
-) -> JsonSerializableType: ...
-
-
-def serialize(
-    obj: Any,
-    /,
-    *serializers: Serializer[Any, Any],
     params: SerializationParams | None = None,
-    registry: SerializerRegistry | None = None,
-    context: Any = None,
+    context: Any | None = None,
     source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType:
     """
-    Recursively serialize object by type, generally to built-in Python types.
+    Recursively serialize object by type to JSON-serializable types. Builtin types like
+    `date`, `tuple`, and `set` are converted with behavior configured by `params`.
 
-    Handles nested parameterized types by recursively applying serialization
-    at each level based on the actual object types (or optionally specified source type).
+    Handles nested parameterized types like `list[list[int]]` by recursively applying
+    serialization at each level based on the actual object types (or optionally
+    specified source type).
+    
+    Specifying the source type may be useful to match a custom serializer, e.g.
+    specifying `tuple[int, str]` would match a serializer with that source type
+    whereas the source type would be considered as `tuple[Any, ...]` otherwise.
 
     :param obj: Object to serialize
+    :param serializers: Custom type-based serializers
+    :param registry: Registry of custom type-based serializers
+    :param params:  Parameters to configure serialization behavior
     :param context: User-defined context passed to serializers
-    :param sort_sets: Whether to sort sets for deterministic output
     :param source_type: Optional source type annotation for type-specific \
     serialization; if `None`, type is inferred from the object
     """
-    source_annotation = (
-        Annotation._normalize(source_type)
-        if source_type is not None
-        else Annotation(type(obj))
-    )
-    registry = registry or SerializerRegistry(*serializers)
-    engine = SerializationEngine(registry=registry)
-    frame = SerializationFrame(
-        source_annotation=source_annotation,
-        target_annotation=JSON_SERIALIZABLE_ANNOTATION,
+    engine = SerializationEngine._setup(converters=serializers, registry=registry)
+    frame = SerializationFrame._setup(
+        obj=obj,
+        source_type=source_type,
+        target_type=JSON_SERIALIZABLE_ANNOTATION,
+        params=params,
+        default_params=DEFAULT_PARAMS,
         context=context,
-        params=params or DEFAULT_PARAMS,
         engine=engine,
     )
     return engine.process(obj, frame)

@@ -4,6 +4,7 @@ Low-level conversion capability, agnostic of validation vs serialization.
 
 from __future__ import annotations
 
+import itertools
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from functools import cached_property
@@ -100,14 +101,15 @@ class BaseConversionFrame[ParamsT]:
     Target type we're converting to.
     """
 
-    context: Any
-    """
-    User context passed at validation/serialization entry point.
-    """
-
     params: ParamsT
     """
     Parameters passed at validation/serialization entry point.
+    """
+
+    context: Any | None
+    """
+    User context passed at validation/serialization entry point. Can be overridden
+    when recursing into the next frame.
     """
 
     __engine: BaseConversionEngine
@@ -130,8 +132,8 @@ class BaseConversionFrame[ParamsT]:
         *,
         source_annotation: Annotation,
         target_annotation: Annotation,
-        context: Any,
         params: ParamsT,
+        context: Any | None,
         engine: BaseConversionEngine,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
@@ -155,10 +157,11 @@ class BaseConversionFrame[ParamsT]:
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation,
-        context: Any = ...,
+        context: Any | None = ...,
     ) -> Any:
         """
-        Create a new frame and recurse using the engine.
+        Create a new frame and recurse using the engine. `context` is replaced if not
+        `...`; otherwise it's passed through unchanged.
         """
         source_annotation_ = (
             Annotation(type(obj))
@@ -192,11 +195,12 @@ class BaseConversionFrame[ParamsT]:
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation | None = None,
-        context: Any = ...,
+        context: Any | None = ...,
         path_append: str | int | None = None,
     ) -> Self:
         """
-        Create a new frame with the arguments replaced if not None.
+        Create a new frame with the arguments replaced if not `None`, except `context`
+        which is replaced if not `...`.
         """
         path = (
             self.__path
@@ -211,6 +215,35 @@ class BaseConversionFrame[ParamsT]:
             engine=self.__engine,
             path=path,
             seen=self.__seen,
+        )
+
+    @classmethod
+    def _setup(
+        cls,
+        *,
+        obj: Any,
+        source_type: Annotation | Any | None,
+        target_type: Annotation | Any,
+        params: Any | None,
+        default_params: Any,
+        context: Any | None,
+        engine: BaseConversionEngine,
+    ) -> Self:
+        """
+        Create initial frame at conversion entry point.
+        """
+        source_annotation = (
+            Annotation._normalize(source_type)
+            if source_type is not None
+            else Annotation(type(obj))
+        )
+        target_annotation = Annotation._normalize(target_type)
+        return cls(
+            source_annotation=source_annotation,
+            target_annotation=target_annotation,
+            params=params if params is not None else default_params,
+            context=context,
+            engine=engine,
         )
 
 
@@ -661,6 +694,11 @@ class BaseConversionEngine[
     behavior.
     """
 
+    __registry_cls: type[RegistryT]
+    """
+    Registry class which with this conversion engine is parameterized.
+    """
+
     __user_registry: RegistryT
     """
     User-registered converters.
@@ -671,6 +709,13 @@ class BaseConversionEngine[
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(registry={self.__user_registry})"
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.__registry_cls = cast(
+            type[RegistryT],
+            extract_arg(cls, BaseConversionEngine, "RegistryT", BaseConverterRegistry),
+        )
 
     @property
     def registry(self) -> RegistryT:
@@ -722,6 +767,22 @@ class BaseConversionEngine[
         Get builtin registries to use for conversion based on the parameters.
         """
 
+    @classmethod
+    def _setup[ConverterT](
+        cls,
+        *,
+        converters: tuple[ConverterT, ...],
+        registry: RegistryT | None,
+    ) -> Self:
+        """
+        Setup engine from user-provided args.
+        """
+        if converters and registry:
+            registry_ = cls.__registry_cls(*registry._converters, *converters)
+        else:
+            registry_ = registry or cls.__registry_cls(*converters)
+        return cls(registry=registry_)
+
     def _process_collection(self, obj: Any, frame: FrameT) -> Any:
         """
         Process collection by recursing into items.
@@ -765,19 +826,14 @@ class BaseConversionEngine[
     def _find_converter(
         self, obj: Any, frame: FrameT, target_annotation: Annotation
     ) -> BaseConverter | None:
-        for registry in (self.__user_registry, *self._get_builtin_registries(frame)):
+        for registry in itertools.chain(
+            (self.__user_registry,), self._get_builtin_registries(frame)
+        ):
             if converter := registry.find(
                 obj, frame.source_annotation, target_annotation
             ):
                 return converter
         return None
-
-    @property
-    def __registry_cls(self) -> type[RegistryT]:
-        registry_cls = extract_arg(
-            type(self), BaseConversionEngine, "RegistryT", BaseConverterRegistry
-        )
-        return cast(type[RegistryT], registry_cls)
 
     @cached_property
     def __is_serializing(self) -> bool:
