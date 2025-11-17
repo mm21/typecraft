@@ -162,11 +162,11 @@ def test_missing_required_field():
     )
 
     # missing 'age' field
-    with raises(ValueError, match="Missing required field 'age'"):
+    with raises(ValueError, match="missing 1 required positional argument: 'age'"):
         _ = adapter.validate({"name": "Alice"})
 
     # missing 'name' field
-    with raises(ValueError, match="Missing required field 'name'"):
+    with raises(ValueError, match="missing 1 required positional argument: 'name'"):
         _ = adapter.validate({"age": 30})
 
 

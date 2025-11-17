@@ -93,13 +93,8 @@ class DataclassConverter(BaseSymmetricConverter[dict[str, Any], DataclassProtoco
 
             # check if field is present in input
             if field_name not in obj:
-                # use default if available
-                if field.default is not field.default_factory is not ...:
-                    # field has no default or default_factory
-                    raise ValueError(
-                        f"Missing required field '{field_name}' for dataclass {dataclass_type.__name__}"
-                    )
-                # field will use its default, skip validation
+                # let TypeError be raised later upon __init__, which will aggregate
+                # all missing arguments
                 continue
 
             # get field's type annotation
