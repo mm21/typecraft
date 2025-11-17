@@ -1,14 +1,14 @@
 """
-Test adapting module functionality.
+Test `BaseSymmetricConverter`.
 """
 
 from pytest import raises
 
-from typecraft.adapting import Adapter, BaseAdapter
+from typecraft.adapter import Adapter
 from typecraft.serializing import SerializationFrame, SerializerRegistry, serialize
+from typecraft.symmetric_converter import BaseSymmetricConverter
 from typecraft.validating import (
     ValidationFrame,
-    ValidationParams,
     ValidatorRegistry,
     validate,
 )
@@ -25,7 +25,7 @@ class MyClass:
         self.val = val
 
 
-class BasicAdapter(BaseAdapter[int, MyClass]):
+class BasicConverter(BaseSymmetricConverter[int, MyClass]):
     """
     Adapter for values stored as int but serialized as str.
     """
@@ -39,7 +39,7 @@ class BasicAdapter(BaseAdapter[int, MyClass]):
         return obj.val
 
 
-class RangeAdapter(BaseAdapter[list[int], range]):
+class RangeConverter(BaseSymmetricConverter[list[int], range]):
     """
     Adapter for range objects serialized as (start, stop) list.
     """
@@ -64,27 +64,12 @@ class RangeAdapter(BaseAdapter[list[int], range]):
         return [obj.start, obj.stop]
 
 
-def test_adapter():
+def test_basic():
     """
-    Test `Adapter`.
+    Test `BaseSymmetricConverter` subclasses.
     """
-    adapter = Adapter(int, validation_params=ValidationParams(strict=False))
-
-    # validate
-    result = adapter.validate("123")
-    assert result == 123
-
-    # serialize
-    result = adapter.serialize(123)
-    assert result == 123
-
-
-def test_base_adapter():
-    """
-    Test BaseAdapter subclasses.
-    """
-    validator = BasicAdapter.as_validator()
-    serializer = BasicAdapter.as_serializer()
+    validator = BasicConverter.as_validator()
+    serializer = BasicConverter.as_serializer()
 
     assert validator.source_annotation.raw is int
     assert validator.target_annotation.raw is MyClass
@@ -112,12 +97,12 @@ def test_base_adapter():
     assert result == 321
 
 
-def test_range_adapter():
+def test_range():
     """
     Test range adapter for more complex types.
     """
-    validator = RangeAdapter.as_validator()
-    serializer = RangeAdapter.as_serializer()
+    validator = RangeConverter.as_validator()
+    serializer = RangeConverter.as_serializer()
     adapter = Adapter(
         range,
         validator_registry=ValidatorRegistry(validator),
