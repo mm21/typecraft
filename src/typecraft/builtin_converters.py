@@ -4,13 +4,14 @@ Library of builtin converters.
 
 from __future__ import annotations
 
-from dataclasses import Field, fields
+from dataclasses import fields
 from datetime import date, datetime, time
-from typing import Any, ClassVar, Protocol, get_type_hints, runtime_checkable
+from typing import Any, get_type_hints
 
 from .inspecting.annotations import Annotation
 from .serializing import SerializationFrame
 from .symmetric_converter import BaseSymmetricConverter
+from .typedefs import DataclassProtocol
 from .validating import ValidationFrame
 
 
@@ -57,21 +58,14 @@ class TimeConverter(BaseSymmetricConverter[str, time]):
         return obj.isoformat()
 
 
-@runtime_checkable
-class DataclassProtocol(Protocol):
-    """
-    Runtime-checkable protocol for dataclass instances.
-    """
-
-    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
-
-
 class DataclassConverter(BaseSymmetricConverter[dict[str, Any], DataclassProtocol]):
     """
     Converter for dictionaries to/from dataclass instances.
 
     Recursively validates and serializes all fields based on their type annotations.
     """
+
+    match_validated_subtype = True
 
     @classmethod
     def validate(

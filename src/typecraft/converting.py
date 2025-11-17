@@ -252,6 +252,16 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
     Defines the interface for converters and mixins.
     """
 
+    match_source_subtype: bool = True
+    """
+    Whether to match subtypes of the source annotation.
+    """
+
+    match_target_subtype: bool = False
+    """
+    Whether to match subtypes of the target annotation.
+    """
+
     _source_annotation: Annotation
     """
     Annotation specifying type to convert from.
@@ -262,34 +272,23 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
     Annotation specifying type to convert to.
     """
 
-    _match_source_subtype: bool
-    """
-    Whether to match subtypes of the source annotation.
-    """
-
-    _match_target_subtype: bool
-    """
-    Whether to match subtypes of the target annotation.
-    """
-
     def __init__(
         self,
         *,
-        match_source_subtype: bool,
-        match_target_subtype: bool,
+        match_source_subtype: bool | None,
+        match_target_subtype: bool | None,
     ):
-        _ = (
-            match_source_subtype,
-            match_target_subtype,
-        )
-        ...
+        if match_source_subtype is not None:
+            self.match_source_subtype = match_source_subtype
+        if match_target_subtype is not None:
+            self.match_target_subtype = match_target_subtype
 
     @property
     def _params_str(self) -> str:
         s = f"source={self._source_annotation.raw}"
         t = f"target={self._target_annotation.raw}"
-        m_s = f"match_source_subtype={self._match_source_subtype}"
-        m_t = f"match_target_subtype={self._match_target_subtype}"
+        m_s = f"match_source_subtype={self.match_source_subtype}"
+        m_t = f"match_target_subtype={self.match_target_subtype}"
         return ", ".join((s, t, m_s, m_t))
 
     def can_convert(
@@ -347,12 +346,14 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     def __init__(
         self,
         *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
+        match_source_subtype: bool | None = None,
+        match_target_subtype: bool | None = None,
     ):
+        super().__init__(
+            match_source_subtype=match_source_subtype,
+            match_target_subtype=match_target_subtype,
+        )
         self._source_annotation, self._target_annotation = self._get_annotations()
-        self._match_source_subtype = match_source_subtype
-        self._match_target_subtype = match_target_subtype
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._params_str})"
@@ -365,14 +366,6 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     def target_annotation(self) -> Annotation:
         return self._target_annotation
 
-    @property
-    def match_source_subtype(self) -> bool:
-        return self._match_source_subtype
-
-    @property
-    def match_target_subtype(self) -> bool:
-        return self._match_target_subtype
-
     def check_match(
         self,
         source_annotation: Annotation,
@@ -383,20 +376,20 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         Check if this converter matches for the given object and annotation.
 
         Checks whether source and target annotations are compatible with this converter,
-        taking into account match_source_subtype and match_target_subtype settings.
+        taking into account `match_source_subtype` and `match_target_subtype` settings.
 
         :param source_annotation: Annotation of the source object
         :param target_annotation: Target type to convert to
         :return: True if converter matches
         """
         if not self.__check_match(
-            self._source_annotation, source_annotation, self._match_source_subtype
+            self._source_annotation, source_annotation, self.match_source_subtype
         ):
             return False
         if not self.__check_match(
             self._target_annotation,
             target_annotation,
-            self._match_target_subtype,
+            self.match_target_subtype,
             covariant=True,
         ):
             return False

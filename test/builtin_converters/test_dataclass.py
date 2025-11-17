@@ -9,6 +9,7 @@ from pytest import raises
 
 from typecraft.adapter import Adapter
 from typecraft.builtin_converters import DataclassConverter, DateConverter
+from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 
@@ -81,6 +82,16 @@ def test_simple_dataclass():
     """
     Test basic dataclass validation and serialization.
     """
+
+    validator = DataclassConverter.as_validator()
+
+    obj = {"name": "Alice", "age": 30}
+    assert validator._check_convert(
+        obj,
+        source_annotation=Annotation(dict),
+        target_annotation=Annotation(SimpleDataclass),
+    )
+
     adapter = Adapter(
         SimpleDataclass,
         validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),

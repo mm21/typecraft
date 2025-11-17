@@ -138,7 +138,7 @@ def test_union_types():
 
 def test_subclass():
     """
-    Test subclass of BaseGenericValidator.
+    Test subclass of BaseGenericSerializer.
     """
 
     class MySerializer(BaseGenericSerializer[int, str]):

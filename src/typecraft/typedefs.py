@@ -4,23 +4,37 @@ Basic definitions for type-based converting.
 
 from __future__ import annotations
 
+from dataclasses import Field
 from typing import (
     Any,
+    ClassVar,
     Generator,
+    Protocol,
+    runtime_checkable,
 )
 
 from .inspecting.annotations import Annotation, flatten_union
 
 type ValueCollectionType = list | tuple | set | frozenset | range | Generator
 """
-Collections which contain values rather than key-value mappings.
+Types convertible to builtin collections which contain values rather than key-value
+mappings.
 """
 
 
 type CollectionType = ValueCollectionType | dict
 """
-Superset of all collection types.
+Superset of all types convertible to builtin collections.
 """
+
+
+@runtime_checkable
+class DataclassProtocol(Protocol):
+    """
+    Runtime-checkable protocol for dataclasses.
+    """
+
+    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
 
 
 def _extract_types(type_: Any) -> tuple[type, ...]:

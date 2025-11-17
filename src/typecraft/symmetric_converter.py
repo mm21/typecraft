@@ -30,6 +30,10 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
     then implement the abstract validation and serialization methods.
     """
 
+    match_serialized_subtype: bool = True
+
+    match_validated_subtype: bool = False
+
     @classmethod
     def can_validate(cls, obj: SerializedT, /) -> bool:
         """
@@ -87,6 +91,8 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
             target_annotation,
             func=cls.validate,
             predicate_func=cls.can_validate,
+            match_source_subtype=cls.match_serialized_subtype,
+            match_target_subtype=cls.match_validated_subtype,
         )
 
     @classmethod
@@ -102,6 +108,8 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
             source_annotation,
             target_annotation,
             func=cls.serialize,
+            match_source_subtype=cls.match_validated_subtype,
+            match_target_subtype=cls.match_serialized_subtype,
         )
 
     @classmethod
