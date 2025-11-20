@@ -8,11 +8,11 @@ from dataclasses import fields
 from datetime import date, datetime, time
 from typing import Any, get_type_hints
 
-from .inspecting.annotations import Annotation
-from .serializing import SerializationFrame
+from ..inspecting.annotations import Annotation
+from ..typedefs import DataclassProtocol
+from .serializer import SerializationFrame
 from .symmetric_converter import BaseSymmetricConverter
-from .typedefs import DataclassProtocol
-from .validating import ValidationFrame
+from .validator import ValidationFrame
 
 
 class DateConverter(BaseSymmetricConverter[str, date]):
@@ -147,12 +147,12 @@ class DataclassConverter(BaseSymmetricConverter[dict[str, Any], DataclassProtoco
         return serialized_fields
 
 
-SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
+BUILTIN_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
     DateConverter,
     DateTimeConverter,
     TimeConverter,
     DataclassConverter,
 )
 
-VALIDATORS = tuple(c.as_validator() for c in SYMMETRIC_CONVERTERS)
-SERIALIZERS = tuple(c.as_serializer() for c in SYMMETRIC_CONVERTERS)
+BUILTIN_VALIDATORS = tuple(c.as_validator() for c in BUILTIN_CONVERTERS)
+BUILTIN_SERIALIZERS = tuple(c.as_serializer() for c in BUILTIN_CONVERTERS)

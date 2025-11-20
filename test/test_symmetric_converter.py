@@ -5,8 +5,8 @@ Test `BaseSymmetricConverter`.
 from pytest import raises
 
 from typecraft.adapter import Adapter
+from typecraft.converting.symmetric_converter import BaseSymmetricConverter
 from typecraft.serializing import SerializationFrame, SerializerRegistry, serialize
-from typecraft.symmetric_converter import BaseSymmetricConverter
 from typecraft.validating import (
     ValidationFrame,
     ValidatorRegistry,

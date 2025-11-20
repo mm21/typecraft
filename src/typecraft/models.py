@@ -24,9 +24,8 @@ from typing import (
     overload,
 )
 
-from typecraft.serializing import SerializationParams
-
 from .inspecting.annotations import Annotation
+from .serializing import SerializationParams
 from .validating import ValidationFrame, ValidationParams, Validator, validate
 
 __all__ = [

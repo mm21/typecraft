@@ -7,7 +7,11 @@ from datetime import date, datetime, time
 from pytest import raises
 
 from typecraft.adapter import Adapter
-from typecraft.builtin_converters import DateConverter, DateTimeConverter, TimeConverter
+from typecraft.converting.builtin_converters import (
+    DateConverter,
+    DateTimeConverter,
+    TimeConverter,
+)
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 

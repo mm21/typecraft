@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pytest import raises
 
 from typecraft.adapter import Adapter
-from typecraft.builtin_converters import DataclassConverter
+from typecraft.converting.builtin_converters import DataclassConverter
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 

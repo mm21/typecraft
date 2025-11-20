@@ -4,170 +4,45 @@ Serialization capability.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from types import NoneType
 from typing import (
     Any,
     Protocol,
     TypeVar,
     cast,
-    overload,
     runtime_checkable,
 )
 
-from .converting import (
-    BaseConversionEngine,
-    BaseConversionFrame,
-    BaseConverter,
-    BaseConverterRegistry,
-    FuncConverterMixin,
-    FuncConverterType,
-    GenericConverterMixin,
-    convert_to_list,
+from .converting.builtin_converters import BUILTIN_SERIALIZERS
+from .converting.engine import BaseConversionEngine
+from .converting.serializer import (
+    JSON_SERIALIZABLE_ANNOTATION,
+    BaseGenericSerializer,
+    BaseSerializer,
+    FuncSerializerType,
+    JsonSerializableType,
+    SerializationFrame,
+    SerializationParams,
+    Serializer,
+    SerializerRegistry,
 )
+from .converting.utils import convert_to_list
 from .inspecting.annotations import Annotation
 from .typedefs import ValueCollectionType
 
 __all__ = [
+    "JsonSerializableType",
     "FuncSerializerType",
     "SerializationParams",
     "SerializationFrame",
-    "SerializationEngine",
     "BaseSerializer",
+    "BaseGenericSerializer",
     "Serializer",
     "SerializerRegistry",
     "serialize",
 ]
 
-type JsonSerializableType = str | int | float | bool | NoneType | list[
-    JsonSerializableType
-] | dict[str | int | float | bool, JsonSerializableType]
-
-JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
-
-type FuncSerializerType[SourceT] = FuncConverterType[SourceT, Any, SerializationFrame]
-"""
-Function which serializes the given object from a specific source type and generally
-returns an object of built-in Python type. Can optionally take
-`SerializationFrame` as the second argument.
-"""
-
-
-@dataclass(kw_only=True)
-class SerializationParams:
-    """
-    Serialization params passed by user.
-    """
-
-    sort_sets: bool = True
-    """
-    Whether to sort sets, producing deterministic output.
-    """
-
-
-class SerializationFrame(BaseConversionFrame[SerializationParams]):
-    """
-    Internal recursion state per frame.
-    """
-
-    def recurse(
-        self,
-        obj: Any,
-        path_segment: str | int,
-        /,
-        *,
-        source_annotation: Annotation | None = None,
-        target_annotation: Annotation | None = None,
-        context: Any | None = ...,
-    ) -> Any:
-        return super().recurse(
-            obj,
-            path_segment,
-            source_annotation=source_annotation,
-            target_annotation=target_annotation or JSON_SERIALIZABLE_ANNOTATION,
-            context=context,
-        )
-
-
-class BaseSerializer[SourceT, TargetT](
-    BaseConverter[SourceT, TargetT, SerializationFrame]
-):
-    """
-    Base class for type-based serializers.
-    """
-
-
-class BaseGenericSerializer[SourceT, TargetT](
-    GenericConverterMixin,
-    BaseSerializer[SourceT, TargetT],
-):
-    """
-    Generic serializer: subclass with type parameters to determine source/target
-    type and implement `convert()`.
-    """
-
-
-class Serializer[SourceT, TargetT](
-    FuncConverterMixin[SourceT, TargetT, SerializationFrame],
-    BaseSerializer[SourceT, TargetT],
-):
-    """
-    Function-based serializer with optional type inference.
-    """
-
-
-class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
-    """
-    Registry for managing type serializers.
-
-    Provides efficient lookup of serializers based on source object type
-    and source annotation.
-    """
-
-    def __repr__(self) -> str:
-        return f"SerializerRegistry(serializers={self._converters})"
-
-    @property
-    def serializers(self) -> list[BaseSerializer]:
-        """
-        Get serializers currently registered.
-        """
-        return self._converters
-
-    @overload
-    def register(self, serializer: BaseSerializer, /): ...
-
-    @overload
-    def register(
-        self,
-        func: FuncSerializerType,
-        /,
-        *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
-    ): ...
-
-    def register(
-        self,
-        serializer_or_func: BaseSerializer | FuncSerializerType,
-        /,
-        *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
-    ):
-        """
-        Register a serializer.
-        """
-        serializer = (
-            serializer_or_func
-            if isinstance(serializer_or_func, BaseSerializer)
-            else Serializer.from_func(
-                serializer_or_func,
-                match_source_subtype=match_source_subtype,
-                match_target_subtype=match_target_subtype,
-            )
-        )
-        self._register_converter(serializer)
+# TODO
+_ = BUILTIN_SERIALIZERS
 
 
 class SerializationEngine(BaseConversionEngine[SerializerRegistry, SerializationFrame]):
