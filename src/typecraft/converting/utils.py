@@ -5,7 +5,7 @@ from typing import Any, Generator, Iterable, Sized
 
 from ..inspecting.annotations import ANY, Annotation, extract_tuple_args
 from ..inspecting.generics import extract_args
-from ..typedefs import (
+from ..types import (
     COLLECTION_TYPES,
 )
 from .converter import BaseConversionFrame

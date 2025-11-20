@@ -9,7 +9,7 @@ from datetime import date, datetime, time
 from typing import Any, get_type_hints
 
 from ..inspecting.annotations import Annotation
-from ..typedefs import DataclassProtocol
+from ..types import DataclassProtocol
 from .serializer import SerializationFrame
 from .symmetric_converter import BaseSymmetricConverter
 from .validator import ValidationFrame

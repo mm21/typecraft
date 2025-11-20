@@ -8,7 +8,7 @@ from typing import Any, Self, cast
 
 from ..inspecting.annotations import ANY, Annotation
 from ..inspecting.generics import extract_arg
-from ..typedefs import (
+from ..types import (
     COLLECTION_TYPES,
     ValueCollectionType,
 )

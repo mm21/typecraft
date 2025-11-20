@@ -28,7 +28,7 @@ from .converting.validator import (
     ValidatorRegistry,
 )
 from .inspecting.annotations import Annotation
-from .typedefs import VALUE_COLLECTION_TYPES, ValueCollectionType
+from .types import VALUE_COLLECTION_TYPES, ValueCollectionType
 
 __all__ = [
     "FuncValidatorType",

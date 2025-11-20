@@ -15,6 +15,10 @@ from typing import (
 
 from .inspecting.annotations import Annotation, flatten_union
 
+__all__ = [
+    "DataclassProtocol",
+]
+
 type ValueCollectionType = list | tuple | set | frozenset | range | Generator
 """
 Types convertible to builtin collections which contain values rather than key-value

@@ -27,7 +27,7 @@ from .converting.serializer import (
 )
 from .converting.utils import convert_to_list
 from .inspecting.annotations import Annotation
-from .typedefs import ValueCollectionType
+from .types import ValueCollectionType
 
 __all__ = [
     "JsonSerializableType",
