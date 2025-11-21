@@ -114,7 +114,7 @@ class BaseSerializer[SourceT, TargetT](
 
 
 class BaseGenericSerializer[SourceT, TargetT](
-    GenericConverterMixin,
+    GenericConverterMixin[SourceT, TargetT, SerializationFrame],
     BaseSerializer[SourceT, TargetT],
 ):
     """

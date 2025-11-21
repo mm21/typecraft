@@ -62,7 +62,7 @@ class BaseValidator[SourceT, TargetT](BaseConverter[SourceT, TargetT, Validation
 
 
 class BaseGenericValidator[SourceT, TargetT](
-    GenericConverterMixin,
+    GenericConverterMixin[SourceT, TargetT, ValidationFrame],
     BaseValidator[SourceT, TargetT],
 ):
     """

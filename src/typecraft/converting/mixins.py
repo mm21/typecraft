@@ -180,7 +180,9 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         return self.__source_annotation, self.__target_annotation
 
 
-class GenericConverterMixin:
+class GenericConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
+    ConverterInterface[SourceT, TargetT, FrameT]
+):
     """
     Mixin class for extracting source/destination types from type parameters.
     """

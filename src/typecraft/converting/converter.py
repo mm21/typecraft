@@ -326,6 +326,12 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
         :return: Converted object
         """
 
+    @abstractmethod
+    def _get_annotations(self) -> tuple[Annotation, Annotation]:
+        """
+        Get source and target annotations.
+        """
+
 
 class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     ConverterInterface[SourceT, TargetT, FrameT], ABC
@@ -388,12 +394,6 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         ):
             return False
         return True
-
-    @abstractmethod
-    def _get_annotations(self) -> tuple[Annotation, Annotation]:
-        """
-        Get source and target annotations.
-        """
 
     def _check_convert(
         self, obj: Any, source_annotation: Annotation, target_annotation: Annotation
