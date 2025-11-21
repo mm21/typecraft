@@ -8,6 +8,8 @@ from pytest import raises
 
 from typecraft.adapter import Adapter
 from typecraft.converting.builtin_converters import DataclassConverter
+from typecraft.converting.serializer import SerializationParams
+from typecraft.converting.validator import ValidationParams
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 
@@ -61,15 +63,17 @@ def test_simple_dataclass():
         validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
         serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
     )
+    validation_params = ValidationParams(use_builtin_validators=False)
+    serialization_params = SerializationParams(use_builtin_serializers=False)
 
     test_serialized = {"name": "Alice", "age": 30}
     test_validated = SimpleDataclass(name="Alice", age=30)
 
     # make sure we get an exception without the adapter
     with raises(ValueError, match="could not be converted"):
-        _ = validate(test_serialized, SimpleDataclass)
+        _ = validate(test_serialized, SimpleDataclass, params=validation_params)
     with raises(ValueError, match="could not be converted"):
-        _ = serialize(test_validated)
+        _ = serialize(test_validated, params=serialization_params)
 
     # test validation
     validated = adapter.validate(test_serialized)
@@ -81,6 +85,14 @@ def test_simple_dataclass():
     serialized = adapter.serialize(test_validated)
     assert isinstance(serialized, dict)
     assert serialized == test_serialized
+
+    # test roundtrip with builtin converter
+    assert validate(test_serialized, SimpleDataclass) == test_validated
+    assert serialize(test_validated) == test_serialized
+
+    # test invalid
+    with raises(ValueError):
+        _ = validate("not-a-dict", SimpleDataclass)
 
 
 def test_dataclass_with_defaults():

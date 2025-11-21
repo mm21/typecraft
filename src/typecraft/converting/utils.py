@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Generator, Iterable, Sized
+from typing import (
+    Any,
+    Generator,
+    Iterable,
+    Sized,
+)
 
 from ..inspecting.annotations import ANY, Annotation, extract_tuple_args
 from ..inspecting.generics import extract_args

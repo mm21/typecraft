@@ -6,10 +6,6 @@ from __future__ import annotations
 
 from typing import (
     Any,
-    Protocol,
-    TypeVar,
-    cast,
-    runtime_checkable,
 )
 
 from .converting.builtin_converters import BUILTIN_SERIALIZERS
@@ -24,10 +20,9 @@ from .converting.serializer import (
     SerializationParams,
     Serializer,
     SerializerRegistry,
+    serialize_to_list,
 )
-from .converting.utils import convert_to_list
 from .inspecting.annotations import Annotation
-from .types import ValueCollectionType
 
 __all__ = [
     "JsonSerializableType",
@@ -41,8 +36,16 @@ __all__ = [
     "serialize",
 ]
 
-# TODO
-_ = BUILTIN_SERIALIZERS
+
+DEFAULT_PARAMS = SerializationParams()
+
+BUILTIN_REGISTRY = SerializerRegistry(
+    Serializer(set | frozenset | tuple, list, func=serialize_to_list),
+    *BUILTIN_SERIALIZERS,
+)
+"""
+Registry to use for json serialization.
+"""
 
 
 class SerializationEngine(BaseConversionEngine[SerializerRegistry, SerializationFrame]):
@@ -54,7 +57,7 @@ class SerializationEngine(BaseConversionEngine[SerializerRegistry, Serialization
         self, frame: SerializationFrame
     ) -> tuple[SerializerRegistry, ...]:
         _ = frame
-        return (JSON_REGISTRY,)
+        return (BUILTIN_REGISTRY,) if frame.params.use_builtin_serializers else ()
 
 
 def serialize(
@@ -97,38 +100,3 @@ def serialize(
         engine=engine,
     )
     return engine.process(obj, frame)
-
-
-_T_contra = TypeVar("_T_contra", contravariant=True)
-
-
-# technically only one of __lt__/__gt__ is required
-@runtime_checkable
-class SupportsComparison(Protocol[_T_contra]):
-    def __lt__(self, other: _T_contra, /) -> bool: ...
-    def __gt__(self, other: _T_contra, /) -> bool: ...
-
-
-def _serialize_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
-    obj_list = convert_to_list(obj, frame)
-
-    if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
-        for o in obj_list:
-            if not isinstance(o, SupportsComparison):
-                raise ValueError(
-                    f"Object '{o}' does not support comparison, so containing set cannot be converted to a sorted list"
-                )
-        return sorted(cast(list[SupportsComparison], obj_list))
-    else:
-        return obj_list
-
-
-DEFAULT_PARAMS = SerializationParams()
-
-# TODO: add more serializers: dataclasses, ...
-JSON_REGISTRY = SerializerRegistry(
-    Serializer(set | frozenset | tuple, list, func=_serialize_list),
-)
-"""
-Registry to use for json serialization.
-"""

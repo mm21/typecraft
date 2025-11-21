@@ -42,8 +42,26 @@ __all__ = [
     "normalize_to_list",
 ]
 
-# TODO
-_ = BUILTIN_VALIDATORS
+DEFAULT_PARAMS = ValidationParams()
+
+NON_STRICT_REGISTRY = ValidatorRegistry(
+    Validator(Any, str),
+    Validator(str | bytes | bytearray, int),
+    Validator(str | int, float),
+    Validator(ValueCollectionType, list, func=convert_to_list),
+    Validator(ValueCollectionType, tuple, func=convert_to_tuple),
+    Validator(ValueCollectionType, set, func=convert_to_set),
+    Validator(ValueCollectionType, frozenset, func=convert_to_set),
+    Validator(Mapping, dict, func=convert_to_dict),
+)
+"""
+Registry of validators for non-strict mode.
+"""
+
+BUILTIN_REGISTRY = ValidatorRegistry(*BUILTIN_VALIDATORS)
+"""
+Registry of validators for builtin conversions.
+"""
 
 
 class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame]):
@@ -54,7 +72,11 @@ class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame])
     def _get_builtin_registries(
         self, frame: ValidationFrame
     ) -> tuple[ValidatorRegistry, ...]:
-        return () if frame.params.strict else (BUILTIN_REGISTRY,)
+        builtin_registry = (
+            (BUILTIN_REGISTRY,) if frame.params.use_builtin_validators else ()
+        )
+        non_strict_registry = () if frame.params.strict else (NON_STRICT_REGISTRY,)
+        return (*builtin_registry, *non_strict_registry)
 
 
 @overload
@@ -180,21 +202,3 @@ def normalize_to_list(
         )
         for o in objs
     ]
-
-
-DEFAULT_PARAMS = ValidationParams()
-
-# TODO: add more validators: dataclasses, ...
-BUILTIN_REGISTRY = ValidatorRegistry(
-    Validator(Any, str),
-    Validator(str | bytes | bytearray, int),
-    Validator(str | int, float),
-    Validator(ValueCollectionType, list, func=convert_to_list),
-    Validator(ValueCollectionType, tuple, func=convert_to_tuple),
-    Validator(ValueCollectionType, set, func=convert_to_set),
-    Validator(ValueCollectionType, frozenset, func=convert_to_set),
-    Validator(Mapping, dict, func=convert_to_dict),
-)
-"""
-Registry of built-in validators.
-"""
