@@ -22,7 +22,7 @@ from typing import (
 )
 
 from .generics import extract_args, normalize_args
-from .utils import safe_issubclass
+from .utils import robust_issubclass
 
 __all__ = [
     "ANY",
@@ -251,7 +251,7 @@ class Annotation:
 
         # check concrete type relationship
         # - for ABCs/protocols, issubclass may succeed even if not in MRO
-        is_concrete_subtype = safe_issubclass(
+        is_concrete_subtype = robust_issubclass(
             self.concrete_type, other_ann.concrete_type
         )
 

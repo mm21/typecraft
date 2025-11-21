@@ -5,7 +5,7 @@ Inspecting utilities.
 from typing import Protocol
 
 
-def safe_issubclass(cls: type, class_or_tuple: type | tuple[type, ...], /) -> bool:
+def robust_issubclass(cls: type, class_or_tuple: type | tuple[type, ...], /) -> bool:
     """
     `issubclass()` can raise `TypeError` in some cases, even when the arguments are
     types; handle it gracefully. Additionally handle checking a class against

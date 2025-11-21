@@ -14,7 +14,7 @@ from typing import (
     overload,
 )
 
-from .utils import safe_issubclass
+from .utils import robust_issubclass
 
 __all__ = [
     "extract_args",
@@ -194,7 +194,7 @@ def _find_args(
 
     if isinstance(check_origin, type) and isinstance(base_cls_origin, type):
         # check if base_cls is in the MRO - if not, we might need ABC fallback
-        if base_cls_origin not in check_origin.__mro__ and safe_issubclass(
+        if base_cls_origin not in check_origin.__mro__ and robust_issubclass(
             check_origin, base_cls_origin
         ):
             needs_abc_fallback = True
