@@ -368,8 +368,7 @@ class Annotation:
         else:
             return_ann = self.arg_annotations[0]
 
-        # TODO: ... considered as type of previous annotation
-        # with ... parameters, we accept any parameters, so contravariance always
+        # with ... parameters we accept any parameters, so contravariance always
         # satisfied
         return return_ann.is_subtype(other.return_annotation)
 
