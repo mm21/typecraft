@@ -10,6 +10,7 @@ from typing import Any, get_type_hints
 
 from ..inspecting.annotations import Annotation
 from ..types import DataclassProtocol
+from .converter import MatchSpec
 from .serializer import SerializationFrame
 from .symmetric_converter import BaseSymmetricConverter
 from .validator import ValidationFrame
@@ -65,7 +66,7 @@ class DataclassConverter(BaseSymmetricConverter[dict[str, Any], DataclassProtoco
     Recursively validates and serializes all fields based on their type annotations.
     """
 
-    match_validated_subtype = True
+    validation_match_spec = MatchSpec(match_target_subtype=True)
 
     @classmethod
     def validate(

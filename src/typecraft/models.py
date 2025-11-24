@@ -24,6 +24,7 @@ from typing import (
     overload,
 )
 
+from .converting.converter import MatchSpec
 from .inspecting.annotations import Annotation
 from .serializing import SerializationParams
 from .validating import ValidationFrame, ValidationParams, Validator, validate
@@ -341,7 +342,10 @@ def validate_model(obj: Mapping[Any, Any], frame: ValidationFrame) -> BaseModel:
 
 
 MODEL_CONVERTER = Validator(
-    Mapping, BaseModel, func=validate_model, match_target_subtype=True
+    Mapping,
+    BaseModel,
+    func=validate_model,
+    match_spec=MatchSpec(match_target_subtype=True),
 )
 """
 Converts a mapping (e.g. dict) to a model.

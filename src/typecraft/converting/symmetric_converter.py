@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 
 from ..inspecting.annotations import Annotation
 from ..inspecting.generics import extract_arg
+from .converter import MatchSpec
 from .serializer import (
     SerializationFrame,
     Serializer,
@@ -30,9 +31,15 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
     then implement the abstract validation and serialization methods.
     """
 
-    match_serialized_subtype: bool = True
+    validation_match_spec: MatchSpec | None = None
+    """
+    Match specification for validation.
+    """
 
-    match_validated_subtype: bool = False
+    serialization_match_spec: MatchSpec | None = None
+    """
+    Match specification for serialization.
+    """
 
     @classmethod
     def can_validate(cls, obj: SerializedT, /) -> bool:
@@ -91,8 +98,7 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
             target_annotation,
             func=cls.validate,
             predicate_func=cls.can_validate,
-            match_source_subtype=cls.match_serialized_subtype,
-            match_target_subtype=cls.match_validated_subtype,
+            match_spec=cls.validation_match_spec,
         )
 
     @classmethod
@@ -108,8 +114,7 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
             source_annotation,
             target_annotation,
             func=cls.serialize,
-            match_source_subtype=cls.match_validated_subtype,
-            match_target_subtype=cls.match_serialized_subtype,
+            match_spec=cls.serialization_match_spec,
         )
 
     @classmethod

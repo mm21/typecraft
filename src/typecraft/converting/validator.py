@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import (
     Any,
-    overload,
 )
 
 from .converter import (
@@ -95,37 +94,8 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         """
         return self._converters
 
-    @overload
-    def register(self, validator: BaseValidator, /): ...
-
-    @overload
-    def register(
-        self,
-        func: FuncValidatorType,
-        /,
-        *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
-    ): ...
-
-    def register(
-        self,
-        validator_or_func: BaseValidator | FuncValidatorType,
-        /,
-        *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
-    ):
+    def register(self, validator: BaseValidator, /):
         """
-        Register a validator by `Validator` object or function.
+        Register a validator.
         """
-        validator = (
-            validator_or_func
-            if isinstance(validator_or_func, BaseValidator)
-            else Validator.from_func(
-                validator_or_func,
-                match_source_subtype=match_source_subtype,
-                match_target_subtype=match_target_subtype,
-            )
-        )
         self._register_converter(validator)

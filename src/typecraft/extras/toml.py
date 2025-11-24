@@ -39,6 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
+from ..converting.converter import MatchSpec
 from ..inspecting.generics import extract_arg
 from ..models import BaseModel, FieldInfo, ModelConfig
 from ..validating import ValidationFrame, Validator
@@ -421,12 +422,17 @@ def validate_array(
 
 
 VALIDATORS = (
-    Validator(Table, BaseTableWrapper, func=validate_table, match_target_subtype=True),
+    Validator(
+        Table,
+        BaseTableWrapper,
+        func=validate_table,
+        match_spec=MatchSpec(match_target_subtype=True),
+    ),
     Validator(
         InlineTable,
         BaseInlineTableWrapper,
         func=validate_table,
-        match_target_subtype=True,
+        match_spec=MatchSpec(match_target_subtype=True),
     ),
     Validator(Array, ArrayWrapper, func=validate_array),
     Validator(AoT, TableArrayWrapper, func=validate_array),

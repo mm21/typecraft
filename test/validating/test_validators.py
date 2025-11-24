@@ -4,6 +4,9 @@ Test low-level validation via `Validator` instances.
 
 from typing import Any
 
+from pytest import raises
+
+from typecraft.converting.converter import MatchSpec
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
     BaseGenericValidator,
@@ -24,33 +27,40 @@ def test_match_any():
 
     # can convert anything to str
     assert validator.check_match(Annotation(int), Annotation(str))
-    assert validator.check_match(Annotation(int), ANY)
     assert validator.check_match(ANY, Annotation(str))
-    assert validator.check_match(ANY, ANY)
     assert not validator.check_match(ANY, Annotation(int))
 
 
 def test_match_subtype():
     """
-    Test converter with match_subtype=True.
+    Test converter with and without match_target_subtype=True.
     """
 
+    # convert to int, but not bool
     validator = Validator(str, int)
-
-    # cannot convert to bool, strictly int
     assert validator.check_match(Annotation(str), Annotation(int))
     assert not validator.check_match(Annotation(str), Annotation(bool))
 
-    validator = Validator(str, int, match_target_subtype=True)
+    # convert to bool, but not int
+    validator = Validator(
+        str, bool, match_spec=MatchSpec(match_target_assignable=False)
+    )
+    assert validator.check_match(Annotation(str), Annotation(bool))
+    assert not validator.check_match(Annotation(str), Annotation(int))
 
-    # can convert to bool since it's a subclass of int
+    # convert to int, or bool since it's a subtype of int
+    validator = Validator(
+        str,
+        int,
+        func=lambda obj, frame: frame.target_annotation.concrete_type(obj),
+        match_spec=MatchSpec(match_target_subtype=True),
+    )
     assert validator.check_match(Annotation(str), Annotation(int))
     assert validator.check_match(Annotation(str), Annotation(bool))
 
-    validator = Validator(int, Any, match_target_subtype=True)
-
     # can convert from int to anything
     # - not very practical since int is already a subtype of Any
+    validator = Validator(int, Any, match_spec=MatchSpec(match_target_subtype=True))
     assert validator.check_match(Annotation(int), ANY)
     assert validator.check_match(Annotation(int), Annotation(str))
     assert validator.check_match(ANY, Annotation(str))
@@ -67,25 +77,55 @@ def test_match_custom():
     class CustomStr(str):
         pass
 
-    validator = Validator(int, str)
-
     # can convert to str, but not custom str
+    validator = Validator(int, str)
     assert validator.check_match(Annotation(int), Annotation(str))
     assert validator.check_match(Annotation(CustomInt), Annotation(str))
     assert not validator.check_match(Annotation(int), Annotation(CustomStr))
     assert not validator.check_match(Annotation(CustomInt), Annotation(CustomStr))
 
-    validator = Validator(int, CustomStr)
-
-    # can convert to str or custom str
-    assert validator.check_match(Annotation(int), Annotation(str))
+    # can convert to custom str, but not str
+    validator = Validator(
+        int, CustomStr, match_spec=MatchSpec(match_target_assignable=False)
+    )
     assert validator.check_match(Annotation(int), Annotation(CustomStr))
-
-    validator = Validator(CustomInt, str)
+    assert not validator.check_match(Annotation(int), Annotation(str))
 
     # can convert from custom int, but not int
+    validator = Validator(CustomInt, str)
     assert validator.check_match(Annotation(CustomInt), Annotation(str))
     assert not validator.check_match(Annotation(int), Annotation(str))
+
+
+def test_match_union():
+    """
+    Test conversion with converter returning a union.
+    """
+
+    with raises(
+        TypeError,
+        match="Cannot use direct object construction when target annotation is a union",
+    ):
+        _ = Validator(str, int | float)
+
+    def convert_to_numeric(obj: str) -> int | float:
+        if obj.isnumeric():
+            return int(obj)
+        else:
+            return float(obj)
+
+    validator = Validator(str, int | float, func=convert_to_numeric)
+    assert validator.check_match(Annotation(str), Annotation(int | float))
+    assert validator.check_match(Annotation(str), Annotation(int | float | str))
+    assert not validator.check_match(Annotation(str), Annotation(int))
+
+    result = validator.convert("1", _create_frame(str, int | float))
+    assert isinstance(result, int)
+    assert result == 1
+
+    result = validator.convert("1.5", _create_frame(str, int | float))
+    assert isinstance(result, float)
+    assert result == 1.5
 
 
 def test_any():
@@ -139,7 +179,6 @@ def test_generic():
     obj = [123]
 
     assert validator.check_match(Annotation(list[int]), Annotation(list[str]))
-    assert validator.check_match(Annotation(list[int]), Annotation(list[Any]))
     assert validator.check_match(Annotation(list[Any]), Annotation(list[str]))
     assert not validator.check_match(Annotation(list[Any]), Annotation(list[int]))
     assert not validator.check_match(Annotation(list[float]), Annotation(list[str]))
@@ -208,20 +247,24 @@ def test_registry():
 
     # register converters
     registry = ValidatorRegistry()
-    registry.register(str_to_int)
-    registry.register(str_to_int_subtype, match_target_subtype=True)
+    registry.register(Validator.from_func(str_to_int))
+    registry.register(
+        Validator.from_func(
+            str_to_int_subtype, match_spec=MatchSpec(match_target_subtype=True)
+        )
+    )
 
     # use the registry
     obj = "42"
 
     validator = registry.find(obj, Annotation(str), Annotation(int))
     assert validator
-    assert validator.match_target_subtype is False
+    assert validator.match_spec.match_target_subtype is False
     assert validator.convert(obj, _create_frame(str, int)) == 42
 
     validator = registry.find(obj, Annotation(str), Annotation(bool))
     assert validator
-    assert validator.match_target_subtype is True
+    assert validator.match_spec.match_target_subtype is True
     assert validator.convert(obj, _create_frame(str, bool)) is True
 
 

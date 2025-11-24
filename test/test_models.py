@@ -2,6 +2,7 @@ from typing import Any
 
 from pytest import raises
 
+from typecraft.exceptions import ValidationError
 from typecraft.models import (
     BaseModel,
     Field,
@@ -77,14 +78,14 @@ def test_union():
     dc.a = "abc"
     assert dc.a == "abc"
 
-    with raises(ValueError):
+    with raises(ValidationError):
         dc.a = 123.0  # type: ignore
 
 
 def test_conversion():
     dc = ValidateOnAssignmentTest()
 
-    with raises(ValueError):
+    with raises(ValidationError):
         dc.a = "321"  # type: ignore
 
     dc = CoercionTest(a="321")  # type: ignore

@@ -10,6 +10,7 @@ from typecraft.adapter import Adapter
 from typecraft.converting.builtin_converters import DataclassConverter
 from typecraft.converting.serializer import SerializationParams
 from typecraft.converting.validator import ValidationParams
+from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 
@@ -58,21 +59,24 @@ def test_simple_dataclass():
     """
     Test basic dataclass validation and serialization.
     """
+    validation_params = ValidationParams(use_builtin_validators=False)
+    serialization_params = SerializationParams(use_builtin_serializers=False)
     adapter = Adapter(
         SimpleDataclass,
+        validation_params=validation_params,
+        serialization_params=serialization_params,
         validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
         serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
     )
-    validation_params = ValidationParams(use_builtin_validators=False)
-    serialization_params = SerializationParams(use_builtin_serializers=False)
 
     test_serialized = {"name": "Alice", "age": 30}
     test_validated = SimpleDataclass(name="Alice", age=30)
 
     # make sure we get an exception without the adapter
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError):
         _ = validate(test_serialized, SimpleDataclass, params=validation_params)
-    with raises(ValueError, match="could not be converted"):
+
+    with raises(SerializationError):
         _ = serialize(test_validated, params=serialization_params)
 
     # test validation
@@ -91,7 +95,7 @@ def test_simple_dataclass():
     assert serialize(test_validated) == test_serialized
 
     # test invalid
-    with raises(ValueError):
+    with raises(ValidationError):
         _ = validate("not-a-dict", SimpleDataclass)
 
 
@@ -127,7 +131,7 @@ def test_dataclass_with_defaults():
 
 def test_missing_required_field():
     """
-    Test that missing required fields raise ValueError.
+    Test that missing required field raises ValueError.
     """
     adapter = Adapter(
         SimpleDataclass,
@@ -135,12 +139,8 @@ def test_missing_required_field():
     )
 
     # missing 'age' field
-    with raises(ValueError, match="missing 1 required positional argument: 'age'"):
+    with raises(ValidationError):
         _ = adapter.validate({"name": "Alice"})
-
-    # missing 'name' field
-    with raises(ValueError, match="missing 1 required positional argument: 'name'"):
-        _ = adapter.validate({"age": 30})
 
 
 def test_nested():
@@ -198,21 +198,47 @@ def test_dataclass_with_list():
 
 def test_invalid():
     """
-    Test that non-dict input fails validation.
+    Test that invalid input fails validation and corrupted model fails serialization.
     """
     adapter = Adapter(
         SimpleDataclass,
         validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
     )
 
+    class NonSerializable:
+        def __repr__(self) -> str:
+            return type(self).__name__
+
+    test_serialized = {"person": {"name": "Alice", "age": "30"}, "location": 123}
+    test_validated = NestedDataclass(
+        person=SimpleDataclass(name="Alice", age=NonSerializable()), location="NYC"  # type: ignore
+    )
+
+    with raises(ValidationError) as exc_info:
+        _ = validate(test_serialized, NestedDataclass)
+
+    assert len(exc_info.value.errors) == 2
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+person.age: "30": <class 'str'> -> <class 'int'>
+  No matching converters
+location: "123": <class 'int'> -> <class 'str'>
+  No matching converters"""
+    )
+
+    with raises(SerializationError) as exc_info:
+        _ = serialize(test_validated)
+
     # list input should fail
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = adapter.validate([{"name": "Alice", "age": 30}])
 
     # string input should fail
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = adapter.validate("not a dict")
 
     # tuple input should fail
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = adapter.validate(("Alice", 30))

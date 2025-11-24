@@ -7,10 +7,10 @@ from typing import Annotated, Generator, Literal
 
 from pytest import raises
 
+from typecraft.exceptions import BaseConversionError, ValidationError
 from typecraft.validating import (
     ValidationParams,
     Validator,
-    ValidatorRegistry,
     normalize_to_list,
     validate,
 )
@@ -53,11 +53,63 @@ def test_invalid():
     Test with no conversions: validation should raise an error.
     """
 
-    with raises(ValueError):
+    with raises(BaseConversionError) as exc_info:
+        _ = validate([1, 2, "3"], list[str | float])
+
+    assert len(exc_info.value.errors) == 2
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+[0]: "1": <class 'int'> -> str | float
+  Errors during union member conversion:
+    <class 'str'>: No matching converters
+    <class 'float'>: No matching converters
+[1]: "2": <class 'int'> -> str | float
+  Errors during union member conversion:
+    <class 'str'>: No matching converters
+    <class 'float'>: No matching converters"""
+    )
+
+    with raises(BaseConversionError) as exc_info:
+        _ = validate(["1.5", "2.5"], list[int], params=ValidationParams(strict=False))
+
+    assert len(exc_info.value.errors) == 2
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+[0]: "1.5": <class 'str'> -> <class 'int'>
+  Validator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '1.5'
+[1]: "2.5": <class 'str'> -> <class 'int'>
+  Validator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '2.5'"""
+    )
+
+    with raises(BaseConversionError) as exc_info:
+        _ = validate(0, str | bool)
+
+    assert len(exc_info.value.errors) == 1
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during validation:
+<root>: "0": <class 'int'> -> str | bool
+  Errors during union member conversion:
+    <class 'str'>: No matching converters
+    <class 'bool'>: No matching converters"""
+    )
+
+    with raises(BaseConversionError) as exc_info:
         _ = validate("abc", Literal["def", "ghi"])
 
-    with raises(ValueError):
-        _ = validate(0, str | bool)
+    assert len(exc_info.value.errors) == 1
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during validation:
+<root>: "abc": <class 'str'> -> typing.Literal['def', 'ghi']
+  No matching converters"""
+    )
 
 
 def test_conversion():
@@ -138,11 +190,18 @@ def test_collection_subclass():
     result = validate(obj, IntList)
     assert result is obj
 
-    with raises(
-        ValueError, match=r"Object '2' \(<class 'str'>\) could not be converted"
-    ):
+    with raises(ValidationError) as exc_info:
         obj = IntList([0, 1, "2"])  # type: ignore
         _ = validate(obj, IntList)
+
+    assert len(exc_info.value.errors) == 1
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during validation:
+[2]: "2": <class 'str'> -> <class 'int'>
+  No matching converters"""
+    )
 
     obj = [0, 1, 2]
     result = validate(obj, IntList, Validator(list, IntList))
@@ -202,18 +261,6 @@ def test_generic_subclass():
 
     result = validate(obj, dict[int, str])
     assert result is obj
-
-
-def test_registry():
-    """
-    Test validation with registry.
-    """
-    registry = ValidatorRegistry()
-    registry.register(Validator(str, int))
-
-    obj = "1"
-    result = validate(obj, int, registry=registry)
-    assert result == 1
 
 
 def test_normalize_to_list():

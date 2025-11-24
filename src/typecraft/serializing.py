@@ -22,6 +22,7 @@ from .converting.serializer import (
     SerializerRegistry,
     serialize_to_list,
 )
+from .exceptions import SerializationError
 from .inspecting.annotations import Annotation
 
 __all__ = [
@@ -48,7 +49,9 @@ Registry to use for json serialization.
 """
 
 
-class SerializationEngine(BaseConversionEngine[SerializerRegistry, SerializationFrame]):
+class SerializationEngine(
+    BaseConversionEngine[SerializerRegistry, SerializationFrame, SerializationError]
+):
     """
     Orchestrates serialization process. Not exposed to user.
     """
@@ -76,7 +79,7 @@ def serialize(
     Handles nested parameterized types like `list[list[int]]` by recursively applying
     serialization at each level based on the actual object types (or optionally
     specified source type).
-    
+
     Specifying the source type may be useful to match a custom serializer, e.g.
     specifying `tuple[int, str]` would match a serializer with that source type
     whereas the source type would be considered as `tuple[Any, ...]` otherwise.
@@ -88,6 +91,7 @@ def serialize(
     :param context: User-defined context passed to serializers
     :param source_type: Optional source type annotation for type-specific \
     serialization; if `None`, type is inferred from the object
+    :raises ConversionError: If any conversion errors are encountered
     """
     engine = SerializationEngine._setup(converters=serializers, registry=registry)
     frame = SerializationFrame._setup(
@@ -99,4 +103,4 @@ def serialize(
         context=context,
         engine=engine,
     )
-    return engine.process(obj, frame)
+    return engine.invoke_process(obj, frame)

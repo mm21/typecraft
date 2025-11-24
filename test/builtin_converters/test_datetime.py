@@ -14,6 +14,7 @@ from typecraft.converting.builtin_converters import (
 )
 from typecraft.converting.serializer import SerializationParams
 from typecraft.converting.validator import ValidationParams
+from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import SerializerRegistry, serialize
 from typecraft.validating import ValidatorRegistry, validate
 
@@ -34,9 +35,9 @@ def test_date_converter():
     test_validated = date(2024, 3, 15)
 
     # make sure we get an exception without the adapter
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = validate(test_serialized, date, params=validation_params)
-    with raises(ValueError, match="could not be converted"):
+    with raises(SerializationError, match="No matching converters"):
         _ = serialize(test_validated, params=serialization_params)
 
     # test validation
@@ -54,10 +55,10 @@ def test_date_converter():
     assert serialize(test_validated) == test_serialized
 
     # test invalid date string
-    with raises(ValueError):
+    with raises(ValidationError, match="Invalid isoformat string: 'not-a-date'"):
         _ = adapter.validate("not-a-date")
 
-    with raises(ValueError):
+    with raises(ValidationError, match="month must be in 1..12"):
         _ = adapter.validate("2024-13-45")  # invalid month/day
 
 
@@ -77,9 +78,9 @@ def test_datetime_converter():
     test_validated = datetime(2024, 3, 15, 10, 30, 0)
 
     # make sure we get an exception without the adapter
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = validate(test_serialized, datetime, params=validation_params)
-    with raises(ValueError, match="could not be converted"):
+    with raises(SerializationError, match="No matching converters"):
         _ = serialize(test_validated, params=serialization_params)
 
     # test validation
@@ -97,7 +98,7 @@ def test_datetime_converter():
     assert serialize(test_validated) == test_serialized
 
     # test invalid datetime string
-    with raises(ValueError):
+    with raises(ValidationError, match="Invalid isoformat string: 'not-a-datetime'"):
         _ = adapter.validate("not-a-datetime")
 
 
@@ -117,9 +118,9 @@ def test_time_converter():
     test_validated = time(10, 30, 0)
 
     # make sure we get an exception without the adapter
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = validate(test_serialized, time, params=validation_params)
-    with raises(ValueError, match="could not be converted"):
+    with raises(SerializationError, match="No matching converters"):
         _ = serialize(test_validated, params=serialization_params)
 
     # test validation
@@ -137,8 +138,8 @@ def test_time_converter():
     assert serialize(test_validated) == test_serialized
 
     # test invalid time string
-    with raises(ValueError):
+    with raises(ValidationError, match="Invalid isoformat string: 'not-a-time'"):
         _ = adapter.validate("not-a-time")
 
-    with raises(ValueError):
+    with raises(ValidationError, match="hour must be in 0..23"):
         _ = adapter.validate("25:30:00")  # invalid hour

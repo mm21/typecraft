@@ -11,6 +11,7 @@ from typing import (
 )
 
 from .converting.builtin_converters import BUILTIN_VALIDATORS
+from .converting.converter import MatchSpec
 from .converting.engine import BaseConversionEngine
 from .converting.utils import (
     convert_to_dict,
@@ -27,6 +28,7 @@ from .converting.validator import (
     Validator,
     ValidatorRegistry,
 )
+from .exceptions import ValidationError
 from .inspecting.annotations import Annotation
 from .types import VALUE_COLLECTION_TYPES, ValueCollectionType
 
@@ -45,9 +47,11 @@ __all__ = [
 DEFAULT_PARAMS = ValidationParams()
 
 NON_STRICT_REGISTRY = ValidatorRegistry(
-    Validator(Any, str),
     Validator(str | bytes | bytearray, int),
     Validator(str | int, float),
+    # set match_target_assignable=False so it doesn't match conversion to int
+    Validator(Any, bool, match_spec=MatchSpec(match_target_assignable=False)),
+    Validator(Any, str),
     Validator(ValueCollectionType, list, func=convert_to_list),
     Validator(ValueCollectionType, tuple, func=convert_to_tuple),
     Validator(ValueCollectionType, set, func=convert_to_set),
@@ -64,7 +68,9 @@ Registry of validators for builtin conversions.
 """
 
 
-class ValidationEngine(BaseConversionEngine[ValidatorRegistry, ValidationFrame]):
+class ValidationEngine(
+    BaseConversionEngine[ValidatorRegistry, ValidationFrame, ValidationError]
+):
     """
     Orchestrates validation process. Not exposed to user.
     """
@@ -128,6 +134,7 @@ def validate(
     :param registry: Registry of custom type-based validators
     :param params: Parameters to configure validation behavior
     :param context: User-defined context passed to validators
+    :raises ConversionError: If any conversion errors are encountered
     """
     engine = ValidationEngine._setup(converters=validators, registry=registry)
     frame = ValidationFrame._setup(
@@ -139,7 +146,7 @@ def validate(
         context=context,
         engine=engine,
     )
-    return engine.process(obj, frame)
+    return engine.invoke_process(obj, frame)
 
 
 @overload
@@ -180,6 +187,8 @@ def normalize_to_list(
 
     Only built-in collection types and generators are expanded.
     Custom types (even if iterable) are treated as single objects.
+
+    :raises ConversionError: If any conversion errors are encountered
     """
     objs = (
         obj_or_objs
@@ -188,7 +197,7 @@ def normalize_to_list(
     )
     engine = ValidationEngine._setup(converters=validators, registry=registry)
     return [
-        engine.process(
+        engine.invoke_process(
             o,
             ValidationFrame._setup(
                 obj=o,

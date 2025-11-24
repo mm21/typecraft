@@ -293,9 +293,10 @@ def test_eq():
     Test equality check.
     """
     assert Annotation(int) == Annotation(int)
+    assert Annotation(int) != Annotation(Any)
     assert Annotation(list[Any]) == Annotation(list[Any])
     assert Annotation(list) == Annotation(list[Any])
-    assert Annotation(list[str]) != Annotation(list[Any])
+    assert Annotation(list[int]) != Annotation(list[Any])
     assert Annotation(Literal["a", "b"]) != Annotation(Any)
 
 

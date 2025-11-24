@@ -2,15 +2,26 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Hashable, Sequence
+from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Self, cast
 
+from ..exceptions import ConversionErrorDetail
 from ..inspecting.annotations import ANY, Annotation
 from ..inspecting.functions import ParameterInfo, SignatureInfo
 from ..inspecting.generics import extract_arg
+from ._types import ERROR_SENTINEL
 
 if TYPE_CHECKING:
     from .engine import BaseConversionEngine
+
+
+__all__ = [
+    "MatchSpec",
+    "BaseConverter",
+    "BaseConverterRegistry",
+]
+
 
 type FuncConverterType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable[
     [SourceT], TargetT
@@ -121,6 +132,11 @@ class BaseConversionFrame[ParamsT]:
     Object ids for cycle detection.
     """
 
+    __errors: list[ConversionErrorDetail]
+    """
+    Shared list for collecting conversion errors.
+    """
+
     def __init__(
         self,
         *,
@@ -131,6 +147,7 @@ class BaseConversionFrame[ParamsT]:
         engine: BaseConversionEngine,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
+        errors: list[ConversionErrorDetail] | None = None,
     ):
         self.source_annotation = source_annotation
         self.target_annotation = target_annotation
@@ -139,9 +156,24 @@ class BaseConversionFrame[ParamsT]:
         self.__engine = engine
         self.__path = path or ()
         self.__seen = seen or set()
+        self.__errors = errors if errors is not None else []
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(source={self.source_annotation}, target={self.target_annotation})"
+
+    @property
+    def path(self) -> tuple[str | int, ...]:
+        """
+        The current path in the object tree.
+        """
+        return self.__path
+
+    @property
+    def errors(self) -> list[ConversionErrorDetail]:
+        """
+        The shared error list for this conversion invocation.
+        """
+        return self.__errors
 
     def recurse(
         self,
@@ -157,12 +189,21 @@ class BaseConversionFrame[ParamsT]:
         Create a new frame and recurse using the engine. `context` is replaced if not
         `...`; otherwise it's passed through unchanged.
         """
-        source_annotation_ = (
-            Annotation(type(obj))
-            if source_annotation in (None, ANY)
-            else source_annotation
-        )
-        next_frame = self.copy(
+        if self.__engine._is_validating:
+            # validating: get actual object type
+            # - could be converting from e.g. a subclass of list[int], in which
+            # case source item annotation would always be int
+            source_annotation_ = Annotation(type(obj))
+        else:
+            # serializing: get actual object type only if not passed
+            # - if passed, it may contain a specific annotation to match a serializer
+            source_annotation_ = (
+                Annotation(type(obj))
+                if source_annotation in (None, ANY)
+                else source_annotation
+            )
+
+        next_frame = self._copy(
             source_annotation=source_annotation_,
             target_annotation=target_annotation,
             context=context,
@@ -176,7 +217,11 @@ class BaseConversionFrame[ParamsT]:
         # recurse and add/remove this object for cycle detection
         if check_cycle:
             if id(obj) in next_frame.__seen:
-                raise ValueError(f"Already processed object: '{obj}', can't recurse")
+                exception = ValueError(
+                    f"Already processed object: '{obj}', can't recurse"
+                )
+                next_frame.append_error(obj, exception)
+                return ERROR_SENTINEL
             next_frame.__seen.add(id(obj))
         next_obj = self.__engine.process(obj, next_frame)
         if check_cycle:
@@ -184,7 +229,13 @@ class BaseConversionFrame[ParamsT]:
 
         return next_obj
 
-    def copy(
+    def append_error(self, obj: Any, exception: Exception):
+        """
+        Append a conversion error to the shared error list.
+        """
+        self.__errors.append(ConversionErrorDetail(obj, self, exception))
+
+    def _copy(
         self,
         *,
         source_annotation: Annotation | None = None,
@@ -209,6 +260,7 @@ class BaseConversionFrame[ParamsT]:
             engine=self.__engine,
             path=path,
             seen=self.__seen,
+            errors=self.__errors,
         )
 
     @classmethod
@@ -241,19 +293,54 @@ class BaseConversionFrame[ParamsT]:
         )
 
 
+@dataclass
+class MatchSpec:
+    """
+    Match specification: specifies how to match source/target annotations for a
+    converter.
+    """
+
+    match_source_subtype: bool = True
+    """
+    Whether to match subtypes of the converter's source annotation. Essentially asks:
+    "If I can convert from `Animal`, can I also convert from `Dog`?"
+
+    This should generally be true as it describes regular subtype polymorphism.
+    """
+
+    match_target_subtype: bool = False
+    """
+    Whether to match subtypes of the converter's target annotation. Essentially asks:
+    "If I can convert to `Animal`, can I also convert to `Dog`?"
+    
+    If `True`, the converter needs to create an instance of the specific target
+    annotation passed during conversion.
+    """
+
+    match_target_assignable: bool = True
+    """
+    Whether to match when the converter's output is assignable to the requested
+    target type. Essentially asks: "If I can convert to `Dog`, can I also handle
+    a request to convert to `Animal`?"
+
+    Common use case: A converter producing `list[int]` matching a serialization
+    target of `list[int | str | ...]`, since `list[int]` values are
+    assignable to `list[int | str | ...]` in read-only contexts.
+
+    Note: Uses structural assignability rules, so `bool` converters will match
+    `int` targets. Set to `False` for converters with specific semantic
+    requirements.
+    """
+
+
 class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
     """
     Defines the interface for converters and mixins.
     """
 
-    match_source_subtype: bool = True
+    match_spec: MatchSpec = MatchSpec()
     """
-    Whether to match subtypes of the source annotation.
-    """
-
-    match_target_subtype: bool = False
-    """
-    Whether to match subtypes of the target annotation.
+    Specification of matching behavior.
     """
 
     _source_annotation: Annotation
@@ -269,21 +356,14 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
     def __init__(
         self,
         *,
-        match_source_subtype: bool | None,
-        match_target_subtype: bool | None,
+        match_spec: MatchSpec | None,
     ):
-        if match_source_subtype is not None:
-            self.match_source_subtype = match_source_subtype
-        if match_target_subtype is not None:
-            self.match_target_subtype = match_target_subtype
+        if match_spec:
+            self.match_spec = match_spec
 
     @property
     def _params_str(self) -> str:
-        s = f"source={self._source_annotation.raw}"
-        t = f"target={self._target_annotation.raw}"
-        m_s = f"match_source_subtype={self.match_source_subtype}"
-        m_t = f"match_target_subtype={self.match_target_subtype}"
-        return ", ".join((s, t, m_s, m_t))
+        return f"{self._source_annotation.raw} -> {self._target_annotation.raw}"
 
     def can_convert(
         self,
@@ -346,13 +426,9 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     def __init__(
         self,
         *,
-        match_source_subtype: bool | None = None,
-        match_target_subtype: bool | None = None,
+        match_spec: MatchSpec | None = None,
     ):
-        super().__init__(
-            match_source_subtype=match_source_subtype,
-            match_target_subtype=match_target_subtype,
-        )
+        super().__init__(match_spec=match_spec)
         self._source_annotation, self._target_annotation = self._get_annotations()
 
     def __repr__(self) -> str:
@@ -373,26 +449,38 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         /,
     ) -> bool:
         """
-        Check if this converter matches for the given object and annotation.
+        Check if this converter matches the given annotation.
 
-        Checks whether source and target annotations are compatible with this converter,
-        taking into account `match_source_subtype` and `match_target_subtype` settings.
-
-        :param source_annotation: Annotation of the source object
-        :param target_annotation: Target type to convert to
+        :param source_annotation: Type to convert from
+        :param target_annotation: Type to convert to
         :return: True if converter matches
         """
+        # TODO: add test for match_source_subtype=False: int source type, ensure can't
+        # convert bool source
         if not self.__check_match(
-            self._source_annotation, source_annotation, self.match_source_subtype
+            self._source_annotation,
+            source_annotation,
+            match_subtype=self.match_spec.match_source_subtype,
+            match_assignable=False,
         ):
             return False
-        if not self.__check_match(
-            self._target_annotation,
-            target_annotation,
-            self.match_target_subtype,
-            covariant=True,
-        ):
-            return False
+
+        # try all possible target annotations in case of union
+        # - all possible target annotations must satisfy required target annotation;
+        # we don't know which one the converter will return
+        target_annotations = (
+            self._target_annotation.arg_annotations
+            if self._target_annotation.is_union
+            else (self._target_annotation,)
+        )
+        for ann in target_annotations:
+            if not self.__check_match(
+                ann,
+                target_annotation,
+                match_subtype=self.match_spec.match_target_subtype,
+                match_assignable=self.match_spec.match_target_assignable,
+            ):
+                return False
         return True
 
     def _check_convert(
@@ -414,20 +502,21 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
 
     def __check_match(
         self,
-        annotation: Annotation,
+        my_annotation: Annotation,
         check_annotation: Annotation,
+        *,
         match_subtype: bool,
-        covariant: bool = False,
+        match_assignable: bool,
     ) -> bool:
-        if covariant and annotation.is_subtype(check_annotation):
-            # can match a more specific type (covariant)
+        if match_subtype and check_annotation.is_subtype(my_annotation):
+            # match a more specific type, e.g. `Animal -> Dog`
             return True
-        elif match_subtype and check_annotation.is_subtype(annotation):
-            # can match a less specific type (contravariant)
+        elif match_assignable and my_annotation.is_subtype(check_annotation):
+            # match a more general type, e.g. `int -> int | str`
             return True
         else:
-            # must match exactly (invariant)
-            return annotation == check_annotation
+            # must match exactly, but allow match against Any
+            return my_annotation.equals(check_annotation, match_any=True)
 
 
 class BaseConverterRegistry[ConverterT: BaseConverter](ABC):

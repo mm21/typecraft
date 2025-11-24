@@ -7,7 +7,6 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
-    overload,
     runtime_checkable,
 )
 
@@ -150,39 +149,10 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         """
         return self._converters
 
-    @overload
-    def register(self, serializer: BaseSerializer, /): ...
-
-    @overload
-    def register(
-        self,
-        func: FuncSerializerType,
-        /,
-        *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
-    ): ...
-
-    def register(
-        self,
-        serializer_or_func: BaseSerializer | FuncSerializerType,
-        /,
-        *,
-        match_source_subtype: bool = True,
-        match_target_subtype: bool = False,
-    ):
+    def register(self, serializer: BaseSerializer, /):
         """
         Register a serializer.
         """
-        serializer = (
-            serializer_or_func
-            if isinstance(serializer_or_func, BaseSerializer)
-            else Serializer.from_func(
-                serializer_or_func,
-                match_source_subtype=match_source_subtype,
-                match_target_subtype=match_target_subtype,
-            )
-        )
         self._register_converter(serializer)
 
 

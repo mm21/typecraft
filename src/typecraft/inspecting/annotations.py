@@ -165,11 +165,16 @@ class Annotation:
         return f"Annotation({", ".join((raw, extras, concrete_type))})"
 
     def __eq__(self, other: Any, /) -> bool:
-        if self is other:
-            return True
         if not isinstance(other, Annotation):
             return False
-        if not self.concrete_type is other.concrete_type:
+        return self.equals(other)
+
+    def equals(self, other: Annotation, /, *, match_any: bool = False) -> bool:
+        if self is other:
+            return True
+        if match_any and (self.raw is Any or other.raw is Any):
+            return True
+        if self.concrete_type is not other.concrete_type:
             return False
 
         my_args = list(self.arg_annotations)
@@ -181,7 +186,8 @@ class Annotation:
             my_args += [ANY] * (len(my_args) - len(other_args))
 
         return all(
-            my_arg == other_arg for my_arg, other_arg in zip(my_args, other_args)
+            my_arg.equals(other_arg, match_any=match_any)
+            for my_arg, other_arg in zip(my_args, other_args)
         )
 
     @property

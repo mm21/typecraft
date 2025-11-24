@@ -6,6 +6,7 @@ from pytest import raises
 
 from typecraft.adapter import Adapter
 from typecraft.converting.symmetric_converter import BaseSymmetricConverter
+from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import SerializationFrame, SerializerRegistry, serialize
 from typecraft.validating import (
     ValidationFrame,
@@ -24,6 +25,9 @@ class MyClass:
     def __init__(self, val: int):
         self.val = val
 
+    def __repr__(self) -> str:
+        return f"MyClass(val={self.val})"
+
 
 class BasicConverter(BaseSymmetricConverter[int, MyClass]):
     """
@@ -41,27 +45,27 @@ class BasicConverter(BaseSymmetricConverter[int, MyClass]):
 
 class RangeConverter(BaseSymmetricConverter[list[int], range]):
     """
-    Adapter for range objects serialized as (start, stop) list.
+    Adapter for range objects serialized as (start, stop, step) list or any other
+    overloads of `range()`.
     """
 
     @classmethod
     def can_validate(cls, obj: list[int], *_) -> bool:
-        return len(obj) == 2
+        return len(obj) in range(1, 4)
 
     @classmethod
     def validate(cls, obj: list[int], _: ValidationFrame) -> range:
         """
         Validate list to range.
         """
-        start, stop = obj
-        return range(start, stop)
+        return range(*obj)
 
     @classmethod
     def serialize(cls, obj: range, _: SerializationFrame) -> list[int]:
         """
         Serialize range to list.
         """
-        return [obj.start, obj.stop]
+        return [obj.start, obj.stop, obj.step]
 
 
 def test_basic():
@@ -83,10 +87,34 @@ def test_basic():
     )
 
     # make sure we get an exception without the adapter
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError) as exc_info:
         _ = validate(123, MyClass)
-    with raises(ValueError, match="could not be converted"):
+
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during validation:
+<root>: "123": <class 'int'> -> <class 'test.test_symmetric_converter.MyClass'>
+  No matching converters"""
+    )
+
+    with raises(SerializationError) as exc_info:
         _ = serialize(MyClass(321))
+
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during serialization:
+<root>: "MyClass(val=321)": <class 'test.test_symmetric_converter.MyClass'> -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]
+  Errors during union member conversion:
+    <class 'str'>: No matching converters
+    <class 'int'>: No matching converters
+    <class 'float'>: No matching converters
+    <class 'bool'>: No matching converters
+    <class 'NoneType'>: No matching converters
+    list[JsonSerializableType]: No matching converters
+    dict[str | int | float | bool, JsonSerializableType]: No matching converters"""
+    )
 
     result = adapter.validate(123)
     assert isinstance(result, MyClass)
@@ -109,20 +137,20 @@ def test_range():
         serializer_registry=SerializerRegistry(serializer),
     )
 
-    result = adapter.validate([0, 10])
+    result = adapter.validate([10])
     assert isinstance(result, range)
     assert result == range(0, 10)
 
-    result = adapter.serialize(range(0, 10))
+    result = adapter.serialize(range(10))
     assert isinstance(result, list)
-    assert result == [0, 10]
+    assert result == [0, 10, 1]
 
     # make sure we can't validate non-matching objects
-    with raises(ValueError, match="could not be converted"):
-        _ = adapter.validate([0, 10, 2])
+    with raises(ValidationError, match="No matching converters"):
+        _ = adapter.validate([0, 10, 2, 1])
 
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = adapter.validate([0, "10"])
 
-    with raises(ValueError, match="could not be converted"):
+    with raises(ValidationError, match="No matching converters"):
         _ = adapter.validate((0, 10))
