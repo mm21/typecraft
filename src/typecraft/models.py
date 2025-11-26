@@ -345,7 +345,7 @@ MODEL_CONVERTER = Validator(
     Mapping,
     BaseModel,
     func=validate_model,
-    match_spec=MatchSpec(match_target_subtype=True),
+    match_spec=MatchSpec(assignable_from_target=True),
 )
 """
 Converts a mapping (e.g. dict) to a model.

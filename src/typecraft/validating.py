@@ -49,8 +49,8 @@ DEFAULT_PARAMS = ValidationParams()
 NON_STRICT_REGISTRY = ValidatorRegistry(
     Validator(str | bytes | bytearray, int),
     Validator(str | int, float),
-    # set match_target_assignable=False so it doesn't match conversion to int
-    Validator(Any, bool, match_spec=MatchSpec(match_target_assignable=False)),
+    # set assignable_to_target=False so it doesn't match conversion to int
+    Validator(Any, bool, match_spec=MatchSpec(assignable_to_target=False)),
     Validator(Any, str),
     Validator(ValueCollectionType, list, func=convert_to_list),
     Validator(ValueCollectionType, tuple, func=convert_to_tuple),

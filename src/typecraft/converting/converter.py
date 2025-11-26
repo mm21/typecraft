@@ -300,36 +300,41 @@ class MatchSpec:
     converter.
     """
 
-    match_source_subtype: bool = True
+    assignable_from_source: bool = True
     """
-    Whether to match subtypes of the converter's source annotation. Essentially asks:
-    "If I can convert from `Animal`, can I also convert from `Dog`?"
+    Whether to match when the converter's source type is assignable from the requested
+    source type. Essentially asks:
+
+    - "If I convert from `Animal`, can I also handle a request to convert from `Dog`?"
+    - "If I convert from `int | str`, can I also handle a request to convert from `int`?
 
     This should generally be true as it describes regular subtype polymorphism.
     """
 
-    match_target_subtype: bool = False
+    assignable_from_target: bool = False
     """
-    Whether to match subtypes of the converter's target annotation. Essentially asks:
-    "If I can convert to `Animal`, can I also convert to `Dog`?"
+    Whether to match when the converter's target type is assignable from the requested
+    target type. Essentially asks:
+
+    - "If I convert to `Animal`, can I also handle a request to convert to `Dog`?"
+    - "If I convert to `int | str`, can I also handle a request to convert to `int`?
     
-    If `True`, the converter needs to create an instance of the specific target
-    annotation passed during conversion.
+    If `True`, the converter must produce the specific requested target type passed
+    during conversion.
     """
 
-    match_target_assignable: bool = True
+    assignable_to_target: bool = True
     """
-    Whether to match when the converter's output is assignable to the requested
-    target type. Essentially asks: "If I can convert to `Dog`, can I also handle
-    a request to convert to `Animal`?"
+    Whether to match when the converter's target type is assignable to the requested
+    target type. Essentially asks:
+    
+    - "If I convert to `Dog`, can I also handle a request to convert to `Animal`?"
+    - "If I convert to `int`, can I also handle a request to convert to `int | str`?
+    - "If I convert to `bool`, can I also handle a request to convert to `int`?
 
-    Common use case: A converter producing `list[int]` matching a serialization
-    target of `list[int | str | ...]`, since `list[int]` values are
-    assignable to `list[int | str | ...]` in read-only contexts.
-
-    Note: Uses structural assignability rules, so `bool` converters will match
-    `int` targets. Set to `False` for converters with specific semantic
-    requirements.
+    Set to `False` for converters with specific semantic requirements. For example,
+    it may be unexpected to convert to `int` and get a `bool` even though the type
+    is technically satisfied.
     """
 
 
@@ -460,28 +465,43 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         if not self.__check_match(
             self._source_annotation,
             source_annotation,
-            match_subtype=self.match_spec.match_source_subtype,
-            match_assignable=False,
+            assignable_from=self.match_spec.assignable_from_source,
+            assignable_to=False,
         ):
             return False
 
         # try all possible target annotations in case of union
-        # - all possible target annotations must satisfy required target annotation;
-        # we don't know which one the converter will return
+        # - if assignable_from_target is True, only one union member needs to match
+        # - otherwise, all union members must match requested target: we don't know
+        #   which one the converter will return
         target_annotations = (
             self._target_annotation.arg_annotations
             if self._target_annotation.is_union
             else (self._target_annotation,)
         )
+
+        # check whether we're producing a union and only one member needs to match
+        # (converter must produce the requested type)
+        match_any_union = (
+            self._target_annotation.is_union and self.match_spec.assignable_from_target
+        )
+
+        # check each target annotation
         for ann in target_annotations:
-            if not self.__check_match(
+            if self.__check_match(
                 ann,
                 target_annotation,
-                match_subtype=self.match_spec.match_target_subtype,
-                match_assignable=self.match_spec.match_target_assignable,
+                assignable_from=self.match_spec.assignable_from_target,
+                assignable_to=self.match_spec.assignable_to_target,
             ):
+                if match_any_union:
+                    return True
+            else:
+                if match_any_union:
+                    continue
                 return False
-        return True
+
+        return True if not match_any_union else False
 
     def _check_convert(
         self, obj: Any, source_annotation: Annotation, target_annotation: Annotation
@@ -503,20 +523,20 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     def __check_match(
         self,
         my_annotation: Annotation,
-        check_annotation: Annotation,
+        requested_annotation: Annotation,
         *,
-        match_subtype: bool,
-        match_assignable: bool,
+        assignable_from: bool,
+        assignable_to: bool,
     ) -> bool:
-        if match_subtype and check_annotation.is_subtype(my_annotation):
+        if assignable_from and requested_annotation.is_assignable(my_annotation):
             # match a more specific type, e.g. `Animal -> Dog`
             return True
-        elif match_assignable and my_annotation.is_subtype(check_annotation):
+        elif assignable_to and my_annotation.is_assignable(requested_annotation):
             # match a more general type, e.g. `int -> int | str`
             return True
         else:
             # must match exactly, but allow match against Any
-            return my_annotation.equals(check_annotation, match_any=True)
+            return my_annotation.equals(requested_annotation, match_any=True)
 
 
 class BaseConverterRegistry[ConverterT: BaseConverter](ABC):

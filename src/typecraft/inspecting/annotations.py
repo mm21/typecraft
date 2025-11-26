@@ -27,7 +27,7 @@ from .utils import robust_issubclass
 __all__ = [
     "ANY",
     "Annotation",
-    "is_subtype",
+    "is_assignable",
     "is_instance",
     "is_union",
     "unwrap_alias",
@@ -202,25 +202,14 @@ class Annotation:
     def is_callable(self) -> bool:
         return self.origin is Callable
 
-    def is_subtype(self, other: Annotation | Any, /) -> bool:
+    def is_assignable(self, other: Annotation | Any, /) -> bool:
         """
-        Check if this annotation is a subtype of other annotation; roughly
-        equivalent to `issubclass(annotation, other)`.
+        Check whether a value of this annotation can be assigned to a value of `other`.
 
-        Any is BOTH a top type and a bottom type in Python's gradual typing:
-        - Top type: Everything is a subtype of Any (you can assign anything TO Any)
-        - Bottom type: Any is a subtype of everything (you can assign anything FROM Any)
-
-        `object` is a concrete type - only actual object subtypes are subtypes of
-        `object`.
-
-        Examples:
-
-        - `Annotation(int).is_subtype(Annotation(Any))` returns `True` (Any as top type)
-        - `Annotation(Any).is_subtype(Annotation(int))` returns `True` (Any as bottom type)
-        - `Annotation(list[int]).is_subtype(list[Any])` returns `True`
-        - `Annotation(list[Any]).is_subtype(list[int])` returns `True` (Any in params)
-        - `Annotation(int).is_subtype(Callable[[Any], int])` returns `True`
+        This is a relaxed compatibility check that:
+        - Treats generic types as covariant (read-only context)
+        - Allows `int` to match `int | str`
+        - Allows `list[int]` to match `list[int | str]`
         """
         other_ann = Annotation._normalize(other)
 
@@ -234,11 +223,11 @@ class Annotation:
 
         # handle union for self
         if self.is_union:
-            return all(a.is_subtype(other_ann) for a in self.arg_annotations)
+            return all(a.is_assignable(other_ann) for a in self.arg_annotations)
 
         # handle union for other
         if other_ann.is_union:
-            return any(self.is_subtype(a) for a in other_ann.arg_annotations)
+            return any(self.is_assignable(a) for a in other_ann.arg_annotations)
 
         # handle literal for self
         if self.is_literal:
@@ -252,8 +241,8 @@ class Annotation:
         if self.is_callable or other_ann.is_callable:
             if not self.is_callable and other_ann.is_callable:
                 # callable type (e.g., int, str) being compared to Callable
-                return self._is_subtype_callable_type(other_ann)
-            return self._is_subtype_callable(other_ann)
+                return self._is_assignable_callable_type(other_ann)
+            return self._is_assignable_callable(other_ann)
 
         # check concrete type relationship
         # - for ABCs/protocols, issubclass may succeed even if not in MRO
@@ -278,7 +267,7 @@ class Annotation:
 
         # recurse into args
         for my_arg, other_arg in zip(my_args, other_args):
-            if not my_arg.is_subtype(other_arg):
+            if not my_arg.is_assignable(other_arg):
                 return False
 
         return True
@@ -318,7 +307,7 @@ class Annotation:
     def _normalize(cls, obj: Annotation | Any) -> Annotation:
         return obj if isinstance(obj, Annotation) else Annotation(obj)
 
-    def _is_subtype_callable(self, other: Annotation) -> bool:
+    def _is_assignable_callable(self, other: Annotation) -> bool:
         """
         Check if this callable is a subclass of another callable.
 
@@ -331,7 +320,7 @@ class Annotation:
         # handle ... parameters (any parameters acceptable)
         if other.param_annotations is None:
             # other accepts any params, check return type only
-            return self.return_annotation.is_subtype(other.return_annotation)
+            return self.return_annotation.is_assignable(other.return_annotation)
 
         if self.param_annotations is None:
             # we accept any params, but other doesn't - not a subclass
@@ -345,12 +334,12 @@ class Annotation:
         for my_param, other_param in zip(
             self.param_annotations, other.param_annotations
         ):
-            if not other_param.is_subtype(my_param):
+            if not other_param.is_assignable(my_param):
                 return False
 
-        return self.return_annotation.is_subtype(other.return_annotation)
+        return self.return_annotation.is_assignable(other.return_annotation)
 
-    def _is_subtype_callable_type(self, other: Annotation) -> bool:
+    def _is_assignable_callable_type(self, other: Annotation) -> bool:
         """
         Check if this type annotation (e.g., type[int], type[str]) is a subclass of a
         Callable annotation. Treats self as Callable[..., X] where X is the type
@@ -376,7 +365,7 @@ class Annotation:
 
         # with ... parameters we accept any parameters, so contravariance always
         # satisfied
-        return return_ann.is_subtype(other.return_annotation)
+        return return_ann.is_assignable(other.return_annotation)
 
     def _check_callable(self, obj: Any) -> bool:
         """
@@ -474,20 +463,19 @@ class Annotation:
         return tuple(Annotation(a) for a in my_args)
 
 
-def is_subtype(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
+def is_assignable(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
     """
-    Check whether an annotation is a subtype of another annotation.
+    Check whether a value of `annotation` can be assigned to a value of `other`.
+
+    This is a relaxed compatibility check that:
+    - Treats generic types as covariant (read-only context)
+    - Allows `int` to match `int | str`
+    - Allows `list[int]` to match `list[int | str]`
 
     Accommodates generic types and fully resolves type aliases, unions, and
     `Annotated`.
-
-    Example:
-
-    ```python
-    assert is_subtype(list[int], list[int | str])
-    ```
     """
-    return Annotation._normalize(annotation).is_subtype(other)
+    return Annotation._normalize(annotation).is_assignable(other)
 
 
 def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:

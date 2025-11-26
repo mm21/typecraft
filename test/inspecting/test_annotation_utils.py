@@ -22,8 +22,8 @@ from typecraft.inspecting.annotations import (
     extract_tuple_args,
     flatten_union,
     get_concrete_type,
+    is_assignable,
     is_instance,
-    is_subtype,
     is_union,
     normalize_annotation,
     split_annotated,
@@ -42,34 +42,34 @@ type ParameterizedUnionAlias[T] = Annotated[list[T] | tuple[T], "test"]
 type DeepParameterizedUnionAlias[T] = ParameterizedUnionAlias[T] | set[T]
 
 
-def test_is_subtype():
+def test_is_assignable():
     # verify all overloads
-    assert is_subtype(Annotation(int), Annotation(Any))
-    assert is_subtype(Annotation(int), Any)
-    assert is_subtype(int, Annotation(Any))
-    assert is_subtype(int, Any)
+    assert is_assignable(Annotation(int), Annotation(Any))
+    assert is_assignable(Annotation(int), Any)
+    assert is_assignable(int, Annotation(Any))
+    assert is_assignable(int, Any)
 
     # Any is BOTH top and bottom type - bidirectional relationships
-    assert is_subtype(Any, int)  # bottom type behavior
-    assert is_subtype(Any, object)  # bottom type behavior
-    assert is_subtype(Annotation(Any), Annotation(int))  # bottom type
-    assert is_subtype(Any, Any)  # top and bottom meet
+    assert is_assignable(Any, int)  # bottom type behavior
+    assert is_assignable(Any, object)  # bottom type behavior
+    assert is_assignable(Annotation(Any), Annotation(int))  # bottom type
+    assert is_assignable(Any, Any)  # top and bottom meet
 
     # verify with alias
-    assert is_subtype(SimpleAlias, UnionAlias)
-    assert is_subtype(ListAlias, AnnotatedListAlias)
+    assert is_assignable(SimpleAlias, UnionAlias)
+    assert is_assignable(ListAlias, AnnotatedListAlias)
 
     # verify with Any in generics - bidirectional
-    assert is_subtype(list[int], list[Any])  # top type
-    assert is_subtype(list[Any], list[int])  # bottom type
+    assert is_assignable(list[int], list[Any])  # top type
+    assert is_assignable(list[Any], list[int])  # bottom type
 
 
-def test_is_subtype_generics():
+def test_is_assignable_generics():
     # direct ABC comparisons
-    assert is_subtype(list[int], Sequence[int])
+    assert is_assignable(list[int], Sequence[int])
 
-    assert is_subtype(list[int], Sequence[int])
-    assert is_subtype(dict[str, int], Mapping[str, int])
+    assert is_assignable(list[int], Sequence[int])
+    assert is_assignable(dict[str, int], Mapping[str, int])
 
     class MyList(list[int]):
         pass
@@ -78,35 +78,35 @@ def test_is_subtype_generics():
         pass
 
     # subclass to builtin comparisons
-    assert is_subtype(MyList, list[int])
-    assert is_subtype(MyList, list[Any])
-    assert is_subtype(MyList, list)
-    assert not is_subtype(MyList, list[str])
+    assert is_assignable(MyList, list[int])
+    assert is_assignable(MyList, list[Any])
+    assert is_assignable(MyList, list)
+    assert not is_assignable(MyList, list[str])
 
-    assert is_subtype(MyListSubclass, list[int])
-    assert is_subtype(MyListSubclass, list[Any])
-    assert is_subtype(MyListSubclass, list)
-    assert not is_subtype(MyListSubclass, list[str])
+    assert is_assignable(MyListSubclass, list[int])
+    assert is_assignable(MyListSubclass, list[Any])
+    assert is_assignable(MyListSubclass, list)
+    assert not is_assignable(MyListSubclass, list[str])
 
     # subclass to ABC comparisons
-    assert is_subtype(MyList, Sequence[int])
-    assert not is_subtype(MyList, Sequence[str])
+    assert is_assignable(MyList, Sequence[int])
+    assert not is_assignable(MyList, Sequence[str])
 
-    assert is_subtype(MyListSubclass, Sequence[int])
-    assert not is_subtype(MyListSubclass, Sequence[str])
+    assert is_assignable(MyListSubclass, Sequence[int])
+    assert not is_assignable(MyListSubclass, Sequence[str])
 
     # nested generics with ABCs
-    assert is_subtype(list[list[int]], Sequence[list[int]])
-    assert is_subtype(list[list[int]], Sequence[Sequence[int]])
+    assert is_assignable(list[list[int]], Sequence[list[int]])
+    assert is_assignable(list[list[int]], Sequence[Sequence[int]])
 
     class MyListOfLists(list[list[int]]):
         pass
 
-    assert is_subtype(MyListOfLists, Sequence[list[int]])
-    assert is_subtype(MyListOfLists, Sequence[Sequence[int]])
+    assert is_assignable(MyListOfLists, Sequence[list[int]])
+    assert is_assignable(MyListOfLists, Sequence[Sequence[int]])
 
 
-def test_is_subtype_protocols():
+def test_is_assignable_protocols():
     # based on method
     @runtime_checkable
     class TestProtocol(Protocol):
@@ -120,7 +120,7 @@ def test_is_subtype_protocols():
     class Concrete(Base[int]):
         pass
 
-    assert is_subtype(Concrete, TestProtocol)
+    assert is_assignable(Concrete, TestProtocol)
 
     # based on attributes and methods (not natively supported)
     @runtime_checkable
@@ -139,8 +139,8 @@ def test_is_subtype_protocols():
     class ConcreteAttr2(ConcreteAttr):
         attr2: int
 
-    assert is_subtype(ConcreteAttr, TestAttrProtocol)
-    assert is_subtype(ConcreteAttr2, TestAttrProtocol)
+    assert is_assignable(ConcreteAttr, TestAttrProtocol)
+    assert is_assignable(ConcreteAttr2, TestAttrProtocol)
 
 
 def test_is_instance():
