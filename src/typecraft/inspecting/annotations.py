@@ -51,8 +51,9 @@ class Annotation:
 
     raw: Any
     """
-    Original annotation after stripping `Annotated[]` if applicable. May be a generic
-    type.
+    Original annotation after stripping `Annotated[]` if applicable.
+
+    May be a generic type.
     """
 
     extras: tuple[Any, ...]
@@ -79,7 +80,8 @@ class Annotation:
     param_annotations: tuple[Annotation, ...] | None = None
     """
     For callable types, annotations for the parameters.
-    `None` if Callable[..., ReturnType].
+
+    `None` if `Callable`.
     """
 
     return_annotation: Annotation | None = None
@@ -90,7 +92,7 @@ class Annotation:
     concrete_type: type
     """
     Concrete (non-generic) type, determined based on annotation:
-    
+
     - `Any` or `Literal`: `object`
     - `None`: `NoneType`
     - `Ellipsis`: `EllipsisType`
@@ -496,8 +498,8 @@ def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:
 
 def is_union(annotation: Any, /) -> bool:
     """
-    Check whether annotation is a union, accommodating both `int | str`
-    and `Union[int, str]`.
+    Check whether annotation is a union, accommodating both `int | str` and `Union[int,
+    str]`.
     """
     return isinstance(annotation, UnionType) or get_origin(annotation) is Union
 
@@ -549,8 +551,8 @@ def flatten_union(
 ) -> tuple[Any, ...]:
     """
     If annotation is a union, recursively flatten it into its constituent types;
-    otherwise return the annotation as-is. If `preserve_extras` is `True`, don't
-    recurse into unions wrapped by `Annotated[]`.
+    otherwise return the annotation as-is. If `preserve_extras` is `True`, don't recurse
+    into unions wrapped by `Annotated[]`.
 
     Unwraps aliases at each recursion.
     """
@@ -559,8 +561,8 @@ def flatten_union(
 
 def get_concrete_type(annotation: Any, /) -> type:
     """
-    Get concrete type of parameterized annotation, or `object` if the annotation is
-    a `Literal` or `Any`.
+    Get concrete type of parameterized annotation, or `object` if the annotation is a
+    `Literal` or `Any`.
 
     Unwraps aliases and `Annotated`.
     """

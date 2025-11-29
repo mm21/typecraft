@@ -46,8 +46,8 @@ class DateTimeConverter(BaseSymmetricConverter[str, datetime]):
 
 class TimeConverter(BaseSymmetricConverter[str, time]):
     """
-    Converter for ISO time strings to/from python time objects, i.e. `HH:MM:SS`
-    or `HH:MM:SS.ffffff`.
+    Converter for ISO time strings to/from python time objects, i.e. `HH:MM:SS` or
+    `HH:MM:SS.ffffff`.
     """
 
     @classmethod

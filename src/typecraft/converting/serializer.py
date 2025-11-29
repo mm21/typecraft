@@ -44,8 +44,9 @@ Native types which can be represented in JSON format.
 type FuncSerializerType[SourceT] = FuncConverterType[SourceT, Any, SerializationFrame]
 """
 Function which serializes the given object from a specific source type and generally
-returns an object of built-in Python type. Can optionally take
-`SerializationFrame` as the second argument.
+returns an object of built-in Python type.
+
+Can optionally take `SerializationFrame` as the second argument.
 """
 
 JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
@@ -133,10 +134,9 @@ class Serializer[SourceT, TargetT](
 
 class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
     """
-    Registry for managing type serializers.
+    Registry for managing type-based serializers.
 
-    Provides efficient lookup of serializers based on source object type
-    and source annotation.
+    Provides lookup of serializers based on source and target annotations.
     """
 
     def __repr__(self) -> str:

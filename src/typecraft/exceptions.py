@@ -41,6 +41,7 @@ class ConversionErrorDetail:
 class BaseConversionError(Exception):
     """
     Aggregated conversion errors encountered during validation or serialization.
+
     Collects all conversion errors found during processing and formats them in a
     Pydantic-style error display with paths to each error.
     """

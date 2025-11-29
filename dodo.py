@@ -20,6 +20,11 @@ def task_format() -> Task:
         ".",
     ]
 
+    docformatter_args = [
+        "docformatter",
+        ".",
+    ]
+
     black_args = [
         "black",
         ".",
@@ -36,6 +41,7 @@ def task_format() -> Task:
         actions=[
             " ".join(autoflake_args),
             " ".join(isort_args),
+            " ".join(docformatter_args),
             " ".join(black_args),
             " ".join(toml_sort_args),
         ],

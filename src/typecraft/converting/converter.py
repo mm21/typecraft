@@ -27,8 +27,10 @@ type FuncConverterType[SourceT, TargetT, FrameT: BaseConversionFrame] = Callable
     [SourceT], TargetT
 ] | Callable[[SourceT, FrameT], TargetT]
 """
-Function which converts an object. Can take the source object by itself or
-source object with info.
+Function which converts an object.
+
+Can take the source object by itself or source object with frame for recursion or
+parameter access.
 """
 
 
@@ -113,8 +115,9 @@ class BaseConversionFrame[ParamsT]:
 
     context: Any | None
     """
-    User context passed at validation/serialization entry point. Can be overridden
-    when recursing into the next frame.
+    User context passed at validation/serialization entry point.
+
+    Can be overridden when recursing into the next frame.
     """
 
     __engine: BaseConversionEngine
@@ -186,8 +189,9 @@ class BaseConversionFrame[ParamsT]:
         context: Any | None = ...,
     ) -> Any:
         """
-        Create a new frame and recurse using the engine. `context` is replaced if not
-        `...`; otherwise it's passed through unchanged.
+        Create a new frame and recurse using the engine.
+
+        `context` is replaced if not `...`; otherwise it's passed through unchanged.
         """
         if self.__engine._is_validating:
             # validating: get actual object type
@@ -318,7 +322,7 @@ class MatchSpec:
 
     - "If I convert to `Animal`, can I also handle a request to convert to `Dog`?"
     - "If I convert to `int | str`, can I also handle a request to convert to `int`?
-    
+
     If `True`, the converter must produce the specific requested target type passed
     during conversion.
     """
@@ -327,7 +331,7 @@ class MatchSpec:
     """
     Whether to match when the converter's target type is assignable to the requested
     target type. Essentially asks:
-    
+
     - "If I convert to `Dog`, can I also handle a request to convert to `Animal`?"
     - "If I convert to `int`, can I also handle a request to convert to `int | str`?
     - "If I convert to `bool`, can I also handle a request to convert to `int`?
@@ -378,8 +382,8 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
         /,
     ) -> bool:
         """
-        Can be overridden by custom subclasses. Check if converter can convert the
-        given object.
+        Can be overridden by custom subclasses. Check if converter can convert the given
+        object.
 
         Called internally by the framework after check_match() succeeds.
 
@@ -424,8 +428,8 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     """
     Base class for typed converters (validators and serializers).
 
-    Encapsulates common conversion parameters and logic for type-based
-    conversion between source and target annotations.
+    Encapsulates common conversion parameters and logic for type-based conversion
+    between source and target annotations.
     """
 
     def __init__(

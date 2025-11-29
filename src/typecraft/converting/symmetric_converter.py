@@ -27,8 +27,8 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
     """
     Base class to encapsulate bidirectional type conversion.
 
-    Subclass with type parameters to specify the serialized and validated types,
-    then implement the abstract validation and serialization methods.
+    Subclass with type parameters to specify the serialized and validated types, then
+    implement the abstract validation and serialization methods.
     """
 
     validation_match_spec: MatchSpec | None = None
@@ -44,8 +44,9 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
     @classmethod
     def can_validate(cls, obj: SerializedT, /) -> bool:
         """
-        Can be overridden by custom subclasses. Check if converter can validate the
-        given object.
+        Can be overridden by custom subclasses.
+
+        Check if converter can validate the given object.
         """
         _ = obj
         return True

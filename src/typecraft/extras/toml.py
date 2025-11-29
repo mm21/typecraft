@@ -142,8 +142,8 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 ):
     """
     Base container for items in a document or table. Upon reading a TOML file via
-    `tomlkit`, coerces values from `tomlkit` types to the corresponding type
-    in this package.
+    `tomlkit`, coerces values from `tomlkit` types to the corresponding type in this
+    package.
 
     Only primitives (`str`, `int`, `float`, `bool`, `date`, `time`, `datetime`),
     `tomlkit` item types, and `tomlkit` wrapper types are allowed as fields.

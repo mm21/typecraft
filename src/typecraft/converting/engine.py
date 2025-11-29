@@ -32,9 +32,10 @@ class BaseConversionEngine[
     ExceptionT: BaseConversionError,
 ](ABC):
     """
-    Base class for conversion engines. Orchestrates conversion process, containing
-    common recursion logic with abstract hooks for validation/serialization-specific
-    behavior.
+    Base class for conversion engines.
+
+    Orchestrates conversion process, containing common recursion logic with abstract
+    hooks for validation/serialization-specific behavior.
     """
 
     _is_validating: bool
@@ -97,8 +98,8 @@ class BaseConversionEngine[
         """
         Main conversion dispatcher with common logic.
 
-        Walks the object recursively based on reference annotation,
-        invoking type-based converters when conversion is needed.
+        Walks the object recursively based on reference annotation, invoking type-based
+        converters when conversion is needed.
         """
 
         # ensure object is an instance of source annotation
@@ -180,8 +181,8 @@ class BaseConversionEngine[
         Process collection by recursing into items.
 
         We can only create built-in collection types; the user is responsible for
-        recursing into custom subclasses thereof in a custom converter as the
-        custom subclass may have a special construction interface.
+        recursing into custom subclasses thereof in a custom converter as the custom
+        subclass may have a special construction interface.
         """
         target_type = frame.target_annotation.concrete_type
         assert isinstance(obj, target_type)  # should have gotten converted otherwise

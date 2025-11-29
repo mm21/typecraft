@@ -56,8 +56,8 @@ def extract_arg_map(
     /,
 ) -> dict[str, type | TypeVar]:
     """
-    Extract from `cls` a mapping of type parameter names to parameters that were
-    passed to `base_cls`.
+    Extract from `cls` a mapping of type parameter names to parameters that were passed
+    to `base_cls`.
 
     :param cls: The class to extract type parameters from
     :param base_cls: The base class whose type parameters should be extracted
@@ -107,9 +107,8 @@ def extract_arg[ParamT](
     /,
 ) -> type | type[ParamT]:
     """
-    Extract from `cls` the resolved type parameter that was passed to `base_cls`
-    for its parameter by name or index, optionally ensuring it's a subclass of
-    `param_cls`.
+    Extract from `cls` the resolved type parameter that was passed to `base_cls` for its
+    parameter by name or index, optionally ensuring it's a subclass of `param_cls`.
 
     :param cls: The class or annotation to extract the type parameter from
     :param base_cls: The base class whose type parameter should be extracted

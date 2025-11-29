@@ -38,6 +38,7 @@ tomlkit = {version = "^0.13.3", optional = true}
 [tool.poetry.group.dev.dependencies]
 autoflake = "^2.3.1"
 black = "^25.1.0"
+docformatter = "^1.7.7"
 doit = "^0.36.0"
 isort = "^6.0.1"
 pytest = "^8.4.2"
@@ -60,6 +61,14 @@ target-version = ["py312", "py313"]
 
 [tool.isort]
 profile = "black"
+
+[tool.docformatter]
+black = true
+in-place = true
+make-summary-multi-line = true
+non-strict = true
+pre-summary-newline = true
+recursive = true
 
 [tool.tomlsort]
 no_sort_tables = true

@@ -53,7 +53,9 @@ class SerializationEngine(
     BaseConversionEngine[SerializerRegistry, SerializationFrame, SerializationError]
 ):
     """
-    Orchestrates serialization process. Not exposed to user.
+    Orchestrates serialization process.
+
+    Not exposed to user.
     """
 
     def _get_builtin_registries(

@@ -13,15 +13,17 @@ __all__ = [
 class ObjectMapping[KT, VT](MutableMapping[KT, VT]):
     """
     Maintains a mapping from arbitrary objects to other objects using id of keys to
-    support non-hashable keys. Keeps a mapping of the key objects to ensure they don't
-    get garbage collected.
+    support non-hashable keys.
+
+    Keeps a mapping of the key objects to ensure they don't get garbage collected.
     """
 
     __obj_map: dict[int, tuple[KT, VT]]
     """
-    Mapping of key id to tuple of (key, object). The key object is stored to maintain
-    its reference count; if it gets deleted, its id could get assigned to a different
-    object.
+    Mapping of key id to tuple of (key, object).
+
+    The key object is stored to maintain its reference count; if it gets deleted, its id
+    could get assigned to a different object.
     """
 
     def __init__(self):

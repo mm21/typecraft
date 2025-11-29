@@ -253,9 +253,10 @@ def convert_to_dict(
 
 def select_ann_from_union(obj: Any, union: Annotation) -> Annotation:
     """
-    Select the annotation from the union which matches the given object. At this point
-    this should always succeed; the object was previously confirmed to match the
-    annotation.
+    Select the annotation from the union which matches the given object.
+
+    At this point this should always succeed; the object was previously confirmed to
+    match the annotation.
     """
     assert union.is_union
     ann = next(

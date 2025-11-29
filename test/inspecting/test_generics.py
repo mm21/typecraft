@@ -557,8 +557,7 @@ def test_from_abc():
 
 def test_from_protocol():
     """
-    Test extracting args from a protocol which isn't in the inheritance
-    hierarchy.
+    Test extracting args from a protocol which isn't in the inheritance hierarchy.
     """
 
     @runtime_checkable

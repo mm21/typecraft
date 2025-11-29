@@ -72,7 +72,9 @@ class ValidationEngine(
     BaseConversionEngine[ValidatorRegistry, ValidationFrame, ValidationError]
 ):
     """
-    Orchestrates validation process. Not exposed to user.
+    Orchestrates validation process.
+
+    Not exposed to user.
     """
 
     def _get_builtin_registries(
@@ -119,8 +121,8 @@ def validate(
     context: Any | None = None,
 ) -> Any:
     """
-    Recursively validate object by type, converting to the target type if configured
-    by `params`.
+    Recursively validate object by type, converting to the target type if configured by
+    `params`.
 
     If both `validators` and `registry` are passed, a new registry is created with
     `validators` appended.
@@ -185,8 +187,8 @@ def normalize_to_list(
     """
     Validate object(s) and normalize to a list of the item type.
 
-    Only built-in collection types and generators are expanded.
-    Custom types (even if iterable) are treated as single objects.
+    Only built-in collection types and generators are expanded. Custom types (even if
+    iterable) are treated as single objects.
 
     :raises ConversionError: If any conversion errors are encountered
     """

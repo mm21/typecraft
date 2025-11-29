@@ -274,8 +274,8 @@ def test_eq():
 
 def test_any_vs_object():
     """
-    Test the critical distinction between Any (top AND bottom type) and object
-    (concrete top type).
+    Test the critical distinction between Any (top AND bottom type) and object (concrete
+    top type).
 
     Any is BOTH the top type and bottom type in Python's gradual typing system:
     - Everything is a subtype of Any (top type behavior)
@@ -375,9 +375,8 @@ def test_callable_is_assignable():
     """
     Test is_assignable for callables.
 
-    Callables are contravariant in parameters and covariant in return type.
-    With Any as both top and bottom type, callable relationships become bidirectional
-    with Any.
+    Callables are contravariant in parameters and covariant in return type. With Any as
+    both top and bottom type, callable relationships become bidirectional with Any.
     """
     # same signature
     a1 = Annotation(Callable[[int], str])

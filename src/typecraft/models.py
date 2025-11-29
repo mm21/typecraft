@@ -88,7 +88,9 @@ def Field(
     compare: bool = True,
 ) -> Any:
     """
-    Create a new field. Wraps a dataclass field along with metadata.
+    Create a new field.
+
+    Wraps a dataclass field along with metadata.
     """
     metadata = FieldMetadata(alias=alias, user_metadata=user_metadata)
     return dataclasses.field(
@@ -198,8 +200,7 @@ class ModelConfig:
 @dataclass_transform(kw_only_default=True)
 class BaseModel:
     """
-    Base class to transform subclass to model and provide recursive field
-    validation.
+    Base class to transform subclass to model and provide recursive field validation.
     """
 
     model_config: ModelConfig = ModelConfig()
@@ -249,8 +250,8 @@ class BaseModel:
     @classmethod
     def model_load(cls, obj: Mapping, /, *, by_alias: bool = False) -> Self:
         """
-        Create instance of model from mapping, substituting aliases if
-        `by_alias` is `True`.
+        Create instance of model from mapping, substituting aliases if `by_alias` is
+        `True`.
         """
         values: dict[str, Any] = {}
 

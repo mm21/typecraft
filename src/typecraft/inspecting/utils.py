@@ -7,10 +7,9 @@ from typing import Protocol
 
 def robust_issubclass(cls: type, class_or_tuple: type | tuple[type, ...], /) -> bool:
     """
-    `issubclass()` can raise `TypeError` in some cases, even when the arguments are
-    types; handle it gracefully. Additionally handle checking a class against
-    a protocol while taking attributes into consideration (not supported by
-    `issubclass()`.)
+    Handle cases where `issubclass()` can raise `TypeError` even when the arguments are
+    types. Additionally handle checking a class against a protocol while taking
+    attributes into consideration (not supported by `issubclass()`.)
 
     `issubclass()` has this limitation since it's messy to differentiate between
     class vs instance attributes. Here we won't differentiate between them,

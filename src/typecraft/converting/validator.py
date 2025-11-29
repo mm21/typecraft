@@ -25,8 +25,9 @@ __all__ = [
 
 type FuncValidatorType[TargetT] = FuncConverterType[Any, TargetT, ValidationFrame]
 """
-Function which validates the given object and returns an object of the
-specified type. Can optionally take `ValidationFrame` as the second argument.
+Function which validates the given object and returns an object of the specified type.
+
+Can optionally take `ValidationFrame` as the second argument.
 """
 
 
@@ -38,8 +39,8 @@ class ValidationParams:
 
     use_builtin_validators: bool = True
     """
-    For non-serializable target types, whether to use builtin validators like `str`
-    to `date`.
+    For non-serializable target types, whether to use builtin validators like `str` to
+    `date`.
     """
 
     strict: bool = True
@@ -81,7 +82,9 @@ class Validator[SourceT, TargetT](
 
 class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
     """
-    Registry for managing type validators.
+    Registry for managing type-based validators.
+
+    Provides lookup of validators based on source and target annotations.
     """
 
     def __repr__(self) -> str:
