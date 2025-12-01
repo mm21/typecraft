@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 from doit.task import Task
 
 
@@ -8,10 +11,6 @@ def task_format() -> Task:
 
     autoflake_args = [
         "autoflake",
-        "--remove-all-unused-imports",
-        "--remove-unused-variables",
-        "-i",
-        "-r",
         ".",
     ]
 
@@ -39,12 +38,20 @@ def task_format() -> Task:
     return Task(
         "format",
         actions=[
-            " ".join(autoflake_args),
-            " ".join(isort_args),
-            " ".join(docformatter_args),
-            " ".join(black_args),
-            " ".join(toml_sort_args),
+            (_run, (autoflake_args,)),
+            (_run, (isort_args,)),
+            (_run, (docformatter_args, {0, 3})),
+            (_run, (black_args,)),
+            (_run, (toml_sort_args,)),
         ],
         targets=[],
         file_dep=[],
     )
+
+
+def _run(cmd: list[str], expect_rc: int | set[int] = 0):
+    expect_rcs = expect_rc if isinstance(expect_rc, set) else set((expect_rc,))
+    print(f"=== Running: {cmd[0]}")
+    rc = subprocess.call(cmd)
+    if not rc in expect_rcs:
+        sys.exit(f"docformatter failed: rc={rc}, cmd={cmd}")

@@ -52,15 +52,22 @@ toml = [
   "tomlkit"
 ]
 
+[tool.doit]
+verbosity = 2
+
 [tool.autoflake]
-remove_all_unused_imports = true
-remove_unused_variables = true
+in_place = true
+recursive = true
+remove-all-unused-imports = true
+remove-unused-variables = true
 
 [tool.black]
+quiet = true
 target-version = ["py312", "py313"]
 
 [tool.isort]
 profile = "black"
+quiet = true
 
 [tool.docformatter]
 black = true
