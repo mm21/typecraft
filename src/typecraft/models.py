@@ -24,11 +24,16 @@ from typing import (
 )
 
 from .converting.converter import MatchSpec
-from .converting.serializer import SerializationFrame
+from .converting.serializer import (
+    BaseSerializer,
+    SerializationFrame,
+    SerializerRegistry,
+)
 from .converting.symmetric_converter import BaseSymmetricConverter
+from .converting.validator import BaseValidator, ValidatorRegistry
 from .inspecting.annotations import Annotation
 from .serializing import SerializationParams
-from .validating import ValidationFrame, ValidationParams, Validator, validate
+from .validating import ValidationFrame, ValidationParams, validate
 
 __all__ = [
     "Field",
@@ -209,18 +214,6 @@ class BaseModel:
     Set on subclass to configure this model.
     """
 
-    __fields: MappingProxyType[str, FieldInfo]
-    """
-    Mapping of field names to info objects.
-
-    Only set during model build.
-    """
-
-    __dataclass_init: Callable[..., None]
-    """
-    The original `__init__()` created by the dataclass.
-    """
-
     __built: bool = False
     """
     Whether model build has completed for this class.
@@ -229,6 +222,28 @@ class BaseModel:
     __init_done: bool = False
     """
     Whether initialization has completed for this instance.
+    """
+
+    __fields: MappingProxyType[str, FieldInfo]
+    """
+    Mapping of field names to info objects.
+
+    Only set during model build.
+    """
+
+    __typed_validator_registry: ValidatorRegistry
+    """
+    Type-based validators registered by user.
+    """
+
+    __typed_serializer_registry: SerializerRegistry
+    """
+    Type-based serializers registered by user.
+    """
+
+    __dataclass_init: Callable[..., None]
+    """
+    The original `__init__()` created by the dataclass.
     """
 
     def __init_subclass__(cls, **kwargs):
@@ -250,10 +265,12 @@ class BaseModel:
             not self.__init_done or self.model_config.validate_on_assignment
         ):
             value_ = self.model_pre_validate(field_info, value)
+
+            # TODO: invoke adapter.validate()
             value_ = validate(
                 value_,
                 field_info.annotation.raw,
-                *self.model_get_validators(),
+                registry=self.__typed_validator_registry,
                 params=self.model_config.validation_params,
             )
             value_ = self.model_post_validate(field_info, value_)
@@ -279,11 +296,18 @@ class BaseModel:
           validator/serializer objects)
         - Register field/model validators/serializers
         """
+        # create fields
         cls.__fields = MappingProxyType(
             {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
         )
 
-        # TODO: register type-based converters and field/model converters
+        # extract typed validators/serializers
+        cls.__typed_validator_registry = ValidatorRegistry(*cls.model_get_validators())
+        cls.__typed_serializer_registry = SerializerRegistry(
+            *cls.model_get_serializers()
+        )
+
+        # TODO: register field validators/serializers
 
         cls.__built = True
 
@@ -324,10 +348,17 @@ class BaseModel:
 
         return values
 
-    def model_get_validators(self) -> tuple[Validator[Any, Any], ...]:
+    @classmethod
+    def model_get_validators(cls) -> tuple[BaseValidator, ...]:
         """
-        Override to provide converters for values by type, including inner values like
-        elements of lists.
+        Override to register type-based validators.
+        """
+        return tuple()
+
+    @classmethod
+    def model_get_serializers(cls) -> tuple[BaseSerializer, ...]:
+        """
+        Override to register type-based serializers.
         """
         return tuple()
 

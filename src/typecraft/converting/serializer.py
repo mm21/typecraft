@@ -125,14 +125,14 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
     """
 
     def __repr__(self) -> str:
-        return f"SerializerRegistry(serializers={self._converters})"
+        return f"SerializerRegistry(serializers={self.serializers})"
 
     @property
-    def serializers(self) -> list[BaseSerializer]:
+    def serializers(self) -> tuple[BaseSerializer, ...]:
         """
         Get serializers currently registered.
         """
-        return self._converters
+        return tuple(self._converters)
 
     def register(self, serializer: BaseSerializer, /):
         """

@@ -63,7 +63,7 @@ class SerializationEngine(
 def serialize(
     obj: Any,
     /,
-    *serializers: Serializer[Any, Any],
+    *serializers: BaseSerializer[Any, Any],
     registry: SerializerRegistry | None = None,
     params: SerializationParams | None = None,
     context: Any | None = None,

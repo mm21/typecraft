@@ -92,11 +92,11 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         return f"ValidatorRegistry(validators={self.validators})"
 
     @property
-    def validators(self) -> list[BaseValidator]:
+    def validators(self) -> tuple[BaseValidator, ...]:
         """
         Get validators currently registered.
         """
-        return self._converters
+        return tuple(self._converters)
 
     def register(self, validator: BaseValidator, /):
         """
