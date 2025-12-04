@@ -6,14 +6,17 @@ from __future__ import annotations
 
 from dataclasses import fields
 from datetime import date, datetime, time
-from typing import Any, get_type_hints
+from functools import cache
+from typing import Any, Protocol, TypeVar, cast, get_type_hints, runtime_checkable
+
+from typecraft.converting.utils import convert_to_list
 
 from ..inspecting.annotations import Annotation
-from ..types import DataclassProtocol
+from ..types import DataclassProtocol, ValueCollectionType
 from .converter import MatchSpec
-from .serializer import SerializationFrame
+from .serializer import SerializationFrame, Serializer, SerializerRegistry
 from .symmetric_converter import BaseSymmetricConverter
-from .validator import ValidationFrame
+from .validator import ValidationFrame, ValidatorRegistry
 
 
 class DateConverter(BaseSymmetricConverter[str, date]):
@@ -148,12 +151,68 @@ class DataclassConverter(BaseSymmetricConverter[dict[str, Any], DataclassProtoco
         return serialized_fields
 
 
-BUILTIN_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
+_T_contra = TypeVar("_T_contra", contravariant=True)
+
+
+# technically only one of __lt__/__gt__ is required
+@runtime_checkable
+class SupportsComparison(Protocol[_T_contra]):
+    def __lt__(self, other: _T_contra, /) -> bool: ...
+    def __gt__(self, other: _T_contra, /) -> bool: ...
+
+
+def serialize_to_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
+    """
+    Serialize to list with optional sorting.
+    """
+    obj_list = convert_to_list(obj, frame)
+
+    if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
+        for o in obj_list:
+            if not isinstance(o, SupportsComparison):
+                raise ValueError(
+                    f"Object '{o}' does not support comparison, so containing set cannot be converted to a sorted list"
+                )
+        return sorted(cast(list[SupportsComparison], obj_list))
+    else:
+        return obj_list
+
+
+BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
     DateConverter,
     DateTimeConverter,
     TimeConverter,
     DataclassConverter,
 )
 
-BUILTIN_VALIDATORS = tuple(c.as_validator() for c in BUILTIN_CONVERTERS)
-BUILTIN_SERIALIZERS = tuple(c.as_serializer() for c in BUILTIN_CONVERTERS)
+BUILTIN_SERIALIZERS = (
+    Serializer(set | frozenset | tuple, list, func=serialize_to_list),
+)
+"""
+Extra serializers to use for json serialization.
+"""
+
+
+def get_model_converter() -> type[BaseSymmetricConverter]:
+    """
+    Get converter for `BaseModel`; must be lazy-loaded to avoid circular dependency.
+    """
+    from ..models import ModelConverter
+
+    return ModelConverter
+
+
+def get_builtin_converters() -> tuple[type[BaseSymmetricConverter], ...]:
+    return (*BUILTIN_SYMMETRIC_CONVERTERS, get_model_converter())
+
+
+@cache
+def get_builtin_validator_registry() -> ValidatorRegistry:
+    return ValidatorRegistry(*(c.as_validator() for c in get_builtin_converters()))
+
+
+@cache
+def get_builtin_serializer_registry() -> SerializerRegistry:
+    return SerializerRegistry(
+        *(c.as_serializer() for c in get_builtin_converters()), *BUILTIN_SERIALIZERS
+    )

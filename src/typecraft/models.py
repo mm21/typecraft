@@ -13,7 +13,6 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Mapping
 from dataclasses import MISSING, dataclass
-from functools import cached_property
 from types import MappingProxyType
 from typing import (
     Any,
@@ -25,6 +24,8 @@ from typing import (
 )
 
 from .converting.converter import MatchSpec
+from .converting.serializer import SerializationFrame
+from .converting.symmetric_converter import BaseSymmetricConverter
 from .inspecting.annotations import Annotation
 from .serializing import SerializationParams
 from .validating import ValidationFrame, ValidationParams, Validator, validate
@@ -252,7 +253,7 @@ class BaseModel:
             value_ = validate(
                 value_,
                 field_info.annotation.raw,
-                *self.__validators,
+                *self.model_get_validators(),
                 params=self.model_config.validation_params,
             )
             value_ = self.model_post_validate(field_info, value_)
@@ -287,7 +288,7 @@ class BaseModel:
         cls.__built = True
 
     @classmethod
-    def model_load(cls, obj: Mapping, /, *, by_alias: bool = False) -> Self:
+    def model_load(cls, obj: Mapping[str, Any], /, *, by_alias: bool = False) -> Self:
         """
         Create instance of model from mapping, substituting aliases if `by_alias` is
         `True`.
@@ -310,6 +311,8 @@ class BaseModel:
 
         for name, field_info in self.__fields.items():
             value = getattr(self, name)
+
+            # TODO: invoke adapter.serialize()
 
             # recurse if this is a nested model
             if issubclass(field_info.annotation.concrete_type, BaseModel):
@@ -350,15 +353,6 @@ class BaseModel:
         if not cls.__built:
             cls.model_build()
 
-    @cached_property
-    def __validators(self) -> tuple[Validator[Any, Any], ...]:
-        """
-        Converters to use for validation.
-        """
-        # add converter for nested dataclasses at end in case user passes a
-        # converter for a subclass
-        return (*self.model_get_validators(), MODEL_CONVERTER)
-
     def __init_wrapper(self, *args, **kwargs):
         """
         Ensure this model has been built before proceeding with init.
@@ -367,22 +361,22 @@ class BaseModel:
         self.__dataclass_init(*args, **kwargs)
 
 
-def validate_model(obj: Mapping[Any, Any], frame: ValidationFrame) -> BaseModel:
-    type_ = frame.target_annotation.concrete_type
-    assert issubclass(type_, BaseModel)
-    assert isinstance(obj, Mapping)
-    return type_(**obj)
+class ModelConverter(BaseSymmetricConverter[Mapping[str, Any], BaseModel]):
+    """
+    Converts a mapping to/from a model.
+    """
 
+    validation_match_spec = MatchSpec(assignable_from_target=True)
 
-MODEL_CONVERTER = Validator(
-    Mapping,
-    BaseModel,
-    func=validate_model,
-    match_spec=MatchSpec(assignable_from_target=True),
-)
-"""
-Converts a mapping (e.g. dict) to a model.
-"""
+    @classmethod
+    def validate(cls, obj: Mapping[str, Any], frame: ValidationFrame) -> BaseModel:
+        type_ = frame.target_annotation.concrete_type
+        assert issubclass(type_, BaseModel)
+        return type_.model_load(obj, by_alias=frame.params.by_alias)
+
+    @classmethod
+    def serialize(cls, obj: BaseModel, frame: SerializationFrame) -> dict[str, Any]:
+        return obj.model_dump(by_alias=frame.params.by_alias)
 
 
 def _get_fields(class_or_instance: Any) -> tuple[dataclasses.Field, ...]:

@@ -7,6 +7,7 @@ from typing import (
 
 from .converter import (
     BaseConversionFrame,
+    BaseConversionParams,
     BaseConverter,
     BaseConverterRegistry,
     FuncConverterType,
@@ -32,7 +33,7 @@ Can optionally take `ValidationFrame` as the second argument.
 
 
 @dataclass(kw_only=True)
-class ValidationParams:
+class ValidationParams(BaseConversionParams):
     """
     Validation params passed by user.
     """

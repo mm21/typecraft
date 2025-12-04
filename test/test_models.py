@@ -9,7 +9,8 @@ from typecraft.models import (
     FieldInfo,
     ModelConfig,
 )
-from typecraft.validating import ValidationParams
+from typecraft.serializing import serialize
+from typecraft.validating import ValidationParams, validate
 
 
 class BasicTest(BaseModel):
@@ -135,3 +136,15 @@ def test_load_dump():
     assert dc.test_field == 123
     dump = dc.model_dump(by_alias=True)
     assert dump["test-field"] == 123
+
+
+def test_list():
+
+    obj = [{}, {"a": 321, "b": "cba"}]
+    validated = validate(obj, list[BasicTest])
+
+    assert len(validated) == 2
+    assert all(isinstance(o, BasicTest) for o in validated)
+
+    serialized = serialize(validated)
+    assert serialized == [{"a": 123, "b": "abc"}, {"a": 321, "b": "cba"}]

@@ -10,7 +10,8 @@ from typing import (
     overload,
 )
 
-from .converting.builtin_converters import BUILTIN_VALIDATORS
+from typecraft.converting.builtin_converters import get_builtin_validator_registry
+
 from .converting.converter import MatchSpec
 from .converting.engine import BaseConversionEngine
 from .converting.utils import (
@@ -62,11 +63,6 @@ NON_STRICT_REGISTRY = ValidatorRegistry(
 Registry of validators for non-strict mode.
 """
 
-BUILTIN_REGISTRY = ValidatorRegistry(*BUILTIN_VALIDATORS)
-"""
-Registry of validators for builtin conversions.
-"""
-
 
 class ValidationEngine(
     BaseConversionEngine[ValidatorRegistry, ValidationFrame, ValidationError]
@@ -81,7 +77,9 @@ class ValidationEngine(
         self, frame: ValidationFrame
     ) -> tuple[ValidatorRegistry, ...]:
         builtin_registry = (
-            (BUILTIN_REGISTRY,) if frame.params.use_builtin_validators else ()
+            (get_builtin_validator_registry(),)
+            if frame.params.use_builtin_validators
+            else ()
         )
         non_strict_registry = () if frame.params.strict else (NON_STRICT_REGISTRY,)
         return (*builtin_registry, *non_strict_registry)

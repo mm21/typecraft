@@ -4,23 +4,17 @@ from dataclasses import dataclass
 from types import NoneType
 from typing import (
     Any,
-    Protocol,
-    TypeVar,
-    cast,
-    runtime_checkable,
 )
-
-from typecraft.types import ValueCollectionType
 
 from ..inspecting.annotations import Annotation
 from .converter import (
     BaseConversionFrame,
+    BaseConversionParams,
     BaseConverter,
     BaseConverterRegistry,
     FuncConverterType,
 )
 from .mixins import FuncConverterMixin, GenericConverterMixin
-from .utils import convert_to_list
 
 __all__ = [
     "JsonSerializableType",
@@ -54,18 +48,9 @@ JSON_SERIALIZABLE_ANNOTATION = Annotation(JsonSerializableType)
 Annotation singleton for JSON-serializable type.
 """
 
-_T_contra = TypeVar("_T_contra", contravariant=True)
-
-
-# technically only one of __lt__/__gt__ is required
-@runtime_checkable
-class SupportsComparison(Protocol[_T_contra]):
-    def __lt__(self, other: _T_contra, /) -> bool: ...
-    def __gt__(self, other: _T_contra, /) -> bool: ...
-
 
 @dataclass(kw_only=True)
-class SerializationParams:
+class SerializationParams(BaseConversionParams):
     """
     Serialization params passed by user.
     """
@@ -154,20 +139,3 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         Register a serializer.
         """
         self._register_converter(serializer)
-
-
-def serialize_to_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
-    """
-    Serialize to list with optional sorting.
-    """
-    obj_list = convert_to_list(obj, frame)
-
-    if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
-        for o in obj_list:
-            if not isinstance(o, SupportsComparison):
-                raise ValueError(
-                    f"Object '{o}' does not support comparison, so containing set cannot be converted to a sorted list"
-                )
-        return sorted(cast(list[SupportsComparison], obj_list))
-    else:
-        return obj_list

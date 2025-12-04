@@ -8,7 +8,7 @@ from typing import (
     Any,
 )
 
-from .converting.builtin_converters import BUILTIN_SERIALIZERS
+from .converting.builtin_converters import get_builtin_serializer_registry
 from .converting.engine import BaseConversionEngine
 from .converting.serializer import (
     JSON_SERIALIZABLE_ANNOTATION,
@@ -20,7 +20,6 @@ from .converting.serializer import (
     SerializationParams,
     Serializer,
     SerializerRegistry,
-    serialize_to_list,
 )
 from .exceptions import SerializationError
 from .inspecting.annotations import Annotation
@@ -40,14 +39,6 @@ __all__ = [
 
 DEFAULT_PARAMS = SerializationParams()
 
-BUILTIN_REGISTRY = SerializerRegistry(
-    Serializer(set | frozenset | tuple, list, func=serialize_to_list),
-    *BUILTIN_SERIALIZERS,
-)
-"""
-Registry to use for json serialization.
-"""
-
 
 class SerializationEngine(
     BaseConversionEngine[SerializerRegistry, SerializationFrame, SerializationError]
@@ -62,7 +53,11 @@ class SerializationEngine(
         self, frame: SerializationFrame
     ) -> tuple[SerializerRegistry, ...]:
         _ = frame
-        return (BUILTIN_REGISTRY,) if frame.params.use_builtin_serializers else ()
+        return (
+            (get_builtin_serializer_registry(),)
+            if frame.params.use_builtin_serializers
+            else ()
+        )
 
 
 def serialize(

@@ -34,6 +34,18 @@ parameter access.
 """
 
 
+@dataclass(kw_only=True)
+class BaseConversionParams:
+    """
+    Common params passed by user.
+    """
+
+    by_alias: bool = False
+    """
+    Whether to validate/serialize models by alias.
+    """
+
+
 class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     """
     Encapsulates a validator or serializer function.
