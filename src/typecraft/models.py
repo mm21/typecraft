@@ -4,7 +4,6 @@ Dataclass-based data models with validation.
 TODO:
 - Decorators to register validators/serializers (model and field level)
     - Remove model_[pre/post]_validate()
-- Type-based serialization mechanism
 - Built-in validation helpers (comparison, range, ...)
 - Lambda-based validation (return True if valid)
 """
@@ -14,7 +13,8 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Mapping
 from dataclasses import MISSING, dataclass
-from functools import cache, cached_property
+from functools import cached_property
+from types import MappingProxyType
 from typing import (
     Any,
     Callable,
@@ -208,27 +208,41 @@ class BaseModel:
     Set on subclass to configure this model.
     """
 
+    __fields: MappingProxyType[str, FieldInfo]
+    """
+    Mapping of field names to info objects.
+
+    Only set during model build.
+    """
+
+    __dataclass_init: Callable[..., None]
+    """
+    The original `__init__()` created by the dataclass.
+    """
+
+    __built: bool = False
+    """
+    Whether model build has completed for this class.
+    """
+
     __init_done: bool = False
     """
-    Whether initialization has completed.
+    Whether initialization has completed for this instance.
     """
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls = dataclass(cls, kw_only=True)
 
-        # validate fields
-        for field in _get_fields(cls):
-            if not field.type:
-                raise TypeError(
-                    f"Class {cls}: Field '{field.name}': No type annotation"
-                )
+        # swap out newly created init for wrapper
+        cls.__dataclass_init = cls.__init__
+        cls.__init__ = cls.__init_wrapper
 
     def __post_init__(self):
         self.__init_done = True
 
     def __setattr__(self, name: str, value: Any):
-        field_info = self.model_fields.get(name)
+        field_info = self.__fields.get(name)
 
         # validate value if applicable
         if field_info and (
@@ -247,34 +261,46 @@ class BaseModel:
 
         super().__setattr__(name, value_)
 
+    @property
+    def model_fields(self) -> MappingProxyType[str, FieldInfo]:
+        """
+        Get fields defined on this model.
+        """
+        return self.__fields
+
+    @classmethod
+    def model_build(cls):
+        """
+        Build this model:
+
+        - Extract type annotations and create model fields
+        - Register type-based validators/serializers (invoke classmethods to get
+          validator/serializer objects)
+        - Register field/model validators/serializers
+        """
+        cls.__fields = MappingProxyType(
+            {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
+        )
+
+        # TODO: register type-based converters and field/model converters
+
+        cls.__built = True
+
     @classmethod
     def model_load(cls, obj: Mapping, /, *, by_alias: bool = False) -> Self:
         """
         Create instance of model from mapping, substituting aliases if `by_alias` is
         `True`.
         """
+        cls.__check_build()
         values: dict[str, Any] = {}
 
-        for name, field_info in cls.model_get_fields().items():
+        for name, field_info in cls.__fields.items():
             mapping_name = field_info.get_name(by_alias=by_alias)
             if mapping_name in obj:
                 values[name] = obj[mapping_name]
 
         return cls(**values)
-
-    @classmethod
-    def model_get_fields(cls) -> dict[str, FieldInfo]:
-        """
-        Get model fields from class.
-        """
-        return cls.__model_fields()
-
-    @cached_property
-    def model_fields(self) -> dict[str, FieldInfo]:
-        """
-        Get model fields from instance.
-        """
-        return type(self).model_get_fields()
 
     def model_dump(self, *, by_alias: bool = False) -> dict[str, Any]:
         """
@@ -282,7 +308,7 @@ class BaseModel:
         """
         values: dict[str, Any] = {}
 
-        for name, field_info in self.model_fields.items():
+        for name, field_info in self.__fields.items():
             value = getattr(self, name)
 
             # recurse if this is a nested model
@@ -317,13 +343,12 @@ class BaseModel:
         return value
 
     @classmethod
-    @cache
-    def __model_fields(cls) -> dict[str, FieldInfo]:
+    def __check_build(cls):
         """
-        Implementation of API to keep the `dataclass_fields` signature intact,
-        overridden by `@cache`.
+        Check whether model has been built and build it if not.
         """
-        return {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
+        if not cls.__built:
+            cls.model_build()
 
     @cached_property
     def __validators(self) -> tuple[Validator[Any, Any], ...]:
@@ -333,6 +358,13 @@ class BaseModel:
         # add converter for nested dataclasses at end in case user passes a
         # converter for a subclass
         return (*self.model_get_validators(), MODEL_CONVERTER)
+
+    def __init_wrapper(self, *args, **kwargs):
+        """
+        Ensure this model has been built before proceeding with init.
+        """
+        type(self).__check_build()
+        self.__dataclass_init(*args, **kwargs)
 
 
 def validate_model(obj: Mapping[Any, Any], frame: ValidationFrame) -> BaseModel:
