@@ -41,7 +41,7 @@ from tomlkit.items import (
 
 from ..converting.converter import MatchSpec
 from ..inspecting.generics import extract_arg
-from ..models import BaseModel, FieldInfo, ModelConfig
+from ..model import BaseModel, FieldInfo, ModelConfig
 from ..validating import ValidationFrame, Validator
 
 __all__ = [

@@ -197,7 +197,7 @@ def get_model_converter() -> type[BaseSymmetricConverter]:
     """
     Get converter for `BaseModel`; must be lazy-loaded to avoid circular dependency.
     """
-    from ..models import ModelConverter
+    from ..model import ModelConverter
 
     return ModelConverter
 

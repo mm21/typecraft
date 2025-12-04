@@ -10,7 +10,7 @@ from typecraft.extras.toml import (
     BaseTableWrapper,
     TableArrayWrapper,
 )
-from typecraft.models import Field
+from typecraft.model import Field
 
 
 class DocumentTest(BaseDocumentWrapper):

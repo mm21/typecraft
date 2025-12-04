@@ -3,7 +3,7 @@ from typing import Any
 from pytest import raises
 
 from typecraft.exceptions import ValidationError
-from typecraft.models import (
+from typecraft.model import (
     BaseModel,
     Field,
     FieldInfo,
