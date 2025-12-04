@@ -579,10 +579,11 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
         target_annotation: Annotation,
     ) -> ConverterT | None:
         """
-        Find the first converter that can handle the conversion.
+        Find the first converter that can handle the conversion, traversing converters
+        in reverse order from the order in which they were registered.
         """
         assert not target_annotation.is_union
-        for converter in self._converters:
+        for converter in reversed(self._converters):
             if converter._check_convert(obj, source_annotation, target_annotation):
                 return converter
         return None

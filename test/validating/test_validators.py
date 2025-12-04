@@ -256,14 +256,14 @@ def test_registry():
         """
         return frame.target_annotation.concrete_type(s)
 
-    # register converters
+    # register converters (will be checked in reverse order)
     registry = ValidatorRegistry()
-    registry.register(Validator.from_func(str_to_int))
     registry.register(
         Validator.from_func(
             str_to_int_subtype, match_spec=MatchSpec(assignable_from_target=True)
         )
     )
+    registry.register(Validator.from_func(str_to_int))
 
     # use the registry
     obj = "42"

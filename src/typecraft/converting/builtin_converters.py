@@ -179,9 +179,9 @@ def serialize_to_list(obj: ValueCollectionType, frame: SerializationFrame) -> li
 
 
 BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
-    DateConverter,
-    DateTimeConverter,
     TimeConverter,
+    DateTimeConverter,
+    DateConverter,
     DataclassConverter,
 )
 
