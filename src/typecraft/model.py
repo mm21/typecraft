@@ -23,6 +23,7 @@ from typing import (
     overload,
 )
 
+from .adapter import Adapter
 from .converting.converter import MatchSpec
 from .converting.serializer import (
     BaseSerializer,
@@ -33,12 +34,12 @@ from .converting.symmetric_converter import BaseSymmetricConverter
 from .converting.validator import BaseValidator, ValidatorRegistry
 from .inspecting.annotations import Annotation
 from .serializing import SerializationParams
-from .validating import ValidationFrame, ValidationParams, validate
+from .validating import ValidationFrame, ValidationParams
 
 __all__ = [
     "Field",
-    "FieldInfo",
     "FieldMetadata",
+    "FieldInfo",
     "ModelConfig",
     "BaseModel",
 ]
@@ -111,6 +112,22 @@ def Field(
 
 
 @dataclass(kw_only=True)
+class FieldMetadata:
+    """
+    Encapsulates metadata for a field definition.
+    """
+
+    alias: str | None = None
+    """
+    Field name to use when loading a dumping from/to dict.
+    """
+
+    user_metadata: Any | None = None
+    """
+    User-provided metadata.
+    """
+
+
 class FieldInfo:
     """
     Field info with annotations processed.
@@ -131,6 +148,43 @@ class FieldInfo:
     Metadata passed to field definition.
     """
 
+    _adapter: Adapter
+    """
+    Adapter object to wrap validation/serialization.
+    """
+
+    # TODO: also take registered validators/serializers for this field
+    def __init__(
+        self,
+        field: dataclasses.Field,
+        model_cls: type[BaseModel],
+        *,
+        validator_registry: ValidatorRegistry,
+        serializer_registry: SerializerRegistry,
+    ):
+        if not field.type:
+            raise TypeError(f"Field '{field.name}' does not have an annotation")
+
+        type_hints = get_type_hints(model_cls, include_extras=True)
+        assert field.name in type_hints
+
+        raw_annotation = type_hints[field.name]
+        annotation = Annotation(raw_annotation)
+
+        metadata = field.metadata.get("metadata") or FieldMetadata()
+        assert isinstance(metadata, FieldMetadata)
+
+        self.field = field
+        self.annotation = annotation
+        self.metadata = metadata
+        self._adapter = Adapter(
+            annotation,
+            validation_params=model_cls.model_config.validation_params,
+            serialization_params=model_cls.model_config.serialization_params,
+            validator_registry=validator_registry,
+            serializer_registry=serializer_registry,
+        )
+
     @property
     def name(self) -> str:
         """
@@ -143,42 +197,6 @@ class FieldInfo:
         Get this field's name, optionally using its alias.
         """
         return self.metadata.alias or self.name if by_alias else self.name
-
-    @classmethod
-    def _from_field(
-        cls, obj_cls: type[BaseModel], field: dataclasses.Field
-    ) -> FieldInfo:
-        """
-        Get field info from field.
-        """
-        assert field.type, f"Field '{field.name}' does not have an annotation"
-        type_hints = get_type_hints(obj_cls, include_extras=True)
-
-        assert field.name in type_hints
-        annotation = type_hints[field.name]
-        annotation_info = Annotation(annotation)
-
-        metadata = field.metadata.get("metadata") or FieldMetadata()
-        assert isinstance(metadata, FieldMetadata)
-
-        return FieldInfo(field=field, annotation=annotation_info, metadata=metadata)
-
-
-@dataclass(kw_only=True)
-class FieldMetadata:
-    """
-    Encapsulates metadata for a field definition.
-    """
-
-    alias: str | None = None
-    """
-    Field name to use when loading a dumping from/to dict.
-    """
-
-    user_metadata: Any | None = None
-    """
-    User-provided metadata.
-    """
 
 
 @dataclass(kw_only=True)
@@ -231,16 +249,6 @@ class BaseModel:
     Only set during model build.
     """
 
-    __typed_validator_registry: ValidatorRegistry
-    """
-    Type-based validators registered by user.
-    """
-
-    __typed_serializer_registry: SerializerRegistry
-    """
-    Type-based serializers registered by user.
-    """
-
     __dataclass_init: Callable[..., None]
     """
     The original `__init__()` created by the dataclass.
@@ -264,20 +272,13 @@ class BaseModel:
         if field_info and (
             not self.__init_done or self.model_config.validate_on_assignment
         ):
-            value_ = self.model_pre_validate(field_info, value)
-
-            # TODO: invoke adapter.validate()
-            value_ = validate(
-                value_,
-                field_info.annotation.raw,
-                registry=self.__typed_validator_registry,
-                params=self.model_config.validation_params,
-            )
-            value_ = self.model_post_validate(field_info, value_)
+            obj = self.model_pre_validate(field_info, value)
+            obj = field_info._adapter.validate(obj)
+            obj = self.model_post_validate(field_info, obj)
         else:
-            value_ = value
+            obj = value
 
-        super().__setattr__(name, value_)
+        super().__setattr__(name, obj)
 
     @property
     def model_fields(self) -> MappingProxyType[str, FieldInfo]:
@@ -296,18 +297,24 @@ class BaseModel:
           validator/serializer objects)
         - Register field/model validators/serializers
         """
+        # extract typed validators/serializers
+        validator_registry = ValidatorRegistry(*cls.model_get_validators())
+        serializer_registry = SerializerRegistry(*cls.model_get_serializers())
+
+        # TODO: get registered field validators/serializers and pass to FieldInfo
+
         # create fields
         cls.__fields = MappingProxyType(
-            {f.name: FieldInfo._from_field(cls, f) for f in _get_fields(cls)}
+            {
+                f.name: FieldInfo(
+                    f,
+                    cls,
+                    validator_registry=validator_registry,
+                    serializer_registry=serializer_registry,
+                )
+                for f in _get_fields(cls)
+            }
         )
-
-        # extract typed validators/serializers
-        cls.__typed_validator_registry = ValidatorRegistry(*cls.model_get_validators())
-        cls.__typed_serializer_registry = SerializerRegistry(
-            *cls.model_get_serializers()
-        )
-
-        # TODO: register field validators/serializers
 
         cls.__built = True
 
@@ -334,17 +341,10 @@ class BaseModel:
         values: dict[str, Any] = {}
 
         for name, field_info in self.__fields.items():
-            value = getattr(self, name)
-
-            # TODO: invoke adapter.serialize()
-
-            # recurse if this is a nested model
-            if issubclass(field_info.annotation.concrete_type, BaseModel):
-                assert isinstance(value, BaseModel)
-                value = value.model_dump()
-
+            obj = getattr(self, name)
+            serialized_obj = field_info._adapter.serialize(obj)
             mapping_name = field_info.get_name(by_alias=by_alias)
-            values[mapping_name] = value
+            values[mapping_name] = serialized_obj
 
         return values
 
