@@ -74,23 +74,22 @@ class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     def __init__(self, func: Callable[..., Any]):
         sig_info = SignatureInfo(func)
 
-        # get object parameter
-        obj_param = next(
-            (p for p in sig_info.get_params(positional=True)),
-            None,
-        )
-        assert (
-            obj_param
-        ), f"Function {func} does not take any positional params, must take obj as positional"
+        args = list(sig_info.get_params(positional=True))
 
-        # get frame parameter
-        frame_param = next(
-            sig_info.get_params(annotation=BaseConversionFrame, positional=True), None
-        )
-        if frame_param:
-            assert (
-                frame_param.index == 1
-            ), f"Function {func} must take frame as second positional argument, got index {frame_param.index}"
+        # get object parameter
+        assert len(
+            args
+        ), f"Function {func} does not take any positional params, must take obj as positional"
+        obj_param = args[0]
+
+        if len(args) > 1:
+            frame_param = args[1]
+            if frame_param.annotation:
+                assert issubclass(
+                    frame_param.annotation.concrete_type, BaseConversionFrame
+                )
+        else:
+            frame_param = None
 
         self.func = func
         self.sig_info = sig_info
