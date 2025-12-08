@@ -111,9 +111,9 @@ class BaseModel:
         if field_info and (
             not self.__init_done or self.model_config.validate_on_assignment
         ):
-            obj = self._run_field_validators_before(field_info, value)
+            obj = self._run_field_validators_before(value, field_info)
             obj = field_info._adapter.validate(obj)
-            obj = self._run_field_validators_after(field_info, obj)
+            obj = self._run_field_validators_after(obj, field_info)
         else:
             obj = value
 
@@ -226,7 +226,7 @@ class BaseModel:
 
         for name, field_info in self.__fields.items():
             obj = getattr(self, name)
-            obj = self._run_field_serializers(field_info, obj)
+            obj = self._run_field_serializers(obj, field_info)
             serialized_obj = field_info._adapter.serialize(obj)
             mapping_name = field_info.get_name(by_alias=by_alias)
             values[mapping_name] = serialized_obj
@@ -234,7 +234,7 @@ class BaseModel:
         return values
 
     # TODO: get sig and pass value or value + field_info
-    def _run_field_validators_before(self, field_info: FieldInfo, value: Any) -> Any:
+    def _run_field_validators_before(self, value: Any, field_info: FieldInfo) -> Any:
         """
         Run field validators with mode="before".
         """
@@ -249,7 +249,7 @@ class BaseModel:
                 value = validator_info.func(self, value)
         return value
 
-    def _run_field_validators_after(self, field_info: FieldInfo, value: Any) -> Any:
+    def _run_field_validators_after(self, value: Any, field_info: FieldInfo) -> Any:
         """
         Run field validators with mode="after".
         """
@@ -264,7 +264,7 @@ class BaseModel:
                 value = validator_info.func(self, value)
         return value
 
-    def _run_field_serializers(self, field_info: FieldInfo, value: Any) -> Any:
+    def _run_field_serializers(self, value: Any, field_info: FieldInfo) -> Any:
         """
         Run field serializers.
         """

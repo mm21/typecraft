@@ -246,6 +246,9 @@ class FieldValidatorInfo:
     """
 
     mode: ValidatorModeType
+    """
+    Validator mode.
+    """
 
 
 @dataclass(kw_only=True)
@@ -316,7 +319,7 @@ def field_validator(
     If field names are omitted, the validator applies to all fields.
     """
 
-    def register[T](
+    def register(
         func: Callable[..., Any], field_names: tuple[str, ...] | None
     ) -> Callable[..., Any]:
         func_ = func.__func__ if isinstance(func, classmethod) else func
@@ -350,44 +353,30 @@ def field_serializer(
 
 
 def field_serializer(
-    *args: str | Callable[..., Any],
+    func_or_name: Callable[..., Any] | str | None = None,
+    *names: str,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Any]:
     """
     Decorator to register a field-level serializer.
 
     If field names are omitted, the serializer applies to all fields.
     """
-    # check if called without parentheses: @field_serializer
-    if len(args) == 1 and callable(args[0]):
-        func = args[0]
-        info = FieldSerializerInfo(
-            func=func,
-            field_names=None,
-        )
+
+    def register(
+        func: Callable[..., Any], field_names: tuple[str, ...] | None
+    ) -> Callable[..., Any]:
+        func_ = func.__func__ if isinstance(func, classmethod) else func
+        info = FieldSerializerInfo(func=func_, field_names=field_names)
         setattr(func, FIELD_SERIALIZER_ATTR, info)
-        return func
+        return cast(Callable[..., Any], func)
 
-    # called with field names: @field_serializer("field1", "field2")
-    assert all(isinstance(a, str) for a in args)
+    if callable(func_or_name):
+        # called without parentheses: @field_serializer
+        assert len(names) == 0
+        return register(func_or_name, None)
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        info = FieldSerializerInfo(
-            func=func,
-            field_names=cast(tuple[str, ...], args) if args else None,
-        )
-        setattr(func, FIELD_SERIALIZER_ATTR, info)
-        return func
+    # called with parentheses: @field_serializer() or @field_serializer("name", ...)
+    all_names = (func_or_name, *names) if isinstance(func_or_name, str) else names
+    assert all(isinstance(n, str) for n in all_names)
 
-    return decorator
-
-
-def _get_self_cls(func: Callable[..., Any]) -> type[BaseModel]:
-    """
-    Get the class to which the method is bound.
-    """
-    print(func.__dict__)
-    print(vars(func))
-    assert "__self__" in vars(func)
-    self = getattr(func, "__self__")
-    assert issubclass(self, BaseModel)
-    return self
+    return lambda func: register(func, all_names or None)
