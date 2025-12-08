@@ -1,16 +1,25 @@
+"""
+Tests for decorator-based validator/serializer registration.
+"""
+
 from typing import Any
 
 from pytest import raises
 
+from typecraft.converting.serializer import Serializer
 from typecraft.exceptions import ValidationError
 from typecraft.model import (
     BaseModel,
     Field,
     FieldInfo,
     ModelConfig,
+    field_serializer,
+    field_validator,
+    typed_serializers,
+    typed_validators,
 )
 from typecraft.serializing import serialize
-from typecraft.validating import ValidationParams, validate
+from typecraft.validating import ValidationParams, Validator, validate
 
 
 class BasicTest(BaseModel):
@@ -43,22 +52,220 @@ class NestedTest(BaseModel):
     union: UnionTest
 
 
-class PrePostValidateTest(BaseModel):
+class MyInt(int):
+    """
+    Custom integer for testing validators/serializers.
+    """
+
+
+class FieldValidatorTest(BaseModel):
+    """
+    Test field-level validators with decorator.
+    """
+
+    a: MyInt
+
+    @field_validator("a", mode="before")
+    def validate_a_before(self, obj: Any) -> Any:
+        """
+        Convert string to int before validation.
+        """
+        if isinstance(obj, str):
+            return MyInt(obj)
+        return obj
+
+    @field_validator("a", mode="after")
+    def validate_a_after(self, obj: Any) -> Any:
+        """
+        Ensure value is positive after validation.
+        """
+        assert isinstance(obj, int)
+        assert obj > 0, "Value must be positive"
+        return obj
+
+
+class FieldValidatorAllFieldsTest(BaseModel):
+    """
+    Test field validators that apply to all fields.
+    """
+
     a: int
+    b: int
 
-    def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
-        assert field_info.name == "a"
-        return int(value)
+    @field_validator(mode="before")
+    def validate_all_before(self, obj: Any, field: FieldInfo) -> Any:
+        """
+        Convert string to int for all fields.
+        """
+        if isinstance(obj, str):
+            return int(obj)
+        return obj
 
-    def model_post_validate(self, field_info: FieldInfo, value: Any) -> Any:
-        assert field_info.name == "a"
-        assert isinstance(value, int)
-        assert value > 0
-        return value
+    @field_validator(mode="after")
+    def validate_all_after(self, obj: Any, field: FieldInfo) -> Any:
+        """
+        Ensure all int values are positive.
+        """
+        if isinstance(obj, int):
+            assert obj > 0, f"Field {field.name} must be positive"
+        return obj
+
+
+class FieldSerializerTest(BaseModel):
+    """
+    Test field-level serializers with decorator.
+    """
+
+    my_int: MyInt
+
+    @field_validator("my_int", mode="before")
+    def validate_my_int(self, obj: Any) -> Any:
+        """
+        Convert int to MyInt.
+        """
+        if isinstance(obj, int):
+            return MyInt(obj)
+        return obj
+
+    @field_serializer("my_int")
+    def serialize_my_int(self, obj: MyInt) -> int:
+        """
+        Serialize MyInt back to int.
+        """
+        return int(obj)
+
+
+class FieldSerializerAllFieldsTest(BaseModel):
+    """
+    Test field serializers that apply to all fields.
+    """
+
+    a: MyInt
+    b: MyInt
+
+    @field_validator(mode="before")
+    def validate_all(self, obj: Any, field: FieldInfo) -> Any:
+        """
+        Convert int to MyInt for all fields.
+        """
+        if isinstance(obj, int):
+            return MyInt(obj)
+        return obj
+
+    @field_serializer
+    def serialize_all(self, obj: Any, field: FieldInfo) -> Any:
+        """
+        Serialize all MyInt fields back to int.
+        """
+        if isinstance(obj, MyInt):
+            return int(obj)
+        return obj
+
+
+class TypedValidatorsTest(BaseModel):
+    """
+    Test typed validators via decorator.
+    """
+
+    my_int: MyInt
+
+    @typed_validators
+    @classmethod
+    def validators(cls) -> tuple[Validator, ...]:
+        return (
+            Validator(
+                int,
+                MyInt,
+                func=lambda obj: MyInt(obj),
+            ),
+        )
+
+
+class TypedSerializersTest(BaseModel):
+    """
+    Test typed serializers via decorator.
+    """
+
+    my_int: MyInt
+
+    # verify omitting classmethod
+    @typed_serializers
+    def serializers(cls) -> tuple[Serializer, ...]:
+        return (
+            Serializer(
+                MyInt,
+                int,
+                func=lambda obj: obj,
+            ),
+        )
 
 
 class LoadDumpTest(BaseModel):
     test_field: int = Field(alias="test-field")
+
+
+class MultipleFieldValidatorTest(BaseModel):
+    """
+    Test multiple validators on same field.
+    """
+
+    a: int
+
+    @field_validator("a", mode="before")
+    def strip_whitespace(self, obj: Any) -> Any:
+        """
+        Strip whitespace if string.
+        """
+        if isinstance(obj, str):
+            return obj.strip()
+        return obj
+
+    @field_validator("a", mode="before")
+    def convert_to_int(self, obj: Any) -> Any:
+        """
+        Convert string to int.
+        """
+        if isinstance(obj, str):
+            return int(obj)
+        return obj
+
+
+class CombinedValidatorSerializerTest(BaseModel):
+    """
+    Test combining typed validators/serializers with field validators/serializers.
+    """
+
+    my_int: MyInt
+    plain_int: int
+
+    @typed_validators
+    def validators(cls) -> tuple[Validator[Any, Any], ...]:
+        return (
+            Validator(
+                int,
+                MyInt,
+                func=lambda obj, frame: MyInt(obj),
+            ),
+        )
+
+    @typed_serializers
+    def serializers(cls) -> tuple[Serializer[Any, Any], ...]:
+        return (
+            Serializer(
+                int,
+                MyInt,
+                func=lambda obj, frame: obj.val,
+            ),
+        )
+
+    @field_validator("plain_int", mode="before")
+    def validate_plain(self, obj: Any) -> Any:
+        """
+        Convert string to int.
+        """
+        if isinstance(obj, str):
+            return int(obj)
+        return obj
 
 
 def test_basic():
@@ -115,16 +322,85 @@ def test_nested():
     assert dump == nested_dict
 
 
-def test_pre_post_validate():
-    dc = PrePostValidateTest(a="123")  # type: ignore
+def test_field_validator():
+    """
+    Test @field_validator decorator with specific fields.
+    """
+    # string gets converted to int via before validator
+    dc = FieldValidatorTest(a="123")  # type: ignore
+    assert isinstance(dc.a, MyInt)
     assert dc.a == 123
 
-    with raises(AssertionError):
-        _ = PrePostValidateTest(a=0)
+    # after validator ensures positive
+    with raises(AssertionError, match="Value must be positive"):
+        _ = FieldValidatorTest(a=MyInt(0))
+
+
+def test_field_validator_all_fields():
+    """
+    Test @field_validator decorator without field names (applies to all).
+    """
+    # both fields get string-to-int conversion
+    dc = FieldValidatorAllFieldsTest(a="123", b="456")  # type: ignore
+    assert dc.a == 123
+    assert dc.b == 456
+
+    # after validator ensures positive for all fields
+    with raises(AssertionError, match="Field a must be positive"):
+        _ = FieldValidatorAllFieldsTest(a=0, b=1)
+
+    with raises(AssertionError, match="Field b must be positive"):
+        _ = FieldValidatorAllFieldsTest(a=1, b=0)
+
+
+def test_field_serializer():
+    """
+    Test @field_serializer decorator with specific fields.
+    """
+    dc = FieldSerializerTest(my_int=123)  # type: ignore
+    assert isinstance(dc.my_int, MyInt)
+    assert dc.my_int == 123
+
+    dump = dc.model_dump()
+    assert dump == {"my_int": 123}
+
+
+def test_field_serializer_all_fields():
+    """
+    Test @field_serializer decorator without field names (applies to all).
+    """
+    dc = FieldSerializerAllFieldsTest(a=123, b=456)  # type: ignore
+    assert isinstance(dc.a, MyInt)
+    assert isinstance(dc.b, MyInt)
+    assert dc.a == 123
+    assert dc.b == 456
+
+    dump = dc.model_dump()
+    assert dump == {"a": 123, "b": 456}
+
+
+def test_typed_validators():
+    """
+    Test @typed_validators decorator.
+    """
+    dc = TypedValidatorsTest(my_int=123)  # type: ignore
+    assert isinstance(dc.my_int, MyInt)
+    assert dc.my_int == 123
+
+
+def test_typed_serializers():
+    """
+    Test @typed_serializers decorator.
+    """
+    dc = TypedSerializersTest(my_int=MyInt(123))
+    assert isinstance(dc.my_int, MyInt)
+    assert dc.my_int == 123
+
+    dump = dc.model_dump()
+    assert dump == {"my_int": 123}
 
 
 def test_load_dump():
-
     # without alias
     dc = LoadDumpTest.model_load({"test_field": 123})
     assert dc.test_field == 123
@@ -139,7 +415,6 @@ def test_load_dump():
 
 
 def test_list():
-
     obj = [{}, {"a": 321, "b": "cba"}]
     validated = validate(obj, list[BasicTest])
 
@@ -148,3 +423,24 @@ def test_list():
 
     serialized = serialize(validated)
     assert serialized == [{"a": 123, "b": "abc"}, {"a": 321, "b": "cba"}]
+
+
+def test_multiple_field_validators():
+    """
+    Test multiple validators on same field execute in order.
+    """
+    dc = MultipleFieldValidatorTest(a="  123  ")  # type: ignore
+    assert dc.a == 123
+
+
+def test_combined_validators_serializers():
+    """
+    Test combining typed and field-level validators/serializers.
+    """
+    dc = CombinedValidatorSerializerTest(my_int=123, plain_int="456")  # type: ignore
+    assert isinstance(dc.my_int, MyInt)
+    assert dc.my_int == 123
+    assert dc.plain_int == 456
+
+    dump = dc.model_dump()
+    assert dump == {"my_int": 123, "plain_int": 456}

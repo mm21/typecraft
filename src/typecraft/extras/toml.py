@@ -42,6 +42,7 @@ from tomlkit.items import (
 from ..converting.converter import MatchSpec
 from ..inspecting.generics import extract_arg
 from ..model import BaseModel, FieldInfo, ModelConfig
+from ..model.fields import field_validator, typed_validators
 from ..validating import ValidationFrame, Validator
 
 __all__ = [
@@ -151,11 +152,13 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     model_config = ModelConfig(validate_on_assignment=True)
 
+    @typed_validators
     @classmethod
-    def model_get_validators(cls) -> tuple[Validator[Any, Any], ...]:
+    def validators(cls) -> tuple[Validator[Any, Any], ...]:
         return VALIDATORS
 
-    def model_pre_validate(self, field_info: FieldInfo, value: Any) -> Any:
+    @field_validator(mode="before")
+    def validate_field(self, value: Any, field_info: FieldInfo) -> Any:
         value_ = _normalize_value(value) if value is not None else None
 
         # if applicable, propagate to wrapped tomlkit object
