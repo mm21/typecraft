@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import (
     Any,
     Callable,
+    Literal,
     Self,
     dataclass_transform,
 )
@@ -14,6 +15,7 @@ from typing import (
 from ..converting.converter import MatchSpec
 from ..converting.serializer import (
     BaseSerializer,
+    JsonSerializableType,
     SerializationFrame,
     SerializerRegistry,
 )
@@ -111,9 +113,8 @@ class BaseModel:
         if field_info and (
             not self.__init_done or self.model_config.validate_on_assignment
         ):
-            obj = self._run_field_validators_before(value, field_info)
-            obj = field_info._adapter.validate(obj)
-            obj = self._run_field_validators_after(obj, field_info)
+            # TODO: aggregate errors if not self.__init_done
+            obj = self.__invoke_validation(value, field_info)
         else:
             obj = value
 
@@ -218,64 +219,20 @@ class BaseModel:
 
         return cls(**values)
 
-    def model_dump(self, *, by_alias: bool = False) -> dict[str, Any]:
+    def model_dump(self, *, by_alias: bool = False) -> dict[str, JsonSerializableType]:
         """
-        Dump model to dictionary, substituting aliases if `by_alias` is `True`.
+        Dump model to dictionary of JSON-serializable types, substituting aliases if
+        `by_alias` is `True`.
         """
-        values: dict[str, Any] = {}
+        values: dict[str, JsonSerializableType] = {}
 
         for name, field_info in self.__fields.items():
             obj = getattr(self, name)
-            obj = self._run_field_serializers(obj, field_info)
-            serialized_obj = field_info._adapter.serialize(obj)
+            serialized_obj = self.__invoke_serialization(obj, field_info)
             mapping_name = field_info.get_name(by_alias=by_alias)
             values[mapping_name] = serialized_obj
 
         return values
-
-    # TODO: get sig and pass value or value + field_info
-    def _run_field_validators_before(self, value: Any, field_info: FieldInfo) -> Any:
-        """
-        Run field validators with mode="before".
-        """
-        for validator_info in field_info._field_validators:
-            if validator_info.mode != "before":
-                continue
-            if validator_info.field_names is None:
-                # applies to all fields, pass field_info
-                value = validator_info.func(self, value, field_info)
-            else:
-                # applies to specific fields
-                value = validator_info.func(self, value)
-        return value
-
-    def _run_field_validators_after(self, value: Any, field_info: FieldInfo) -> Any:
-        """
-        Run field validators with mode="after".
-        """
-        for validator_info in field_info._field_validators:
-            if validator_info.mode != "after":
-                continue
-            if validator_info.field_names is None:
-                # applies to all fields, pass field_info
-                value = validator_info.func(self, value, field_info)
-            else:
-                # applies to specific fields
-                value = validator_info.func(self, value)
-        return value
-
-    def _run_field_serializers(self, value: Any, field_info: FieldInfo) -> Any:
-        """
-        Run field serializers.
-        """
-        for serializer_info in field_info._field_serializers:
-            if serializer_info.field_names is None:
-                # applies to all fields, pass field_info
-                value = serializer_info.func(self, value, field_info)
-            else:
-                # applies to specific fields
-                value = serializer_info.func(self, value)
-        return value
 
     @classmethod
     def __check_build(cls):
@@ -291,6 +248,64 @@ class BaseModel:
         """
         type(self).__check_build()
         self.__dataclass_init(*args, **kwargs)
+
+    def __invoke_validation(self, obj: Any, field_info: FieldInfo) -> Any:
+        """
+        Invoke validation procedure:
+
+        1. Field validators with `mode="before"`
+        2. Type-based validators
+        3. Field validators with `mode="after"`
+        """
+        validated_obj = self.__run_field_validators(obj, field_info, mode="before")
+        validated_obj = field_info._adapter.validate(validated_obj)
+        validated_obj = self.__run_field_validators(
+            validated_obj, field_info, mode="after"
+        )
+        return validated_obj
+
+    def __invoke_serialization(
+        self, obj: Any, field_info: FieldInfo
+    ) -> JsonSerializableType:
+        """
+        Invoke serialization procedure:
+        1. Field serializers
+        2. Type-based serializers
+        """
+        serialized_obj = self.__run_field_serializers(obj, field_info)
+        serialized_obj = field_info._adapter.serialize(serialized_obj)
+        return serialized_obj
+
+    # TODO: get sig and pass obj or obj + field_info, also applies to
+    # __run_field_serializers()
+    def __run_field_validators(
+        self, obj: Any, field_info: FieldInfo, *, mode: Literal["before", "after"]
+    ):
+        """
+        Run field validators with given mode.
+        """
+        validated_obj = obj
+        for validator_info in field_info._get_validators(mode=mode):
+            if validator_info.field_names is None:
+                # applies to all fields, pass field_info
+                validated_obj = validator_info.func(self, validated_obj, field_info)
+            else:
+                # applies to specific fields
+                validated_obj = validator_info.func(self, validated_obj)
+        return validated_obj
+
+    def __run_field_serializers(self, value: Any, field_info: FieldInfo) -> Any:
+        """
+        Run field serializers.
+        """
+        for serializer_info in field_info._field_serializers:
+            if serializer_info.field_names is None:
+                # applies to all fields, pass field_info
+                value = serializer_info.func(self, value, field_info)
+            else:
+                # applies to specific fields
+                value = serializer_info.func(self, value)
+        return value
 
 
 class ModelConverter(BaseSymmetricConverter[Mapping[str, Any], BaseModel]):
