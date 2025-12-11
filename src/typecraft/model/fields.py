@@ -36,72 +36,18 @@ __all__ = [
 
 
 type ValidatorModeType = Literal["before", "after"]
+"""
+Validator mode:
 
+- `"before"`: Invoked before builtin validation
+- `"after"`: Invoked after builtin validation
+"""
 
-@overload
-def Field[T](
-    *,
-    default: T,
-    alias: str | None = None,
-    user_metadata: Any | None = None,
-    init: bool = True,
-    repr: bool = True,
-    hash: bool | None = None,
-    compare: bool = True,
-) -> T: ...
-
-
-@overload
-def Field[T](
-    *,
-    default_factory: Callable[[], T],
-    alias: str | None = None,
-    user_metadata: Any | None = None,
-    init: bool = True,
-    repr: bool = True,
-    hash: bool | None = None,
-    compare: bool = True,
-) -> T: ...
-
-
-@overload
-def Field(
-    *,
-    alias: str | None = None,
-    user_metadata: Any | None = None,
-    init: bool = True,
-    repr: bool = True,
-    hash: bool | None = None,
-    compare: bool = True,
-) -> Any: ...
-
-
-def Field(
-    *,
-    default: Any = MISSING,
-    default_factory: Any = MISSING,
-    alias: str | None = None,
-    user_metadata: Any | None = None,
-    init: bool = True,
-    repr: bool = True,
-    hash: bool | None = None,
-    compare: bool = True,
-) -> Any:
-    """
-    Create a new field.
-
-    Wraps a dataclass field along with metadata.
-    """
-    metadata = FieldMetadata(alias=alias, user_metadata=user_metadata)
-    return dataclasses.field(
-        default=default,
-        default_factory=default_factory,
-        init=init,
-        repr=repr,
-        hash=hash,
-        compare=compare,
-        metadata={"metadata": metadata},
-    )
+# marker attribute names for storing decorator info on class
+TYPED_VALIDATORS_ATTR = "__typecraft_typed_validators__"
+TYPED_SERIALIZERS_ATTR = "__typecraft_typed_serializers__"
+FIELD_VALIDATOR_ATTR = "__typecraft_field_validator__"
+FIELD_SERIALIZER_ATTR = "__typecraft_field_serializer__"
 
 
 @dataclass(kw_only=True)
@@ -277,18 +223,134 @@ class FieldSerializerInfo:
     """
 
 
-# marker attribute names for storing decorator info on class
-TYPED_VALIDATORS_ATTR = "__typecraft_typed_validators__"
-TYPED_SERIALIZERS_ATTR = "__typecraft_typed_serializers__"
-FIELD_VALIDATOR_ATTR = "__typecraft_field_validator__"
-FIELD_SERIALIZER_ATTR = "__typecraft_field_serializer__"
+@dataclass
+class RegistrationInfo:
+    """
+    Encapsulates validator/serializer registration info.
+    """
+
+    typed_validators: list[BaseValidator]
+    typed_serializers: list[BaseSerializer]
+    field_validators_info: list[FieldValidatorInfo]
+    field_serializers_info: list[FieldSerializerInfo]
+
+    @classmethod
+    def from_model_cls(cls, model_cls: type[BaseModel]) -> RegistrationInfo:
+        """
+        Get registration info from model class.
+        """
+        typed_validators: list[BaseValidator] = []
+        typed_serializers: list[BaseSerializer] = []
+        field_validators_info: list[FieldValidatorInfo] = []
+        field_serializers_info: list[FieldSerializerInfo] = []
+
+        # traverse class hierarchy in reverse MRO order
+        for check_cls in reversed(model_cls.mro()):
+
+            # check each attribute of this class
+            for attr in vars(check_cls).values():
+                # extract function from classmethod if applicable
+                attr = _normalize_func(attr)
+
+                # skip if not callable
+                if not callable(attr):
+                    continue
+
+                # check for each attribute and populate lists
+                if typed_validators_info := getattr(attr, TYPED_VALIDATORS_ATTR, None):
+                    assert isinstance(typed_validators_info, TypedValidatorsInfo)
+                    typed_validators.extend(typed_validators_info.func(cls))
+                elif typed_serializers_info := getattr(
+                    attr, TYPED_SERIALIZERS_ATTR, None
+                ):
+                    assert isinstance(typed_serializers_info, TypedSerializersInfo)
+                    typed_serializers.extend(typed_serializers_info.func(cls))
+                elif field_validator_info := getattr(attr, FIELD_VALIDATOR_ATTR, None):
+                    assert isinstance(field_validator_info, FieldValidatorInfo)
+                    field_validators_info.append(field_validator_info)
+                elif field_serializer_info := getattr(attr, FIELD_VALIDATOR_ATTR, None):
+                    assert isinstance(field_serializer_info, FieldSerializerInfo)
+                    field_serializers_info.append(field_serializer_info)
+
+        return RegistrationInfo(
+            typed_validators,
+            typed_serializers,
+            field_validators_info,
+            field_serializers_info,
+        )
+
+
+@overload
+def Field[T](
+    *,
+    default: T,
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> T: ...
+
+
+@overload
+def Field[T](
+    *,
+    default_factory: Callable[[], T],
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> T: ...
+
+
+@overload
+def Field(
+    *,
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> Any: ...
+
+
+def Field(
+    *,
+    default: Any = MISSING,
+    default_factory: Any = MISSING,
+    alias: str | None = None,
+    user_metadata: Any | None = None,
+    init: bool = True,
+    repr: bool = True,
+    hash: bool | None = None,
+    compare: bool = True,
+) -> Any:
+    """
+    Create a new field.
+
+    Wraps a dataclass field along with metadata.
+    """
+    metadata = FieldMetadata(alias=alias, user_metadata=user_metadata)
+    return dataclasses.field(
+        default=default,
+        default_factory=default_factory,
+        init=init,
+        repr=repr,
+        hash=hash,
+        compare=compare,
+        metadata={"metadata": metadata},
+    )
 
 
 def typed_validators[T: Callable[..., tuple[BaseValidator, ...]]](func: T) -> T:
     """
     Decorator to register a classmethod that returns type-based validators.
     """
-    func_ = func.__func__ if isinstance(func, classmethod) else func
+    func_ = _normalize_func(func)
     setattr(func_, TYPED_VALIDATORS_ATTR, TypedValidatorsInfo(func=func_))
     return cast(T, func)
 
@@ -297,7 +359,7 @@ def typed_serializers[T: Callable[..., tuple[BaseSerializer, ...]]](func: T) -> 
     """
     Decorator to register a classmethod that returns type-based serializers.
     """
-    func_ = func.__func__ if isinstance(func, classmethod) else func
+    func_ = _normalize_func(func)
     setattr(func_, TYPED_SERIALIZERS_ATTR, TypedSerializersInfo(func=func_))
     return cast(T, func)
 
@@ -331,7 +393,7 @@ def field_validator(
     def register(
         func: Callable[..., Any], field_names: tuple[str, ...] | None
     ) -> Callable[..., Any]:
-        func_ = func.__func__ if isinstance(func, classmethod) else func
+        func_ = _normalize_func(func)
         info = FieldValidatorInfo(func=func_, field_names=field_names, mode=mode)
         setattr(func, FIELD_VALIDATOR_ATTR, info)
         return cast(Callable[..., Any], func)
@@ -374,7 +436,7 @@ def field_serializer(
     def register(
         func: Callable[..., Any], field_names: tuple[str, ...] | None
     ) -> Callable[..., Any]:
-        func_ = func.__func__ if isinstance(func, classmethod) else func
+        func_ = _normalize_func(func)
         info = FieldSerializerInfo(func=func_, field_names=field_names)
         setattr(func, FIELD_SERIALIZER_ATTR, info)
         return cast(Callable[..., Any], func)
@@ -389,3 +451,10 @@ def field_serializer(
     assert all(isinstance(n, str) for n in all_names)
 
     return lambda func: register(func, all_names or None)
+
+
+def _normalize_func[T](func: T | classmethod) -> T:
+    """
+    Normalize to the raw function in case of classmethod.
+    """
+    return func.__func__ if isinstance(func, classmethod) else func

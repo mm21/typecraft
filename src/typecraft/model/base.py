@@ -14,24 +14,17 @@ from typing import (
 
 from ..converting.converter import MatchSpec
 from ..converting.serializer import (
-    BaseSerializer,
     JsonSerializableType,
     SerializationFrame,
     SerializerRegistry,
 )
 from ..converting.symmetric_converter import BaseSymmetricConverter
-from ..converting.validator import BaseValidator, ValidatorRegistry
+from ..converting.validator import ValidatorRegistry
 from ..serializing import SerializationParams
 from ..validating import ValidationFrame, ValidationParams
 from .fields import (
-    FIELD_VALIDATOR_ATTR,
-    TYPED_SERIALIZERS_ATTR,
-    TYPED_VALIDATORS_ATTR,
     FieldInfo,
-    FieldSerializerInfo,
-    FieldValidatorInfo,
-    TypedSerializersInfo,
-    TypedValidatorsInfo,
+    RegistrationInfo,
 )
 
 __all__ = [
@@ -137,57 +130,23 @@ class BaseModel:
         - Register type-based validators/serializers
         - Register field validators/serializers
         """
-        # extract typed validators/serializers from decorated methods
-        typed_validators: list[BaseValidator] = []
-        typed_serializers: list[BaseSerializer] = []
-        field_validators_info: list[FieldValidatorInfo] = []
-        field_serializers_info: list[FieldSerializerInfo] = []
-
-        # traverse in reverse MRO order
-        for check_cls in reversed(cls.mro()):
-            for attr_name in vars(check_cls):
-                try:
-                    attr = getattr(cls, attr_name)
-                except AttributeError:
-                    continue
-
-                # check for typed validators
-                if typed_validators_info := getattr(attr, TYPED_VALIDATORS_ATTR, None):
-                    assert isinstance(typed_validators_info, TypedValidatorsInfo)
-                    typed_validators.extend(typed_validators_info.func(cls))
-
-                # check for typed serializers
-                elif typed_serializers_info := getattr(
-                    attr, TYPED_SERIALIZERS_ATTR, None
-                ):
-                    assert isinstance(typed_serializers_info, TypedSerializersInfo)
-                    typed_serializers.extend(typed_serializers_info.func(cls))
-
-                # check for field validators
-                elif field_validator_info := getattr(attr, FIELD_VALIDATOR_ATTR, None):
-                    assert isinstance(field_validator_info, FieldValidatorInfo)
-                    field_validators_info.append(field_validator_info)
-
-                # check for field serializers
-                elif field_serializer_info := getattr(attr, FIELD_VALIDATOR_ATTR, None):
-                    assert isinstance(field_serializer_info, FieldSerializerInfo)
-                    field_serializers_info.append(field_serializer_info)
-
-        validator_registry = ValidatorRegistry(*typed_validators)
-        serializer_registry = SerializerRegistry(*typed_serializers)
+        registration_info = RegistrationInfo.from_model_cls(cls)
+        validator_registry = ValidatorRegistry(*registration_info.typed_validators)
+        serializer_registry = SerializerRegistry(*registration_info.typed_serializers)
 
         # create fields with their specific validators/serializers
         fields: dict[str, FieldInfo] = {}
+
         for f in _get_fields(cls):
             # filter field validators/serializers for this field
             field_validators = tuple(
                 v
-                for v in field_validators_info
+                for v in registration_info.field_validators_info
                 if v.field_names is None or f.name in v.field_names
             )
             field_serializers = tuple(
                 s
-                for s in field_serializers_info
+                for s in registration_info.field_serializers_info
                 if s.field_names is None or f.name in s.field_names
             )
 
