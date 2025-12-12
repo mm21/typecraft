@@ -69,18 +69,20 @@ class SignatureInfo:
     def __init__(self, func: Callable[..., Any], /):
         self.func = func
 
+        type_hints: dict[str, Any] | None = None
+
         # get type hints to handle stringized annotations from __future__ import
         try:
             type_hints = get_type_hints(func)
-        except (NameError, AttributeError) as e:
-            raise ValueError(
-                f"Failed to resolve type hints for {func.__name__}: {e}. "
-                "Ensure all types are imported or defined."
-            ) from e
+        except (NameError, AttributeError):
+            # could not get type info; possible import under TYPE_CHECKING, etc
+            pass
 
         # set return annotation
         self.return_annotation = (
-            Annotation(type_hints["return"]) if "return" in type_hints else None
+            Annotation(type_hints["return"])
+            if type_hints and "return" in type_hints
+            else None
         )
 
         # set param annotations
@@ -90,7 +92,9 @@ class SignatureInfo:
                 name: ParameterInfo(
                     parameter=param,
                     annotation=(
-                        Annotation(type_hints[name]) if name in type_hints else None
+                        Annotation(type_hints[name])
+                        if type_hints and name in type_hints
+                        else None
                     ),
                     index=index,
                 )

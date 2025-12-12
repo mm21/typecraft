@@ -5,8 +5,6 @@ Tests for function signature utilities.
 from inspect import Parameter
 from typing import Any, Optional
 
-import pytest
-
 from typecraft.inspecting.annotations import Annotation
 from typecraft.inspecting.functions import ParameterInfo, SignatureInfo
 
@@ -87,14 +85,16 @@ def test_stringized_annotations():
 
 def test_forward_reference_error():
     """
-    Test that unresolvable forward references raise ValueError.
+    Test that unresolvable forward references result in `annotation` being `None`.
     """
 
     def func(x: "NonexistentType") -> int:  # type: ignore
         return 1
 
-    with pytest.raises(ValueError, match="Failed to resolve type hints"):
-        SignatureInfo(func)
+    sig = SignatureInfo(func)
+    assert len(sig.params) == 1
+    assert sig.params["x"].annotation is None
+    assert sig.return_annotation is None
 
 
 def test_lambda():
@@ -103,9 +103,9 @@ def test_lambda():
     """
 
     sig = SignatureInfo(lambda x: x + 1)
-
-    assert sig.return_annotation is None
+    assert len(sig.params) == 1
     assert sig.params["x"].annotation is None
+    assert sig.return_annotation is None
 
 
 def test_variadic_args():
