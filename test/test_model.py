@@ -65,21 +65,33 @@ class FieldValidatorTest(BaseModel):
 
     a: MyInt
 
+    @field_validator
+    def validate_a_before_1(self, obj: Any, field_info: FieldInfo) -> Any:
+        """
+        Demonstrate passing info and using an instance method.
+        """
+        assert isinstance(self, FieldValidatorTest)
+        assert field_info.name == "a"
+        return obj
+
     @field_validator("a", mode="before")
-    def validate_a_before(self, obj: Any) -> Any:
+    @classmethod
+    def validate_a_before_2(cls, obj: Any) -> Any:
         """
-        Convert string to int before validation.
+        Convert string to int before builtin validation.
         """
+        assert issubclass(cls, FieldValidatorTest)
         if isinstance(obj, str):
-            return MyInt(obj)
+            return MyInt(int(obj))
         return obj
 
     @field_validator("a", mode="after")
-    def validate_a_after(self, obj: Any) -> Any:
+    @classmethod
+    def validate_a_after(cls, obj: Any) -> Any:
         """
         Ensure value is positive after validation.
         """
-        assert isinstance(obj, int)
+        assert isinstance(obj, MyInt)
         assert obj > 0, "Value must be positive"
         return obj
 
@@ -93,7 +105,8 @@ class FieldValidatorAllFieldsTest(BaseModel):
     b: int
 
     @field_validator(mode="before")
-    def validate_all_before(self, obj: Any, field: FieldInfo) -> Any:
+    @classmethod
+    def validate_all_before(cls, obj: Any, field: FieldInfo) -> Any:
         """
         Convert string to int for all fields.
         """
@@ -102,7 +115,8 @@ class FieldValidatorAllFieldsTest(BaseModel):
         return obj
 
     @field_validator(mode="after")
-    def validate_all_after(self, obj: Any, field: FieldInfo) -> Any:
+    @classmethod
+    def validate_all_after(cls, obj: Any, field: FieldInfo) -> Any:
         """
         Ensure all int values are positive.
         """
@@ -113,19 +127,10 @@ class FieldValidatorAllFieldsTest(BaseModel):
 
 class FieldSerializerTest(BaseModel):
     """
-    Test field-level serializers with decorator.
+    Test field-level serializer.
     """
 
     my_int: MyInt
-
-    @field_validator("my_int", mode="before")
-    def validate_my_int(self, obj: Any) -> Any:
-        """
-        Convert int to MyInt.
-        """
-        if isinstance(obj, int):
-            return MyInt(obj)
-        return obj
 
     @field_serializer("my_int")
     def serialize_my_int(self, obj: MyInt) -> int:
@@ -142,15 +147,6 @@ class FieldSerializerAllFieldsTest(BaseModel):
 
     a: MyInt
     b: MyInt
-
-    @field_validator(mode="before")
-    def validate_all(self, obj: Any, field: FieldInfo) -> Any:
-        """
-        Convert int to MyInt for all fields.
-        """
-        if isinstance(obj, int):
-            return MyInt(obj)
-        return obj
 
     @field_serializer
     def serialize_all(self, obj: Any, field: FieldInfo) -> Any:
@@ -188,8 +184,8 @@ class TypedSerializersTest(BaseModel):
 
     my_int: MyInt
 
-    # verify omitting classmethod
     @typed_serializers
+    @classmethod
     def serializers(cls) -> tuple[Serializer, ...]:
         return (
             Serializer(
@@ -212,7 +208,8 @@ class MultipleFieldValidatorTest(BaseModel):
     a: int
 
     @field_validator("a", mode="before")
-    def strip_whitespace(self, obj: Any) -> Any:
+    @classmethod
+    def strip_whitespace(cls, obj: Any) -> Any:
         """
         Strip whitespace if string.
         """
@@ -221,7 +218,8 @@ class MultipleFieldValidatorTest(BaseModel):
         return obj
 
     @field_validator("a", mode="before")
-    def convert_to_int(self, obj: Any) -> Any:
+    @classmethod
+    def convert_to_int(cls, obj: Any) -> Any:
         """
         Convert string to int.
         """
@@ -239,27 +237,30 @@ class CombinedValidatorSerializerTest(BaseModel):
     plain_int: int
 
     @typed_validators
+    @classmethod
     def validators(cls) -> tuple[Validator[Any, Any], ...]:
         return (
             Validator(
                 int,
                 MyInt,
-                func=lambda obj, frame: MyInt(obj),
+                func=lambda obj: MyInt(obj),
             ),
         )
 
     @typed_serializers
+    @classmethod
     def serializers(cls) -> tuple[Serializer[Any, Any], ...]:
         return (
             Serializer(
                 int,
                 MyInt,
-                func=lambda obj, frame: obj.val,
+                func=lambda obj: obj.val,
             ),
         )
 
     @field_validator("plain_int", mode="before")
-    def validate_plain(self, obj: Any) -> Any:
+    @classmethod
+    def validate_plain(cls, obj: Any) -> Any:
         """
         Convert string to int.
         """
@@ -357,7 +358,7 @@ def test_field_serializer():
     """
     Test @field_serializer decorator with specific fields.
     """
-    dc = FieldSerializerTest(my_int=123)  # type: ignore
+    dc = FieldSerializerTest(my_int=MyInt(123))
     assert isinstance(dc.my_int, MyInt)
     assert dc.my_int == 123
 
@@ -369,7 +370,7 @@ def test_field_serializer_all_fields():
     """
     Test @field_serializer decorator without field names (applies to all).
     """
-    dc = FieldSerializerAllFieldsTest(a=123, b=456)  # type: ignore
+    dc = FieldSerializerAllFieldsTest(a=MyInt(123), b=MyInt(456))
     assert isinstance(dc.a, MyInt)
     assert isinstance(dc.b, MyInt)
     assert dc.a == 123

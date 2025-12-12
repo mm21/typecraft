@@ -7,8 +7,8 @@ from types import MappingProxyType
 from typing import (
     Any,
     Callable,
-    Literal,
     Self,
+    cast,
     dataclass_transform,
 )
 
@@ -25,6 +25,7 @@ from ..validating import ValidationFrame, ValidationParams
 from .fields import (
     FieldInfo,
     RegistrationInfo,
+    ValidatorModeType,
 )
 
 __all__ = [
@@ -58,7 +59,8 @@ class ModelConfig:
 @dataclass_transform(kw_only_default=True)
 class BaseModel:
     """
-    Base class to transform subclass to model and provide recursive field validation.
+    Base class which transforms subclass to dataclass and provides recursive field
+    validation/serialization.
     """
 
     model_config: ModelConfig = ModelConfig()
@@ -162,6 +164,7 @@ class BaseModel:
         cls.__fields = MappingProxyType(fields)
         cls.__built = True
 
+    # TODO: arg: context (optional)
     @classmethod
     def model_load(cls, obj: Mapping[str, Any], /, *, by_alias: bool = False) -> Self:
         """
@@ -177,6 +180,10 @@ class BaseModel:
                 values[name] = obj[mapping_name]
 
         return cls(**values)
+
+    # TODO: model_nested_load()
+    # - takes obj, frame
+    # - used by symmetric converter
 
     def model_dump(self, *, by_alias: bool = False) -> dict[str, JsonSerializableType]:
         """
@@ -235,36 +242,53 @@ class BaseModel:
         serialized_obj = field_info._adapter.serialize(serialized_obj)
         return serialized_obj
 
-    # TODO: get sig and pass obj or obj + field_info, also applies to
-    # __run_field_serializers()
     def __run_field_validators(
-        self, obj: Any, field_info: FieldInfo, *, mode: Literal["before", "after"]
+        self, obj: Any, field_info: FieldInfo, *, mode: ValidatorModeType
     ):
         """
         Run field validators with given mode.
         """
         validated_obj = obj
         for validator_info in field_info._get_validators(mode=mode):
-            if validator_info.field_names is None:
-                # applies to all fields, pass field_info
-                validated_obj = validator_info.func(self, validated_obj, field_info)
+            args = list(validator_info.sig.get_params(positional=True))
+            assert len(args) in {2, 3}
+
+            self_or_cls = type(self) if validator_info.is_classmethod else self
+
+            if len(args) == 2:
+                func = cast(
+                    Callable[[BaseModel | type[BaseModel], Any], Any],
+                    validator_info.func,
+                )
+                validated_obj = func(self_or_cls, validated_obj)
             else:
-                # applies to specific fields
-                validated_obj = validator_info.func(self, validated_obj)
+                func = cast(
+                    Callable[[BaseModel | type[BaseModel], Any, FieldInfo], Any],
+                    validator_info.func,
+                )
+                validated_obj = func(self_or_cls, validated_obj, field_info)
+
         return validated_obj
 
-    def __run_field_serializers(self, value: Any, field_info: FieldInfo) -> Any:
+    def __run_field_serializers(self, obj: Any, field_info: FieldInfo) -> Any:
         """
         Run field serializers.
         """
+        serialized_obj = obj
         for serializer_info in field_info._field_serializers:
-            if serializer_info.field_names is None:
-                # applies to all fields, pass field_info
-                value = serializer_info.func(self, value, field_info)
+            args = list(serializer_info.sig.get_params(positional=True))
+            assert len(args) in {2, 3}
+
+            if len(args) == 1:
+                func = cast(Callable[[BaseModel, Any], Any], serializer_info.func)
+                serialized_obj = func(self, serialized_obj)
             else:
-                # applies to specific fields
-                value = serializer_info.func(self, value)
-        return value
+                func = cast(
+                    Callable[[BaseModel, Any, FieldInfo], Any], serializer_info.func
+                )
+                serialized_obj = func(self, serialized_obj, field_info)
+
+        return serialized_obj
 
 
 class ModelConverter(BaseSymmetricConverter[Mapping[str, Any], BaseModel]):
