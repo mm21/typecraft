@@ -154,11 +154,11 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     @typed_validators
     @classmethod
-    def validators(cls) -> tuple[Validator[Any, Any], ...]:
+    def _validators(cls) -> tuple[Validator[Any, Any], ...]:
         return VALIDATORS
 
     @field_validator(mode="before")
-    def validate_field(self, value: Any, field_info: FieldInfo) -> Any:
+    def _validate_field(self, value: Any, field_info: FieldInfo) -> Any:
         value_ = _normalize_value(value) if value is not None else None
 
         # if applicable, propagate to wrapped tomlkit object
