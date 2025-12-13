@@ -6,6 +6,8 @@ from .base import BaseModel, ModelConfig
 from .fields import (
     Field,
     FieldInfo,
+)
+from .methods import (
     field_serializer,
     field_validator,
     typed_serializers,

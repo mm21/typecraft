@@ -22,8 +22,8 @@ from ..converting.symmetric_converter import BaseSymmetricConverter
 from ..converting.validator import ValidatorRegistry
 from ..serializing import SerializationParams
 from ..validating import ValidationFrame, ValidationParams
-from .fields import (
-    FieldInfo,
+from .fields import FieldInfo
+from .methods import (
     RegistrationInfo,
     ValidatorModeType,
 )
@@ -127,10 +127,10 @@ class BaseModel:
         """
         Build this model:
 
-        - Extract type annotations and create model fields
         - Extract decorated validators/serializers
         - Register type-based validators/serializers
         - Register field validators/serializers
+        - Extract type annotations and create fields
         """
         registration_info = RegistrationInfo.from_model_cls(cls)
         validator_registry = ValidatorRegistry(*registration_info.typed_validators)

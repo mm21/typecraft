@@ -42,7 +42,7 @@ from tomlkit.items import (
 from ..converting.converter import MatchSpec
 from ..inspecting.generics import extract_arg
 from ..model import BaseModel, FieldInfo, ModelConfig
-from ..model.fields import field_validator, typed_validators
+from ..model.methods import field_validator, typed_validators
 from ..validating import ValidationFrame, Validator
 
 __all__ = [
