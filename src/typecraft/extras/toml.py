@@ -40,10 +40,11 @@ from tomlkit.items import (
 )
 
 from ..converting.converter import MatchSpec
+from ..converting.validator import ValidationParams
 from ..inspecting.generics import extract_arg
 from ..model import BaseModel, FieldInfo, ModelConfig
-from ..model.methods import field_validator, typed_validators
-from ..validating import ValidationFrame, Validator
+from ..model.methods import ValidationInfo, field_validator, typed_validators
+from ..validating import TypedValidator, ValidationFrame
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -154,16 +155,16 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     @typed_validators
     @classmethod
-    def _validators(cls) -> tuple[Validator[Any, Any], ...]:
+    def _validators(cls) -> tuple[TypedValidator[Any, Any], ...]:
         return VALIDATORS
 
     @field_validator(mode="before")
-    def _validate_field(self, value: Any, field_info: FieldInfo) -> Any:
+    def _validate_field(self, value: Any, info: ValidationInfo) -> Any:
         value_ = _normalize_value(value) if value is not None else None
 
         # if applicable, propagate to wrapped tomlkit object
         if self._tomlkit_obj:
-            self._propagate_field(self._tomlkit_obj, field_info, value_)
+            self._propagate_field(self._tomlkit_obj, info.field_info, value_)
 
         return value_
 
@@ -172,7 +173,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         cls,
         tomlkit_obj: TomlkitT,
     ) -> Self:
-        obj = cls.model_load(tomlkit_obj, by_alias=True)
+        obj = cls.model_validate(tomlkit_obj, params=ValidationParams(by_alias=True))
         return cls._finalize_obj(tomlkit_obj, obj)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
@@ -325,7 +326,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
         ...
 
     @classmethod
-    def _from_tomlkit_obj_with_handle(
+    def _from_tomlkit_obj_with_frame(
         cls,
         tomlkit_obj: TomlkitT,
         frame: ValidationFrame,
@@ -422,22 +423,22 @@ def validate_array(
 ) -> ArrayWrapper | TableArrayWrapper:
     type_ = frame.target_annotation.concrete_type
     assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
-    return type_._from_tomlkit_obj_with_handle(obj, frame)
+    return type_._from_tomlkit_obj_with_frame(obj, frame)
 
 
 VALIDATORS = (
-    Validator(
+    TypedValidator(
         Table,
         BaseTableWrapper,
         func=validate_table,
         match_spec=MatchSpec(assignable_from_target=True),
     ),
-    Validator(
+    TypedValidator(
         InlineTable,
         BaseInlineTableWrapper,
         func=validate_table,
         match_spec=MatchSpec(assignable_from_target=True),
     ),
-    Validator(Array, ArrayWrapper, func=validate_array),
-    Validator(AoT, TableArrayWrapper, func=validate_array),
+    TypedValidator(Array, ArrayWrapper, func=validate_array),
+    TypedValidator(AoT, TableArrayWrapper, func=validate_array),
 )

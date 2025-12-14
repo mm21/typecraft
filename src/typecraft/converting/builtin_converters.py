@@ -14,9 +14,9 @@ from typecraft.converting.utils import convert_to_list
 from ..inspecting.annotations import Annotation
 from ..types import DataclassProtocol, ValueCollectionType
 from .converter import MatchSpec
-from .serializer import SerializationFrame, Serializer, SerializerRegistry
+from .serializer import SerializationFrame, TypedSerializer, TypedSerializerRegistry
 from .symmetric_converter import BaseSymmetricConverter
-from .validator import ValidationFrame, ValidatorRegistry
+from .validator import TypedValidatorRegistry, ValidationFrame
 
 
 class DateConverter(BaseSymmetricConverter[str, date]):
@@ -186,7 +186,7 @@ BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
 )
 
 BUILTIN_SERIALIZERS = (
-    Serializer(set | frozenset | tuple, list, func=serialize_to_list),
+    TypedSerializer(set | frozenset | tuple, list, func=serialize_to_list),
 )
 """
 Extra serializers to use for json serialization.
@@ -207,12 +207,12 @@ def get_builtin_converters() -> tuple[type[BaseSymmetricConverter], ...]:
 
 
 @cache
-def get_builtin_validator_registry() -> ValidatorRegistry:
-    return ValidatorRegistry(*(c.as_validator() for c in get_builtin_converters()))
+def get_builtin_validator_registry() -> TypedValidatorRegistry:
+    return TypedValidatorRegistry(*(c.as_validator() for c in get_builtin_converters()))
 
 
 @cache
-def get_builtin_serializer_registry() -> SerializerRegistry:
-    return SerializerRegistry(
+def get_builtin_serializer_registry() -> TypedSerializerRegistry:
+    return TypedSerializerRegistry(
         *(c.as_serializer() for c in get_builtin_converters()), *BUILTIN_SERIALIZERS
     )

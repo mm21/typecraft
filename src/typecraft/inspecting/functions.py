@@ -11,7 +11,6 @@ from inspect import Parameter
 from types import MappingProxyType
 from typing import (
     Any,
-    Generator,
     get_type_hints,
     overload,
 )
@@ -118,7 +117,7 @@ class SignatureInfo:
         annotation: Annotation | Any | None = None,
         positional: bool = False,
         keyword: bool = False,
-    ) -> Generator[ParameterInfo, None, None]: ...
+    ) -> tuple[ParameterInfo, ...]: ...
 
     @overload
     def get_params(
@@ -130,7 +129,7 @@ class SignatureInfo:
         keyword_only: bool = False,
         var_positional: bool = False,
         var_keyword: bool = False,
-    ) -> Generator[ParameterInfo, None, None]: ...
+    ) -> tuple[ParameterInfo, ...]: ...
 
     def get_params(
         self,
@@ -143,7 +142,7 @@ class SignatureInfo:
         keyword_only: bool = False,
         var_positional: bool = False,
         var_keyword: bool = False,
-    ) -> Generator[ParameterInfo, None, None]:
+    ) -> tuple[ParameterInfo, ...]:
         """
         Get params filtered by annotation (or subtype thereof) and kind.
         """
@@ -179,7 +178,7 @@ class SignatureInfo:
                 return False
             return check_ann.is_assignable(filter_ann)
 
-        return (
+        return tuple(
             p
             for p in self.params.values()
             if (len(kinds) == 0 or p.parameter.kind in kinds)

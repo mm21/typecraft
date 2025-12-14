@@ -7,7 +7,7 @@ from ..inspecting.annotations import Annotation
 from ..inspecting.generics import extract_arg_map
 from .converter import (
     BaseConversionFrame,
-    BaseConverter,
+    BaseTypedConverter,
     ConverterInterface,
     FuncConverterType,
     FuncConverterWrapper,
@@ -75,14 +75,6 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         super().__init__(match_spec=match_spec)
         self.__func_wrapper = FuncConverterWrapper(func) if func else None
         self.__predicate_func = predicate_func
-
-    def __repr__(self) -> str:
-        attrs: list[str] = [self._params_str]
-        if func := self.__func_wrapper.func if self.__func_wrapper else None:
-            attrs.append(f"func={func}")
-        if predicate_func := self.__predicate_func:
-            attrs.append(f"predicate_func={predicate_func}")
-        return f"{type(self).__name__}({', '.join(attrs)})"
 
     @classmethod
     def from_func(
@@ -179,7 +171,7 @@ class GenericConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
 
     def _get_annotations(self) -> tuple[Annotation, Annotation]:
         # get annotations from type params
-        arg_map = extract_arg_map(type(self), BaseConverter)
+        arg_map = extract_arg_map(type(self), BaseTypedConverter)
         source_type = arg_map.get("SourceT")
         target_type = arg_map.get("TargetT")
         if not (source_type and target_type):

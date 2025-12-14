@@ -9,10 +9,10 @@ from typecraft.validating import (
 
 
 def test_basic():
-    adapter = Adapter(int, validation_params=ValidationParams(strict=False))
+    adapter = Adapter(int)
 
     # validate with conversion
-    result = adapter.validate("123")
+    result = adapter.validate("123", params=ValidationParams(strict=False))
     assert result == 123
 
     # serialize

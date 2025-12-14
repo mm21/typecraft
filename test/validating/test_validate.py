@@ -9,8 +9,8 @@ from pytest import raises
 
 from typecraft.exceptions import BaseConversionError, ValidationError
 from typecraft.validating import (
+    TypedValidator,
     ValidationParams,
-    Validator,
     normalize_to_list,
     validate,
 )
@@ -61,11 +61,11 @@ def test_invalid():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-[0]: "1": <class 'int'> -> str | float
+[0]: 1: <class 'int'> -> str | float: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'float'>: No matching converters
-[1]: "2": <class 'int'> -> str | float
+[1]: 2: <class 'int'> -> str | float: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'float'>: No matching converters"""
@@ -79,10 +79,10 @@ Errors occurred during validation:
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-[0]: "1.5": <class 'str'> -> <class 'int'>
-  Validator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '1.5'
-[1]: "2.5": <class 'str'> -> <class 'int'>
-  Validator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '2.5'"""
+[0]: 1.5: <class 'str'> -> <class 'int'>: ValueError
+  TypedValidator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '1.5'
+[1]: 2.5: <class 'str'> -> <class 'int'>: ValueError
+  TypedValidator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '2.5'"""
     )
 
     with raises(BaseConversionError) as exc_info:
@@ -93,7 +93,7 @@ Errors occurred during validation:
         str(exc_info.value)
         == """\
 Error occurred during validation:
-<root>: "0": <class 'int'> -> str | bool
+<root>: 0: <class 'int'> -> str | bool: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'bool'>: No matching converters"""
@@ -107,7 +107,7 @@ Error occurred during validation:
         str(exc_info.value)
         == """\
 Error occurred during validation:
-<root>: "abc": <class 'str'> -> typing.Literal['def', 'ghi']
+<root>: abc: <class 'str'> -> typing.Literal['def', 'ghi']: TypeError
   No matching converters"""
     )
 
@@ -199,18 +199,21 @@ def test_collection_subclass():
         str(exc_info.value)
         == """\
 Error occurred during validation:
-[2]: "2": <class 'str'> -> <class 'int'>
+[2]: 2: <class 'str'> -> <class 'int'>: TypeError
   No matching converters"""
     )
 
     obj = [0, 1, 2]
-    result = validate(obj, IntList, Validator(list, IntList))
+    result = validate(obj, IntList, TypedValidator(list, IntList))
     assert isinstance(result, IntList)
     assert result == [0, 1, 2]
 
     obj = [0, 1, "2"]
     result = validate(
-        obj, IntList, Validator(list, IntList), params=ValidationParams(strict=False)
+        obj,
+        IntList,
+        TypedValidator(list, IntList),
+        params=ValidationParams(strict=False),
     )
     assert isinstance(result, IntList)
     assert result == [0, 1, 2]
@@ -220,7 +223,7 @@ Error occurred during validation:
     assert result is obj
 
     obj = {0: "a"}
-    result = validate(obj, IntStrDict, Validator(dict, IntStrDict))
+    result = validate(obj, IntStrDict, TypedValidator(dict, IntStrDict))
     assert isinstance(result, IntStrDict)
     assert result == {0: "a"}
 
@@ -228,7 +231,7 @@ Error occurred during validation:
     result = validate(
         obj,
         IntStrDict,
-        Validator(dict, IntStrDict),
+        TypedValidator(dict, IntStrDict),
         params=ValidationParams(strict=False),
     )
     assert isinstance(result, IntStrDict)

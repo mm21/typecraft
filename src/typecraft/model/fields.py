@@ -11,15 +11,16 @@ from typing import (
     overload,
 )
 
-from ..adapter import Adapter
-from ..converting.serializer import (
-    SerializerRegistry,
-)
-from ..converting.validator import ValidatorRegistry
+from ..converting.serializer import TypedSerializerRegistry
+from ..converting.validator import TypedValidatorRegistry
 from ..inspecting.annotations import Annotation
+from ..serializing import SerializationEngine
+from ..validating import ValidationEngine
 from .methods import (
     FieldSerializerInfo,
     FieldValidatorInfo,
+    TypedSerializersInfo,
+    TypedValidatorsInfo,
 )
 
 if TYPE_CHECKING:
@@ -69,17 +70,22 @@ class FieldInfo:
     Metadata passed to field definition.
     """
 
-    _adapter: Adapter
+    _validation_engine: ValidationEngine
     """
-    Adapter object to wrap validation/serialization.
+    Type-based validation engine.
     """
 
-    _field_validators: tuple[FieldValidatorInfo, ...]
+    _serialization_engine: SerializationEngine
+    """
+    Type-based serialization engine..
+    """
+
+    __field_validator_infos: tuple[FieldValidatorInfo, ...]
     """
     Field-level validators registered via decorator.
     """
 
-    _field_serializers: tuple[FieldSerializerInfo, ...]
+    __field_serializer_infos: tuple[FieldSerializerInfo, ...]
     """
     Field-level serializers registered via decorator.
     """
@@ -89,19 +95,27 @@ class FieldInfo:
         field: dataclasses.Field,
         model_cls: type[BaseModel],
         *,
-        validator_registry: ValidatorRegistry,
-        serializer_registry: SerializerRegistry,
-        field_validators: tuple[FieldValidatorInfo, ...],
-        field_serializers: tuple[FieldSerializerInfo, ...],
+        typed_validators_infos: tuple[TypedValidatorsInfo, ...],
+        typed_serializers_infos: tuple[TypedSerializersInfo, ...],
+        field_validator_infos: tuple[FieldValidatorInfo, ...],
+        field_serializer_infos: tuple[FieldSerializerInfo, ...],
     ):
         if not field.type:
             raise TypeError(f"Field '{field.name}' does not have an annotation")
 
+        # get annotation
         type_hints = get_type_hints(model_cls, include_extras=True)
         assert field.name in type_hints
-
         raw_annotation = type_hints[field.name]
         annotation = Annotation(raw_annotation)
+
+        # get typed validators/serializers
+        typed_validators = TypedValidatorsInfo.aggregate_converters(
+            model_cls, typed_validators_infos
+        )
+        typed_serializers = TypedSerializersInfo.aggregate_converters(
+            model_cls, typed_serializers_infos
+        )
 
         metadata = field.metadata.get("metadata") or FieldMetadata()
         assert isinstance(metadata, FieldMetadata)
@@ -109,15 +123,14 @@ class FieldInfo:
         self.field = field
         self.annotation = annotation
         self.metadata = metadata
-        self._field_validators = field_validators
-        self._field_serializers = field_serializers
-        self._adapter = Adapter(
-            annotation,
-            validation_params=model_cls.model_config.validation_params,
-            serialization_params=model_cls.model_config.serialization_params,
-            validator_registry=validator_registry,
-            serializer_registry=serializer_registry,
+        self._validation_engine = ValidationEngine(
+            registry=TypedValidatorRegistry(*typed_validators)
         )
+        self._serialization_engine = SerializationEngine(
+            registry=TypedSerializerRegistry(*typed_serializers)
+        )
+        self.__field_validator_infos = field_validator_infos
+        self.__field_serializer_infos = field_serializer_infos
 
     @property
     def name(self) -> str:
@@ -132,13 +145,19 @@ class FieldInfo:
         """
         return self.metadata.alias or self.name if by_alias else self.name
 
-    def _get_validators(
+    def _get_validator_infos(
         self, *, mode: Literal["before", "after"]
     ) -> tuple[FieldValidatorInfo, ...]:
         """
         Get field validators filtered by mode.
         """
-        return tuple(v for v in self._field_validators if v.mode == mode)
+        return tuple(v for v in self.__field_validator_infos if v.mode == mode)
+
+    def _get_serializer_infos(self) -> tuple[FieldSerializerInfo, ...]:
+        """
+        Get field serializers.
+        """
+        return self.__field_serializer_infos
 
 
 @overload

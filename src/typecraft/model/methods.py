@@ -5,14 +5,15 @@ Mechanism to register validator/serializer methods.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, Self, cast, overload
 
-from ..converting.converter import BaseConverter
+from ..converting.converter import BaseConversionFrame, BaseTypedConverter
 from ..converting.serializer import (
-    BaseSerializer,
+    BaseTypedSerializer,
     JsonSerializableType,
+    SerializationFrame,
 )
-from ..converting.validator import BaseValidator
+from ..converting.validator import BaseTypedValidator, ValidationFrame
 from ..inspecting.functions import SignatureInfo
 
 if TYPE_CHECKING:
@@ -22,10 +23,10 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ValidatorModeType",
-    "TypedValidatorsType",
-    "TypedSerializersType",
-    "FieldValidatorType",
-    "FieldSerializerType",
+    "TypedValidatorsFuncType",
+    "TypedSerializersFuncType",
+    "FieldValidatorFuncType",
+    "FieldSerializerFuncType",
     "typed_validators",
     "typed_serializers",
     "field_validator",
@@ -48,86 +49,80 @@ Validator mode:
 - `"after"`: Invoked after builtin validation
 """
 
-type TypedConvertersType[ModelT: BaseModel, ConverterT: BaseConverter] = Callable[
-    [type[ModelT]], tuple[ConverterT, ...]
-]
+type TypedConvertersFuncType[
+    ModelT: BaseModel, ConverterT: BaseTypedConverter
+] = Callable[[type[ModelT]], tuple[ConverterT, ...]]
 """
 Annotates a typed converter (validator/serializer) registration method, which takes no
 arguments and returns a tuple of validators/serializers.
 """
 
-type TypedValidatorsType[ModelT: BaseModel] = TypedConvertersType[ModelT, BaseValidator]
-"""
-Annotates a typed validator registration method which takes no arguments and returns a
-tuple of validators.
-"""
-
-type TypedSerializersType[ModelT: BaseModel] = TypedConvertersType[
-    ModelT, BaseSerializer
+type TypedValidatorsFuncType[ModelT: BaseModel] = TypedConvertersFuncType[
+    ModelT, BaseTypedValidator
 ]
 """
 Annotates a typed validator registration method which takes no arguments and returns a
 tuple of validators.
 """
 
-# TODO: ValidationInfo: field_info, context, data (for cross-field validation)
-type FieldValidatorType[ModelT: BaseModel] = Callable[
-    [ModelT | type[ModelT], Any], Any
-] | Callable[[ModelT | type[ModelT], Any, FieldInfo], Any]
+type TypedSerializersFuncType[ModelT: BaseModel] = TypedConvertersFuncType[
+    ModelT, BaseTypedSerializer
+]
 """
-Annotates a field validator method which can take an optional `FieldInfo` argument.
+Annotates a typed validator registration method which takes no arguments and returns a
+tuple of validators.
+"""
+
+type FieldValidatorFuncType[ModelT: BaseModel] = Callable[
+    [ModelT | type[ModelT], Any], Any
+] | Callable[[ModelT | type[ModelT], Any, ValidationInfo], Any]
+"""
+Annotates a field validator method which can take an optional `ValidationInfo` argument.
 
 Can decorate an instance method or classmethod.
 """
 
-# TODO: SerializationInfo: field_info, context
-type FieldSerializerType[ModelT: BaseModel] = Callable[
+type FieldSerializerFuncType[ModelT: BaseModel] = Callable[
     [ModelT, Any], JsonSerializableType
-] | Callable[[ModelT, Any, FieldInfo], JsonSerializableType]
+] | Callable[[ModelT, Any, SerializationInfo], JsonSerializableType]
 """
-Annotates a field serializer method which can take an optional `FieldInfo` argument.
+Annotates a field serializer method which can take an optional `SerializationInfo`
+argument.
 
 Must be an instance method.
 """
 
 
-@dataclass(kw_only=True)
-class TypedValidatorsInfo[ModelT: BaseModel]:
-    """
-    Stores info about a method decorated with `@typed_validators`.
-    """
-
-    func: TypedValidatorsType[ModelT]
-    """
-    The method that returns validators.
-    """
+@dataclass
+class BaseConversionInfo[FrameT: BaseConversionFrame]:
+    field_info: FieldInfo
+    frame: FrameT
 
 
-@dataclass(kw_only=True)
-class TypedSerializersInfo[ModelT: BaseModel]:
+@dataclass
+class ValidationInfo(BaseConversionInfo[ValidationFrame]):
     """
-    Stores info about a method decorated with `@typed_serializers`.
-    """
-
-    func: TypedSerializersType[ModelT]
-    """
-    The method that returns serializers.
+    Info which can be optionally passed to validator method.
     """
 
 
-class BaseFieldConverterInfo[T: Callable]:
+@dataclass
+class SerializationInfo(BaseConversionInfo[SerializationFrame]):
     """
-    Common info for field validator/serializer.
+    Info which can be optionally passed to serializer method.
     """
 
-    func: T
+
+class BaseFieldRegistrationInfo[FuncT: Callable]:
+
+    attr_name: str
+    """
+    Name of the attribute used to access this info, set on subclass.
+    """
+
+    func: FuncT
     """
     Registered function.
-    """
-
-    field_names: tuple[str, ...] | None
-    """
-    Field names to which this converter applies, or `None` to apply to all fields.
     """
 
     sig: SignatureInfo
@@ -135,13 +130,98 @@ class BaseFieldConverterInfo[T: Callable]:
     Signature of registered function.
     """
 
-    def __init__(self, func: T, field_names: tuple[str, ...] | None):
+    field_names: tuple[str, ...] | None
+    """
+    Field names to which this info applies, or `None` to apply to all fields.
+    """
+
+    def __init__(self, func: FuncT, field_names: tuple[str, ...] | None):
         self.func = func
         self.field_names = field_names
         self.sig = SignatureInfo(func)
+        self._validate_info()
 
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(func={self.func}, field_names={self.field_names})"
+        )
+
+    @classmethod
+    def aggregate_infos(cls, model_cls: type[BaseModel]) -> list[Self]:
+        """
+        Aggregate all instances of this registration info from this class.
+        """
+        infos: list[Self] = []
+
+        # check each attribute model class
+        for attr in vars(model_cls).values():
+            # extract function from classmethod if applicable
+            attr = _normalize_attr(attr)
+
+            # skip if not callable
+            if not callable(attr):
+                continue
+
+            # check for this attribute
+            if info := getattr(attr, cls.attr_name, None):
+                assert isinstance(info, cls)
+                infos.append(info)
+
+        return infos
+
+    def _validate_info(self):
+        """
+        Can be implemented to validate this info.
+        """
+
+
+class BaseTypedConvertersInfo[FuncT: Callable, ConverterT: BaseTypedConverter](
+    BaseFieldRegistrationInfo[FuncT]
+):
+
+    @classmethod
+    def aggregate_converters(
+        cls, model_cls: type[BaseModel], infos: tuple[Self, ...]
+    ) -> tuple[ConverterT, ...]:
+        """
+        Aggregate converters from infos by calling each function.
+        """
+        converters: list[ConverterT] = []
+        for info in infos:
+            converters += cast(list[ConverterT], info.func(model_cls))
+        return tuple(converters)
+
+
+class TypedValidatorsInfo(
+    BaseTypedConvertersInfo[TypedValidatorsFuncType, BaseTypedValidator]
+):
+    """
+    Stores info about a method decorated with `@typed_validators` which returns a tuple
+    of validators.
+    """
+
+    attr_name = TYPED_VALIDATORS_ATTR
+
+
+class TypedSerializersInfo(
+    BaseTypedConvertersInfo[TypedSerializersFuncType, BaseTypedSerializer]
+):
+    """
+    Stores info about a method decorated with `@typed_serializers` which returns a tuple
+    of serializers.
+    """
+
+    attr_name = TYPED_SERIALIZERS_ATTR
+
+
+class BaseFieldConverterInfo[FuncT: Callable](BaseFieldRegistrationInfo[FuncT]):
+    """
+    Common info for field validator/serializer.
+    """
+
+    def _validate_info(self):
         # validate args
-        args = list(self.sig.get_params(positional=True))
+        args = self.sig.get_params(positional=True)
         if not len(args) in {2, 3}:
             raise TypeError(
                 "Function {} has unexpected number of args, must be 2 or 3: got {}".format(
@@ -150,10 +230,12 @@ class BaseFieldConverterInfo[T: Callable]:
             )
 
 
-class FieldValidatorInfo(BaseFieldConverterInfo[FieldValidatorType]):
+class FieldValidatorInfo(BaseFieldConverterInfo[FieldValidatorFuncType]):
     """
     Stores info about a method decorated with `@field_validator`.
     """
+
+    attr_name = FIELD_VALIDATOR_ATTR
 
     mode: ValidatorModeType
     """
@@ -167,7 +249,7 @@ class FieldValidatorInfo(BaseFieldConverterInfo[FieldValidatorType]):
 
     def __init__(
         self,
-        func: FieldValidatorType,
+        func: FieldValidatorFuncType,
         field_names: tuple[str, ...] | None,
         mode: ValidatorModeType,
         is_classmethod: bool,
@@ -177,10 +259,12 @@ class FieldValidatorInfo(BaseFieldConverterInfo[FieldValidatorType]):
         self.is_classmethod = is_classmethod
 
 
-class FieldSerializerInfo(BaseFieldConverterInfo[FieldSerializerType]):
+class FieldSerializerInfo(BaseFieldConverterInfo[FieldSerializerFuncType]):
     """
     Stores info about a method decorated with `@field_serializer`.
     """
+
+    attr_name = FIELD_SERIALIZER_ATTR
 
 
 @dataclass
@@ -189,10 +273,12 @@ class RegistrationInfo:
     Encapsulates validator/serializer registration info.
     """
 
-    typed_validators: list[BaseValidator]
-    typed_serializers: list[BaseSerializer]
-    field_validators_info: list[FieldValidatorInfo]
-    field_serializers_info: list[FieldSerializerInfo]
+    # typed_validators: list[BaseValidator]
+    # typed_serializers: list[BaseSerializer]
+    typed_validators_infos: list[TypedValidatorsInfo]
+    typed_serializers_infos: list[TypedSerializersInfo]
+    field_validator_infos: list[FieldValidatorInfo]
+    field_serializer_infos: list[FieldSerializerInfo]
 
     @classmethod
     def from_model_cls(cls, model_cls: type[BaseModel]) -> RegistrationInfo:
@@ -201,10 +287,10 @@ class RegistrationInfo:
         """
         from .base import BaseModel
 
-        typed_validators: list[BaseValidator] = []
-        typed_serializers: list[BaseSerializer] = []
-        field_validators_info: list[FieldValidatorInfo] = []
-        field_serializers_info: list[FieldSerializerInfo] = []
+        typed_validators_infos: list[TypedValidatorsInfo] = []
+        typed_serializers_infos: list[TypedSerializersInfo] = []
+        field_validator_infos: list[FieldValidatorInfo] = []
+        field_serializer_infos: list[FieldSerializerInfo] = []
 
         # traverse class hierarchy in reverse MRO order
         for check_cls in reversed(model_cls.mro()):
@@ -213,80 +299,128 @@ class RegistrationInfo:
             if not issubclass(check_cls, BaseModel):
                 continue
 
-            # check each attribute of this class
-            for attr in vars(check_cls).values():
-                # extract function from classmethod if applicable
-                attr = _normalize_attr(attr)
-
-                # skip if not callable
-                if not callable(attr):
-                    continue
-
-                # check for each attribute and populate lists
-                if typed_validators_info := getattr(attr, TYPED_VALIDATORS_ATTR, None):
-                    assert isinstance(typed_validators_info, TypedValidatorsInfo)
-                    typed_validators.extend(typed_validators_info.func(check_cls))
-                elif typed_serializers_info := getattr(
-                    attr, TYPED_SERIALIZERS_ATTR, None
-                ):
-                    assert isinstance(typed_serializers_info, TypedSerializersInfo)
-                    typed_serializers.extend(typed_serializers_info.func(check_cls))
-                elif field_validator_info := getattr(attr, FIELD_VALIDATOR_ATTR, None):
-                    assert isinstance(field_validator_info, FieldValidatorInfo)
-                    field_validators_info.append(field_validator_info)
-                elif field_serializer_info := getattr(attr, FIELD_VALIDATOR_ATTR, None):
-                    assert isinstance(field_serializer_info, FieldSerializerInfo)
-                    field_serializers_info.append(field_serializer_info)
+            # get infos from class
+            typed_validators_infos += TypedValidatorsInfo.aggregate_infos(check_cls)
+            typed_serializers_infos += TypedSerializersInfo.aggregate_infos(check_cls)
+            field_validator_infos += FieldValidatorInfo.aggregate_infos(check_cls)
+            field_serializer_infos += FieldSerializerInfo.aggregate_infos(check_cls)
 
         return RegistrationInfo(
-            typed_validators,
-            typed_serializers,
-            field_validators_info,
-            field_serializers_info,
+            typed_validators_infos,
+            typed_serializers_infos,
+            field_validator_infos,
+            field_serializer_infos,
         )
 
 
-def typed_validators[ModelT: BaseModel](
-    func: TypedValidatorsType[ModelT],
-) -> TypedValidatorsType[ModelT]:
-    """
-    Decorator to register a classmethod that returns type-based validators.
-    """
-    func_ = _normalize_attr(func)
-    setattr(func_, TYPED_VALIDATORS_ATTR, TypedValidatorsInfo(func=func_))
-    return cast(TypedValidatorsType[ModelT], func)
+@overload
+def typed_validators[FuncT: TypedValidatorsFuncType](
+    func: FuncT,
+    /,
+) -> FuncT: ...
 
 
-def typed_serializers[ModelT: BaseModel](
-    func: TypedSerializersType[ModelT],
-) -> TypedSerializersType[ModelT]:
+@overload
+def typed_validators[FuncT: TypedValidatorsFuncType](
+    *field_names: str,
+) -> Callable[[FuncT], FuncT]: ...
+
+
+def typed_validators[FuncT: TypedValidatorsFuncType](
+    func_or_name: FuncT | str | None = None, *field_names: str
+) -> FuncT | Callable[[FuncT], FuncT]:
+
+    # for type checking func is FuncT, but at runtime it should actually be a
+    # classmethod descriptor
+    def register(
+        clsmethod: FuncT | classmethod,
+        field_names: tuple[str, ...] | None = None,
+    ) -> FuncT:
+        assert isinstance(clsmethod, classmethod)
+        func = clsmethod.__func__
+        info = TypedValidatorsInfo(func, field_names)
+        setattr(func, TYPED_VALIDATORS_ATTR, info)
+        return cast(FuncT, clsmethod)
+
+    if isinstance(func_or_name, classmethod):
+        assert len(field_names) == 0
+        return register(func_or_name)
+
+    all_names = (
+        (func_or_name, *field_names) if isinstance(func_or_name, str) else field_names
+    )
+    assert all(isinstance(n, str) for n in all_names)
+
+    def decorator(func: FuncT) -> FuncT:
+        return register(func, all_names or None)
+
+    return decorator
+
+
+@overload
+def typed_serializers[FuncT: TypedSerializersFuncType](
+    func: FuncT,
+    /,
+) -> FuncT: ...
+
+
+@overload
+def typed_serializers[FuncT: TypedSerializersFuncType](
+    *field_names: str,
+) -> Callable[[FuncT], FuncT]: ...
+
+
+def typed_serializers[FuncT: TypedSerializersFuncType](
+    func_or_name: FuncT | str | None = None, *field_names: str
+) -> FuncT | Callable[[FuncT], FuncT]:
     """
     Decorator to register a classmethod that returns type-based serializers.
     """
-    func_ = _normalize_attr(func)
-    setattr(func_, TYPED_SERIALIZERS_ATTR, TypedSerializersInfo(func=func_))
-    return cast(TypedSerializersType[ModelT], func)
+
+    def register(
+        clsmethod: FuncT | classmethod,
+        field_names: tuple[str, ...] | None = None,
+    ) -> FuncT:
+        assert isinstance(clsmethod, classmethod)
+        func = clsmethod.__func__
+        info = TypedSerializersInfo(func, field_names)
+        setattr(func, TYPED_SERIALIZERS_ATTR, info)
+        return cast(FuncT, clsmethod)
+
+    if isinstance(func_or_name, classmethod):
+        assert len(field_names) == 0
+        return register(func_or_name)
+
+    all_names = (
+        (func_or_name, *field_names) if isinstance(func_or_name, str) else field_names
+    )
+    assert all(isinstance(n, str) for n in all_names)
+
+    def decorator(func: FuncT) -> FuncT:
+        return register(func, all_names or None)
+
+    return decorator
 
 
 @overload
-def field_validator[T: FieldValidatorType](
-    func: T,
+def field_validator[FuncT: FieldValidatorFuncType](
+    func: FuncT,
     /,
-) -> T: ...
+) -> FuncT: ...
 
 
 @overload
-def field_validator[T: FieldValidatorType](
+def field_validator[FuncT: FieldValidatorFuncType](
     *field_names: str,
     mode: Literal["before", "after"] = "before",
-) -> Callable[[T], T]: ...
+) -> Callable[[FuncT], FuncT]: ...
 
 
-def field_validator[T: FieldValidatorType](
-    func_or_name: T | str | None = None,
+def field_validator[FuncT: FieldValidatorFuncType](
+    func_or_name: FuncT | str | None = None,
     *names: str,
     mode: ValidatorModeType = "before",
-) -> T | Callable[[T], T]:
+) -> FuncT | Callable[[FuncT], FuncT]:
     """
     Decorator to register a field-level validator.
 
@@ -294,45 +428,43 @@ def field_validator[T: FieldValidatorType](
     """
 
     def register(
-        func: T | classmethod,
+        func: FuncT | classmethod,
         field_names: tuple[str, ...] | None = None,
-    ) -> T:
+    ) -> FuncT:
         normalized_func = _normalize_attr(func)
         info = FieldValidatorInfo(
             normalized_func, field_names, mode, isinstance(func, classmethod)
         )
         setattr(normalized_func, FIELD_VALIDATOR_ATTR, info)
-        return cast(T, func)
+        return cast(FuncT, func)
 
     if isinstance(func_or_name, (Callable, classmethod)):
-        # called without parentheses: @field_validator
         assert len(names) == 0
         return register(func_or_name)
 
-    # called with parentheses: @field_validator() or @field_validator("name", ...)
     all_names = (func_or_name, *names) if isinstance(func_or_name, str) else names
     assert all(isinstance(n, str) for n in all_names)
 
-    def decorator(func: T) -> T:
+    def decorator(func: FuncT) -> FuncT:
         return register(func, all_names or None)
 
     return decorator
 
 
 @overload
-def field_serializer[T: FieldSerializerType](
+def field_serializer[T: FieldSerializerFuncType](
     func: T,
     /,
 ) -> T: ...
 
 
 @overload
-def field_serializer[T: FieldSerializerType](
+def field_serializer[T: FieldSerializerFuncType](
     *field_names: str,
 ) -> Callable[[T], T]: ...
 
 
-def field_serializer[T: FieldSerializerType](
+def field_serializer[T: FieldSerializerFuncType](
     func_or_name: T | str | None = None,
     *names: str,
 ) -> T | Callable[[T], T]:

@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MatchSpec",
-    "BaseConverter",
-    "BaseConverterRegistry",
+    "BaseTypedConverter",
+    "BaseTypedConverterRegistry",
 ]
 
 
@@ -74,7 +74,7 @@ class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     def __init__(self, func: Callable[..., Any]):
         sig_info = SignatureInfo(func)
 
-        args = list(sig_info.get_params(positional=True))
+        args = sig_info.get_params(positional=True)
 
         # get object parameter
         assert len(
@@ -107,7 +107,7 @@ class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
             return func(obj)
 
 
-class BaseConversionFrame[ParamsT]:
+class BaseConversionFrame[ParamsT: BaseConversionParams]:
 
     source_annotation: Annotation
     """
@@ -131,7 +131,12 @@ class BaseConversionFrame[ParamsT]:
     Can be overridden when recursing into the next frame.
     """
 
-    __engine: BaseConversionEngine
+    __params_cls: type[ParamsT]
+    """
+    Params class extracted from type arg.
+    """
+
+    __engine: BaseConversionEngine | None = None
     """
     Conversion engine for recursion.
     """
@@ -151,14 +156,21 @@ class BaseConversionFrame[ParamsT]:
     Shared list for collecting conversion errors.
     """
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.__params_cls = cast(
+            type[ParamsT],
+            extract_arg(cls, BaseConversionFrame, "ParamsT", BaseConversionParams),
+        )
+
     def __init__(
         self,
         *,
         source_annotation: Annotation,
         target_annotation: Annotation,
-        params: ParamsT,
+        params: ParamsT | None,
         context: Any | None,
-        engine: BaseConversionEngine,
+        engine: BaseConversionEngine | None = None,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
         errors: list[ConversionErrorDetail] | None = None,
@@ -166,14 +178,19 @@ class BaseConversionFrame[ParamsT]:
         self.source_annotation = source_annotation
         self.target_annotation = target_annotation
         self.context = context
-        self.params = params
+        self.params = params or type(self).__params_cls()
         self.__engine = engine
         self.__path = path or ()
         self.__seen = seen or set()
         self.__errors = errors if errors is not None else []
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(source={self.source_annotation}, target={self.target_annotation})"
+        return "{}(source={}, target={}, path={})".format(
+            type(self).__name__,
+            self.source_annotation,
+            self.target_annotation,
+            self.path,
+        )
 
     @property
     def path(self) -> tuple[str | int, ...]:
@@ -204,6 +221,8 @@ class BaseConversionFrame[ParamsT]:
 
         `context` is replaced if not `...`; otherwise it's passed through unchanged.
         """
+        assert self.__engine
+
         if self.__engine._is_validating:
             # validating: get actual object type
             # - could be converting from e.g. a subclass of list[int], in which
@@ -257,54 +276,33 @@ class BaseConversionFrame[ParamsT]:
         target_annotation: Annotation | None = None,
         context: Any | None = ...,
         path_append: str | int | None = None,
+        path_prepend: str | int | None = None,
     ) -> Self:
         """
         Create a new frame with the arguments replaced if not `None`, except `context`
         which is replaced if not `...`.
         """
-        path = (
-            self.__path
-            if path_append is None
-            else tuple(list(self.__path) + [path_append])
-        )
+        # adjust path if needed
+        if not (path_append is None and path_prepend is None):
+            path_segments: list[str | int] = []
+            if path_prepend is not None:
+                path_segments.append(path_prepend)
+            path_segments += list(self.__path)
+            if path_append is not None:
+                path_segments.append(path_append)
+            path = tuple(path_segments)
+        else:
+            path = self.__path
+
         return type(self)(
             source_annotation=source_annotation or self.source_annotation,
             target_annotation=target_annotation or self.target_annotation,
-            context=context if context is not ... else self.context,
             params=self.params,
+            context=context if context is not ... else self.context,
             engine=self.__engine,
             path=path,
             seen=self.__seen,
             errors=self.__errors,
-        )
-
-    @classmethod
-    def _setup(
-        cls,
-        *,
-        obj: Any,
-        source_type: Annotation | Any | None,
-        target_type: Annotation | Any,
-        params: Any | None,
-        default_params: Any,
-        context: Any | None,
-        engine: BaseConversionEngine,
-    ) -> Self:
-        """
-        Create initial frame at conversion entry point.
-        """
-        source_annotation = (
-            Annotation._normalize(source_type)
-            if source_type is not None
-            else Annotation(type(obj))
-        )
-        target_annotation = Annotation._normalize(target_type)
-        return cls(
-            source_annotation=source_annotation,
-            target_annotation=target_annotation,
-            params=params if params is not None else default_params,
-            context=context,
-            engine=engine,
         )
 
 
@@ -433,7 +431,7 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
         """
 
 
-class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
+class BaseTypedConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     ConverterInterface[SourceT, TargetT, FrameT], ABC
 ):
     """
@@ -516,7 +514,7 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
                     continue
                 return False
 
-        return True if not match_any_union else False
+        return not match_any_union
 
     def _check_convert(
         self, obj: Any, source_annotation: Annotation, target_annotation: Annotation
@@ -554,7 +552,7 @@ class BaseConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
             return my_annotation.equals(requested_annotation, match_any=True)
 
 
-class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
+class BaseTypedConverterRegistry[ConverterT: BaseTypedConverter](ABC):
     """
     Base class for converter registries.
     """
@@ -603,6 +601,6 @@ class BaseConverterRegistry[ConverterT: BaseConverter](ABC):
     @cached_property
     def _converter_cls(self) -> type[ConverterT]:
         converter_cls = extract_arg(
-            type(self), BaseConverterRegistry, "ConverterT", BaseConverter
+            type(self), BaseTypedConverterRegistry, "ConverterT", BaseTypedConverter
         )
         return cast(type[ConverterT], converter_cls)

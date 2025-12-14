@@ -7,10 +7,10 @@ from pytest import raises
 from typecraft.adapter import Adapter
 from typecraft.converting.symmetric_converter import BaseSymmetricConverter
 from typecraft.exceptions import SerializationError, ValidationError
-from typecraft.serializing import SerializationFrame, SerializerRegistry, serialize
+from typecraft.serializing import SerializationFrame, TypedSerializerRegistry, serialize
 from typecraft.validating import (
+    TypedValidatorRegistry,
     ValidationFrame,
-    ValidatorRegistry,
     validate,
 )
 
@@ -82,8 +82,8 @@ def test_basic():
 
     adapter = Adapter(
         MyClass,
-        validator_registry=ValidatorRegistry(validator),
-        serializer_registry=SerializerRegistry(serializer),
+        validator_registry=TypedValidatorRegistry(validator),
+        serializer_registry=TypedSerializerRegistry(serializer),
     )
 
     # make sure we get an exception without the adapter
@@ -94,7 +94,7 @@ def test_basic():
         str(exc_info.value)
         == """\
 Error occurred during validation:
-<root>: "123": <class 'int'> -> <class 'test.test_symmetric_converter.MyClass'>
+<root>: 123: <class 'int'> -> <class 'test.test_symmetric_converter.MyClass'>: TypeError
   No matching converters"""
     )
 
@@ -105,7 +105,7 @@ Error occurred during validation:
         str(exc_info.value)
         == """\
 Error occurred during serialization:
-<root>: "MyClass(val=321)": <class 'test.test_symmetric_converter.MyClass'> -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]
+<root>: MyClass(val=321): <class 'test.test_symmetric_converter.MyClass'> -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'int'>: No matching converters
@@ -133,8 +133,8 @@ def test_range():
     serializer = RangeConverter.as_serializer()
     adapter = Adapter(
         range,
-        validator_registry=ValidatorRegistry(validator),
-        serializer_registry=SerializerRegistry(serializer),
+        validator_registry=TypedValidatorRegistry(validator),
+        serializer_registry=TypedSerializerRegistry(serializer),
     )
 
     result = adapter.validate([10])

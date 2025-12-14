@@ -11,15 +11,14 @@ from typing import (
 from .converting.builtin_converters import get_builtin_serializer_registry
 from .converting.engine import BaseConversionEngine
 from .converting.serializer import (
-    JSON_SERIALIZABLE_ANNOTATION,
-    BaseGenericSerializer,
-    BaseSerializer,
+    BaseTypedGenericSerializer,
+    BaseTypedSerializer,
     FuncSerializerType,
     JsonSerializableType,
     SerializationFrame,
     SerializationParams,
-    Serializer,
-    SerializerRegistry,
+    TypedSerializer,
+    TypedSerializerRegistry,
 )
 from .exceptions import SerializationError
 from .inspecting.annotations import Annotation
@@ -29,19 +28,18 @@ __all__ = [
     "FuncSerializerType",
     "SerializationParams",
     "SerializationFrame",
-    "BaseSerializer",
-    "BaseGenericSerializer",
-    "Serializer",
-    "SerializerRegistry",
+    "BaseTypedSerializer",
+    "BaseTypedGenericSerializer",
+    "TypedSerializer",
+    "TypedSerializerRegistry",
     "serialize",
 ]
 
 
-DEFAULT_PARAMS = SerializationParams()
-
-
 class SerializationEngine(
-    BaseConversionEngine[SerializerRegistry, SerializationFrame, SerializationError]
+    BaseConversionEngine[
+        TypedSerializerRegistry, SerializationFrame, SerializationError
+    ]
 ):
     """
     Orchestrates serialization process.
@@ -51,7 +49,7 @@ class SerializationEngine(
 
     def _get_builtin_registries(
         self, frame: SerializationFrame
-    ) -> tuple[SerializerRegistry, ...]:
+    ) -> tuple[TypedSerializerRegistry, ...]:
         _ = frame
         return (
             (get_builtin_serializer_registry(),)
@@ -63,8 +61,8 @@ class SerializationEngine(
 def serialize(
     obj: Any,
     /,
-    *serializers: BaseSerializer[Any, Any],
-    registry: SerializerRegistry | None = None,
+    *serializers: BaseTypedSerializer[Any, Any],
+    registry: TypedSerializerRegistry | None = None,
     params: SerializationParams | None = None,
     context: Any | None = None,
     source_type: Annotation | Any | None = None,
@@ -90,13 +88,13 @@ def serialize(
     serialization; if `None`, type is inferred from the object
     :raises ConversionError: If any conversion errors are encountered
     """
+    source_annotation = (
+        Annotation._normalize(source_type) if source_type else Annotation(type(obj))
+    )
     engine = SerializationEngine._setup(converters=serializers, registry=registry)
-    frame = SerializationFrame._setup(
-        obj=obj,
-        source_type=source_type,
-        target_type=JSON_SERIALIZABLE_ANNOTATION,
+    frame = SerializationFrame(
+        source_annotation=source_annotation,
         params=params,
-        default_params=DEFAULT_PARAMS,
         context=context,
         engine=engine,
     )

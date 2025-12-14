@@ -16,7 +16,11 @@ from ._types import (
     ERROR_SENTINEL,
     ErrorSentinel,
 )
-from .converter import BaseConversionFrame, BaseConverter, BaseConverterRegistry
+from .converter import (
+    BaseConversionFrame,
+    BaseTypedConverter,
+    BaseTypedConverterRegistry,
+)
 from .utils import (
     convert_to_dict,
     convert_to_list,
@@ -27,7 +31,7 @@ from .utils import (
 
 
 class BaseConversionEngine[
-    RegistryT: BaseConverterRegistry,
+    RegistryT: BaseTypedConverterRegistry,
     FrameT: BaseConversionFrame,
     ExceptionT: BaseConversionError,
 ](ABC):
@@ -71,7 +75,9 @@ class BaseConversionEngine[
         super().__init_subclass__(**kwargs)
         cls.__registry_cls = cast(
             type[RegistryT],
-            extract_arg(cls, BaseConversionEngine, "RegistryT", BaseConverterRegistry),
+            extract_arg(
+                cls, BaseConversionEngine, "RegistryT", BaseTypedConverterRegistry
+            ),
         )
         cls.__exception_cls = cast(
             type[ExceptionT],
@@ -86,13 +92,13 @@ class BaseConversionEngine[
         """
         Entry point for conversion which handles error aggregation.
         """
-        result = self.process(obj, frame)
+        processed_obj = self.process(obj, frame)
 
         # check if any errors were collected during conversion
         if frame.errors:
             raise self.__exception_cls(frame.errors)
 
-        return result
+        return processed_obj
 
     def process(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
         """
@@ -101,7 +107,6 @@ class BaseConversionEngine[
         Walks the object recursively based on reference annotation, invoking type-based
         converters when conversion is needed.
         """
-
         # ensure object is an instance of source annotation
         # - would only fail if the user updated the validated data with invalid data,
         # or passed invalid data to serialize() along with an annotation
@@ -260,7 +265,7 @@ class BaseConversionEngine[
         error = "Errors during union member conversion:\n{}".format(
             "\n".join((f"  {t.raw}: {e}" for t, e in exceptions))
         )
-        exception = ValueError(error)
+        exception = TypeError(error)
         frame.append_error(obj, exception)
         return ERROR_SENTINEL
 
@@ -277,8 +282,11 @@ class BaseConversionEngine[
             assert not exception
             return converted_obj
 
-        assert exception
-        frame.append_error(obj, exception)
+        # if exception is None, errors were already added to frame in
+        # __attempt_conversion()
+        if exception is not None:
+            frame.append_error(obj, exception)
+
         return ERROR_SENTINEL
 
     def __attempt_conversion(
@@ -288,17 +296,22 @@ class BaseConversionEngine[
             frame_ = frame._copy(target_annotation=target_annotation)
             try:
                 return (converter.convert(obj, frame_), None)
+            except BaseConversionError as e:
+                # nested conversion failed: add the nested errors directly to the
+                # frame's error list
+                # - these errors already have proper paths from the nested model
+                for detail in e.errors:
+                    frame.errors.append(detail)
+                return (ERROR_SENTINEL, None)
             except Exception as e:
-                if isinstance(e, AssertionError):
-                    # indicates an internal framework/converter error; fail immediately
-                    raise e from None
+                # converter failed
                 error = ValueError(f"{converter} failed: {e}")
                 return (ERROR_SENTINEL, error)
         return (ERROR_SENTINEL, TypeError("No matching converters"))
 
     def __find_converter(
         self, obj: Any, frame: FrameT, target_annotation: Annotation
-    ) -> BaseConverter | None:
+    ) -> BaseTypedConverter | None:
         for registry in itertools.chain(
             (self.__user_registry,), self._get_builtin_registries(frame)
         ):

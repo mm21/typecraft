@@ -2,26 +2,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
+from ..exceptions import ConversionErrorDetail
+from ..inspecting.annotations import Annotation
 from .converter import (
     BaseConversionFrame,
     BaseConversionParams,
-    BaseConverter,
-    BaseConverterRegistry,
+    BaseTypedConverter,
+    BaseTypedConverterRegistry,
     FuncConverterType,
 )
 from .mixins import FuncConverterMixin, GenericConverterMixin
+
+if TYPE_CHECKING:
+    from ..validating import ValidationEngine
 
 __all__ = [
     "FuncValidatorType",
     "ValidationParams",
     "ValidationFrame",
-    "BaseValidator",
-    "BaseGenericValidator",
-    "Validator",
-    "ValidatorRegistry",
+    "BaseTypedValidator",
+    "BaseTypedGenericValidator",
+    "TypedValidator",
+    "TypedValidatorRegistry",
 ]
 
 type FuncValidatorType[TargetT] = FuncConverterType[Any, TargetT, ValidationFrame]
@@ -55,16 +61,41 @@ class ValidationFrame(BaseConversionFrame[ValidationParams]):
     Internal recursion state per frame.
     """
 
+    def __init__(
+        self,
+        *,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        params: ValidationParams | None,
+        context: Any | None,
+        engine: ValidationEngine | None = None,
+        path: tuple[str | int, ...] | None = None,
+        seen: set[int] | None = None,
+        errors: list[ConversionErrorDetail] | None = None,
+    ):
+        super().__init__(
+            source_annotation=source_annotation,
+            target_annotation=target_annotation,
+            params=params,
+            context=context,
+            engine=engine,
+            path=path,
+            seen=seen,
+            errors=errors,
+        )
 
-class BaseValidator[SourceT, TargetT](BaseConverter[SourceT, TargetT, ValidationFrame]):
+
+class BaseTypedValidator[SourceT, TargetT](
+    BaseTypedConverter[SourceT, TargetT, ValidationFrame]
+):
     """
     Base class for type-based validators.
     """
 
 
-class BaseGenericValidator[SourceT, TargetT](
+class BaseTypedGenericValidator[SourceT, TargetT](
     GenericConverterMixin[SourceT, TargetT, ValidationFrame],
-    BaseValidator[SourceT, TargetT],
+    BaseTypedValidator[SourceT, TargetT],
 ):
     """
     Generic validator: subclass with type parameters to determine source/target
@@ -72,16 +103,16 @@ class BaseGenericValidator[SourceT, TargetT](
     """
 
 
-class Validator[SourceT, TargetT](
+class TypedValidator[SourceT, TargetT](
     FuncConverterMixin[SourceT, TargetT, ValidationFrame],
-    BaseValidator[SourceT, TargetT],
+    BaseTypedValidator[SourceT, TargetT],
 ):
     """
     Function-based validator with optional type inference.
     """
 
 
-class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
+class TypedValidatorRegistry(BaseTypedConverterRegistry[BaseTypedValidator]):
     """
     Registry for managing type-based validators.
 
@@ -92,13 +123,13 @@ class ValidatorRegistry(BaseConverterRegistry[BaseValidator]):
         return f"ValidatorRegistry(validators={self.validators})"
 
     @property
-    def validators(self) -> tuple[BaseValidator, ...]:
+    def validators(self) -> tuple[BaseTypedValidator, ...]:
         """
         Get validators currently registered.
         """
         return tuple(self._converters)
 
-    def register(self, validator: BaseValidator, /):
+    def register(self, validator: BaseTypedValidator, /):
         """
         Register a validator.
         """

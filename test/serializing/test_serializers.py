@@ -7,11 +7,11 @@ from typing import Any
 
 from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
-    BaseGenericSerializer,
+    BaseTypedGenericSerializer,
     SerializationEngine,
     SerializationFrame,
     SerializationParams,
-    Serializer,
+    TypedSerializer,
     serialize,
 )
 
@@ -32,10 +32,10 @@ def serialize_company(c: Company) -> dict[str, Any]:
     return {"name": c.name, "employees": c.employees}
 
 
-PERSON_SERIALIZER = Serializer(
+PERSON_SERIALIZER = TypedSerializer(
     Person, dict, func=lambda p: {"name": p.name, "age": p.age}
 )
-COMPANY_SERIALIZER = Serializer.from_func(serialize_company)
+COMPANY_SERIALIZER = TypedSerializer.from_func(serialize_company)
 
 
 def test_custom_serializer():
@@ -67,7 +67,7 @@ def test_nested_custom_serializer():
             ],
         }
 
-    company_serializer = Serializer.from_func(serialize_company)
+    company_serializer = TypedSerializer.from_func(serialize_company)
 
     person1 = Person(name="Alice", age=30)
     person2 = Person(name="Bob", age=25)
@@ -141,7 +141,7 @@ def test_subclass():
     Test subclass of BaseGenericSerializer.
     """
 
-    class MySerializer(BaseGenericSerializer[int, str]):
+    class MySerializer(BaseTypedGenericSerializer[int, str]):
         def convert(self, obj: int, frame: SerializationFrame) -> str:
             _ = frame
             return str(obj)
@@ -161,10 +161,11 @@ def _create_frame(
     params: SerializationParams | None = None,
 ) -> SerializationFrame:
     engine = SerializationEngine()
-    return SerializationFrame(
+    frame = SerializationFrame(
         source_annotation=Annotation(source_annotation),
         target_annotation=Annotation(target_annotation),
         params=params or SerializationParams(sort_sets=True),
         context=None,
         engine=engine,
     )
+    return frame

@@ -6,17 +6,19 @@ from __future__ import annotations
 
 from typing import Any, overload
 
+from .converting.serializer import SerializationFrame
+from .converting.validator import ValidationFrame
 from .inspecting.annotations import Annotation
 from .serializing import (
     JsonSerializableType,
+    SerializationEngine,
     SerializationParams,
-    SerializerRegistry,
-    serialize,
+    TypedSerializerRegistry,
 )
 from .validating import (
+    TypedValidatorRegistry,
+    ValidationEngine,
     ValidationParams,
-    ValidatorRegistry,
-    validate,
 )
 
 __all__ = [
@@ -32,11 +34,9 @@ class Adapter[T]:
     validating objects to a target type and serializing objects from that type.
     """
 
-    _annotation: Annotation
-    _validation_params: ValidationParams | None = None
-    _serialization_params: SerializationParams | None = None
-    _validator_registry: ValidatorRegistry | None
-    _serializer_registry: SerializerRegistry | None
+    __annotation: Annotation
+    __validation_engine: ValidationEngine
+    __serialization_engine: SerializationEngine
 
     @overload
     def __init__(
@@ -44,10 +44,8 @@ class Adapter[T]:
         annotation: type[T],
         /,
         *,
-        validation_params: ValidationParams | None = None,
-        serialization_params: SerializationParams | None = None,
-        validator_registry: ValidatorRegistry | None = None,
-        serializer_registry: SerializerRegistry | None = None,
+        validator_registry: TypedValidatorRegistry | None = None,
+        serializer_registry: TypedSerializerRegistry | None = None,
     ): ...
 
     @overload
@@ -56,10 +54,8 @@ class Adapter[T]:
         annotation: Annotation | Any,
         /,
         *,
-        validation_params: ValidationParams | None = None,
-        serialization_params: SerializationParams | None = None,
-        validator_registry: ValidatorRegistry | None = None,
-        serializer_registry: SerializerRegistry | None = None,
+        validator_registry: TypedValidatorRegistry | None = None,
+        serializer_registry: TypedSerializerRegistry | None = None,
     ): ...
 
     def __init__(
@@ -67,54 +63,56 @@ class Adapter[T]:
         annotation: type[T] | Annotation | Any,
         /,
         *,
-        validation_params: ValidationParams | None = None,
-        serialization_params: SerializationParams | None = None,
-        validator_registry: ValidatorRegistry | None = None,
-        serializer_registry: SerializerRegistry | None = None,
+        validator_registry: TypedValidatorRegistry | None = None,
+        serializer_registry: TypedSerializerRegistry | None = None,
     ):
-        self._annotation = Annotation._normalize(annotation)
-        self._validation_params = validation_params
-        self._serialization_params = serialization_params
-        self._validator_registry = validator_registry
-        self._serializer_registry = serializer_registry
+        self.__annotation = Annotation._normalize(annotation)
+        self.__validation_engine = ValidationEngine(registry=validator_registry)
+        self.__serialization_engine = SerializationEngine(registry=serializer_registry)
 
     def validate(
         self,
         obj: Any,
         *,
+        params: ValidationParams | None = None,
         context: Any | None = None,
     ) -> T:
         """
         Validate an object to the validated type.
 
         :param obj: Object to validate
+        :param params: Validation params
         :param context: User-defined context passed to validators
         :return: Validated object
         """
-        return validate(
-            obj,
-            self._annotation,
-            params=self._validation_params,
-            registry=self._validator_registry,
+        frame = ValidationFrame(
+            source_annotation=Annotation(type(obj)),
+            target_annotation=self.__annotation,
+            params=params,
             context=context,
+            engine=self.__validation_engine,
         )
+        return self.__validation_engine.invoke_process(obj, frame)
 
     def serialize(
         self,
         obj: T,
         *,
+        params: SerializationParams | None = None,
         context: Any | None = None,
     ) -> JsonSerializableType:
         """
         Serialize an object from the validated type.
 
         :param obj: Object to serialize
+        :param params: Serialization params
         :param context: User-defined context passed to serializers
         :return: Serialized object
         """
-        return serialize(
-            obj,
-            params=self._serialization_params,
-            registry=self._serializer_registry,
+        frame = SerializationFrame(
+            source_annotation=self.__annotation,
+            params=params,
             context=context,
+            engine=self.__serialization_engine,
         )
+        return self.__serialization_engine.invoke_process(obj, frame)

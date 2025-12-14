@@ -3,28 +3,33 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import NoneType
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
+from ..exceptions import ConversionErrorDetail
 from ..inspecting.annotations import Annotation
 from .converter import (
     BaseConversionFrame,
     BaseConversionParams,
-    BaseConverter,
-    BaseConverterRegistry,
+    BaseTypedConverter,
+    BaseTypedConverterRegistry,
     FuncConverterType,
 )
 from .mixins import FuncConverterMixin, GenericConverterMixin
+
+if TYPE_CHECKING:
+    from ..serializing import SerializationEngine
 
 __all__ = [
     "JsonSerializableType",
     "FuncSerializerType",
     "SerializationParams",
     "SerializationFrame",
-    "BaseSerializer",
-    "BaseGenericSerializer",
-    "Serializer",
-    "SerializerRegistry",
+    "BaseTypedSerializer",
+    "BaseTypedGenericSerializer",
+    "TypedSerializer",
+    "TypedSerializerRegistry",
 ]
 
 type JsonSerializableType = str | int | float | bool | NoneType | list[
@@ -71,6 +76,29 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
     Internal recursion state per frame.
     """
 
+    def __init__(
+        self,
+        *,
+        source_annotation: Annotation,
+        target_annotation: Annotation | None = None,
+        params: SerializationParams | None,
+        context: Any | None,
+        engine: SerializationEngine,
+        path: tuple[str | int, ...] | None = None,
+        seen: set[int] | None = None,
+        errors: list[ConversionErrorDetail] | None = None,
+    ):
+        super().__init__(
+            source_annotation=source_annotation,
+            target_annotation=target_annotation or JSON_SERIALIZABLE_ANNOTATION,
+            params=params,
+            context=context,
+            engine=engine,
+            path=path,
+            seen=seen,
+            errors=errors,
+        )
+
     def recurse(
         self,
         obj: Any,
@@ -90,17 +118,17 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
         )
 
 
-class BaseSerializer[SourceT, TargetT](
-    BaseConverter[SourceT, TargetT, SerializationFrame]
+class BaseTypedSerializer[SourceT, TargetT](
+    BaseTypedConverter[SourceT, TargetT, SerializationFrame]
 ):
     """
     Base class for type-based serializers.
     """
 
 
-class BaseGenericSerializer[SourceT, TargetT](
+class BaseTypedGenericSerializer[SourceT, TargetT](
     GenericConverterMixin[SourceT, TargetT, SerializationFrame],
-    BaseSerializer[SourceT, TargetT],
+    BaseTypedSerializer[SourceT, TargetT],
 ):
     """
     Generic serializer: subclass with type parameters to determine source/target
@@ -108,16 +136,16 @@ class BaseGenericSerializer[SourceT, TargetT](
     """
 
 
-class Serializer[SourceT, TargetT](
+class TypedSerializer[SourceT, TargetT](
     FuncConverterMixin[SourceT, TargetT, SerializationFrame],
-    BaseSerializer[SourceT, TargetT],
+    BaseTypedSerializer[SourceT, TargetT],
 ):
     """
     Function-based serializer with optional type inference.
     """
 
 
-class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
+class TypedSerializerRegistry(BaseTypedConverterRegistry[BaseTypedSerializer]):
     """
     Registry for managing type-based serializers.
 
@@ -128,13 +156,13 @@ class SerializerRegistry(BaseConverterRegistry[BaseSerializer]):
         return f"SerializerRegistry(serializers={self.serializers})"
 
     @property
-    def serializers(self) -> tuple[BaseSerializer, ...]:
+    def serializers(self) -> tuple[BaseTypedSerializer, ...]:
         """
         Get serializers currently registered.
         """
         return tuple(self._converters)
 
-    def register(self, serializer: BaseSerializer, /):
+    def register(self, serializer: BaseTypedSerializer, /):
         """
         Register a serializer.
         """

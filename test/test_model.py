@@ -6,20 +6,20 @@ from typing import Any
 
 from pytest import raises
 
-from typecraft.converting.serializer import Serializer
+from typecraft.converting.serializer import SerializationParams, TypedSerializer
 from typecraft.exceptions import ValidationError
 from typecraft.model import (
     BaseModel,
     Field,
-    FieldInfo,
     ModelConfig,
     field_serializer,
     field_validator,
     typed_serializers,
     typed_validators,
 )
+from typecraft.model.methods import ValidationInfo
 from typecraft.serializing import serialize
-from typecraft.validating import ValidationParams, Validator, validate
+from typecraft.validating import TypedValidator, ValidationParams, validate
 
 
 class BasicTest(BaseModel):
@@ -41,7 +41,7 @@ class ValidateOnAssignmentTest(BaseModel):
 
 
 class CoercionTest(BaseModel):
-    model_config = ModelConfig(validation_params=ValidationParams(strict=False))
+    model_config = ModelConfig(default_validation_params=ValidationParams(strict=False))
 
     a: int = 123
     b: str = "abc"
@@ -50,6 +50,23 @@ class CoercionTest(BaseModel):
 class NestedTest(BaseModel):
     basic: BasicTest
     union: UnionTest
+
+
+class NestedInvalidTest(BaseModel):
+    basic: BasicTest
+    union: UnionTest
+
+    @field_validator("basic")
+    @classmethod
+    def validate_basic(cls, obj: Any) -> Any:
+        assert isinstance(obj, dict)
+        return BasicTest(**obj)
+
+    @field_validator("union")
+    @classmethod
+    def validate_union(cls, obj: Any) -> Any:
+        assert isinstance(obj, dict)
+        return UnionTest(**obj)
 
 
 class MyInt(int):
@@ -66,12 +83,12 @@ class FieldValidatorTest(BaseModel):
     a: MyInt
 
     @field_validator
-    def validate_a_before_1(self, obj: Any, field_info: FieldInfo) -> Any:
+    def validate_a_before_1(self, obj: Any, info: ValidationInfo) -> Any:
         """
         Demonstrate passing info and using an instance method.
         """
         assert isinstance(self, FieldValidatorTest)
-        assert field_info.name == "a"
+        assert info.field_info.name == "a"
         return obj
 
     @field_validator("a", mode="before")
@@ -106,7 +123,7 @@ class FieldValidatorAllFieldsTest(BaseModel):
 
     @field_validator(mode="before")
     @classmethod
-    def validate_all_before(cls, obj: Any, field: FieldInfo) -> Any:
+    def validate_all_before(cls, obj: Any) -> Any:
         """
         Convert string to int for all fields.
         """
@@ -116,12 +133,12 @@ class FieldValidatorAllFieldsTest(BaseModel):
 
     @field_validator(mode="after")
     @classmethod
-    def validate_all_after(cls, obj: Any, field: FieldInfo) -> Any:
+    def validate_all_after(cls, obj: Any, info: ValidationInfo) -> Any:
         """
         Ensure all int values are positive.
         """
         if isinstance(obj, int):
-            assert obj > 0, f"Field {field.name} must be positive"
+            assert obj > 0, f"Field {info.field_info.name} must be positive"
         return obj
 
 
@@ -149,7 +166,7 @@ class FieldSerializerAllFieldsTest(BaseModel):
     b: MyInt
 
     @field_serializer
-    def serialize_all(self, obj: Any, field: FieldInfo) -> Any:
+    def serialize_all(self, obj: Any) -> Any:
         """
         Serialize all MyInt fields back to int.
         """
@@ -164,12 +181,13 @@ class TypedValidatorsTest(BaseModel):
     """
 
     my_int: MyInt
+    my_int2: MyInt
 
-    @typed_validators
+    @typed_validators("my_int")
     @classmethod
-    def validators(cls) -> tuple[Validator, ...]:
+    def validators(cls) -> tuple[TypedValidator, ...]:
         return (
-            Validator(
+            TypedValidator(
                 int,
                 MyInt,
                 func=lambda obj: MyInt(obj),
@@ -186,9 +204,9 @@ class TypedSerializersTest(BaseModel):
 
     @typed_serializers
     @classmethod
-    def serializers(cls) -> tuple[Serializer, ...]:
+    def serializers(cls) -> tuple[TypedSerializer, ...]:
         return (
-            Serializer(
+            TypedSerializer(
                 MyInt,
                 int,
                 func=lambda obj: obj,
@@ -238,9 +256,9 @@ class CombinedValidatorSerializerTest(BaseModel):
 
     @typed_validators
     @classmethod
-    def validators(cls) -> tuple[Validator[Any, Any], ...]:
+    def validators(cls) -> tuple[TypedValidator[Any, Any], ...]:
         return (
-            Validator(
+            TypedValidator(
                 int,
                 MyInt,
                 func=lambda obj: MyInt(obj),
@@ -249,9 +267,9 @@ class CombinedValidatorSerializerTest(BaseModel):
 
     @typed_serializers
     @classmethod
-    def serializers(cls) -> tuple[Serializer[Any, Any], ...]:
+    def serializers(cls) -> tuple[TypedSerializer[Any, Any], ...]:
         return (
-            Serializer(
+            TypedSerializer(
                 int,
                 MyInt,
                 func=lambda obj: obj.val,
@@ -267,6 +285,14 @@ class CombinedValidatorSerializerTest(BaseModel):
         if isinstance(obj, str):
             return int(obj)
         return obj
+
+
+class ExtraFieldTest(BasicTest):
+    model_config = ModelConfig(extra="forbid")
+
+
+class NestedExtraFieldTest(BaseModel):
+    extra_field_test: ExtraFieldTest
 
 
 def test_basic():
@@ -319,8 +345,58 @@ def test_nested():
     assert dc.basic.b == "cba"
     assert dc.union.a == 321
 
-    dump = dc.model_dump()
+    dump = dc.model_serialize()
     assert dump == nested_dict
+
+
+def test_nested_invalid():
+
+    basic_dict = {"a": "123", "b": 123}
+    union_dict = {"a": 1.5}
+    nested_dict = {"basic": basic_dict, "union": union_dict}
+
+    with raises(ValidationError) as exc_info:
+        _ = NestedTest(**nested_dict)
+
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+basic.a: 123: <class 'str'> -> <class 'int'>: TypeError
+  No matching converters
+basic.b: 123: <class 'int'> -> <class 'str'>: TypeError
+  No matching converters
+union.a: 1.5: <class 'float'> -> int | str: TypeError
+  Errors during union member conversion:
+    <class 'int'>: No matching converters
+    <class 'str'>: No matching converters"""
+    )
+
+
+def test_nested_invalid_validator():
+    """
+    Test nested model with custom validator which results in validation failure.
+    """
+    basic_dict = {"a": "123", "b": 123}
+    union_dict = {"a": 1.5}
+    nested_dict = {"basic": basic_dict, "union": union_dict}
+
+    with raises(ValidationError) as exc_info:
+        _ = NestedTest(**nested_dict)
+
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+basic.a: 123: <class 'str'> -> <class 'int'>: TypeError
+  No matching converters
+basic.b: 123: <class 'int'> -> <class 'str'>: TypeError
+  No matching converters
+union.a: 1.5: <class 'float'> -> int | str: TypeError
+  Errors during union member conversion:
+    <class 'int'>: No matching converters
+    <class 'str'>: No matching converters"""
+    )
 
 
 def test_field_validator():
@@ -333,7 +409,7 @@ def test_field_validator():
     assert dc.a == 123
 
     # after validator ensures positive
-    with raises(AssertionError, match="Value must be positive"):
+    with raises(ValidationError, match="Value must be positive"):
         _ = FieldValidatorTest(a=MyInt(0))
 
 
@@ -347,10 +423,10 @@ def test_field_validator_all_fields():
     assert dc.b == 456
 
     # after validator ensures positive for all fields
-    with raises(AssertionError, match="Field a must be positive"):
+    with raises(ValidationError, match="Field a must be positive"):
         _ = FieldValidatorAllFieldsTest(a=0, b=1)
 
-    with raises(AssertionError, match="Field b must be positive"):
+    with raises(ValidationError, match="Field b must be positive"):
         _ = FieldValidatorAllFieldsTest(a=1, b=0)
 
 
@@ -362,7 +438,7 @@ def test_field_serializer():
     assert isinstance(dc.my_int, MyInt)
     assert dc.my_int == 123
 
-    dump = dc.model_dump()
+    dump = dc.model_serialize()
     assert dump == {"my_int": 123}
 
 
@@ -376,7 +452,7 @@ def test_field_serializer_all_fields():
     assert dc.a == 123
     assert dc.b == 456
 
-    dump = dc.model_dump()
+    dump = dc.model_serialize()
     assert dump == {"a": 123, "b": 456}
 
 
@@ -384,9 +460,22 @@ def test_typed_validators():
     """
     Test @typed_validators decorator.
     """
-    dc = TypedValidatorsTest(my_int=123)  # type: ignore
+    dc = TypedValidatorsTest(my_int=123, my_int2=MyInt(321))  # type: ignore
     assert isinstance(dc.my_int, MyInt)
     assert dc.my_int == 123
+    assert dc.my_int2 == 321
+
+    # type-based validator not applied to my_int2
+    with raises(ValidationError) as exc_info:
+        _ = dc(TypedValidatorsTest(my_int=123, my_int2=321))  # type: ignore
+
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during validation:
+my_int2: 321: <class 'int'> -> <class 'test.test_model.MyInt'>: TypeError
+  No matching converters"""
+    )
 
 
 def test_typed_serializers():
@@ -397,21 +486,23 @@ def test_typed_serializers():
     assert isinstance(dc.my_int, MyInt)
     assert dc.my_int == 123
 
-    dump = dc.model_dump()
+    dump = dc.model_serialize()
     assert dump == {"my_int": 123}
 
 
 def test_load_dump():
     # without alias
-    dc = LoadDumpTest.model_load({"test_field": 123})
+    dc = LoadDumpTest.model_validate({"test_field": 123})
     assert dc.test_field == 123
-    dump = dc.model_dump()
+    dump = dc.model_serialize()
     assert dump["test_field"] == 123
 
     # with alias
-    dc = LoadDumpTest.model_load({"test-field": 123}, by_alias=True)
+    dc = LoadDumpTest.model_validate(
+        {"test-field": 123}, params=ValidationParams(by_alias=True)
+    )
     assert dc.test_field == 123
-    dump = dc.model_dump(by_alias=True)
+    dump = dc.model_serialize(params=SerializationParams(by_alias=True))
     assert dump["test-field"] == 123
 
 
@@ -443,5 +534,33 @@ def test_combined_validators_serializers():
     assert dc.my_int == 123
     assert dc.plain_int == 456
 
-    dump = dc.model_dump()
+    dump = dc.model_serialize()
     assert dump == {"my_int": 123, "plain_int": 456}
+
+
+def test_extra_field():
+    obj = {"a": "123", "b": "abc", "c": "nonexistent"}
+
+    with raises(ValidationError) as exc_info:
+        _ = ExtraFieldTest(**obj)  # type: ignore
+
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+a: 123: <class 'str'> -> <class 'int'>: TypeError
+  No matching converters
+c: Unknown field"""
+    )
+
+    with raises(ValidationError) as exc_info:
+        _ = NestedExtraFieldTest.model_validate({"extra_field_test": obj})
+
+    assert (
+        str(exc_info.value)
+        == """\
+Errors occurred during validation:
+extra_field_test.a: 123: <class 'str'> -> <class 'int'>: TypeError
+  No matching converters
+extra_field_test.c: Unknown field"""
+    )

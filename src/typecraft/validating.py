@@ -21,13 +21,13 @@ from .converting.utils import (
     convert_to_tuple,
 )
 from .converting.validator import (
-    BaseGenericValidator,
-    BaseValidator,
+    BaseTypedGenericValidator,
+    BaseTypedValidator,
     FuncValidatorType,
+    TypedValidator,
+    TypedValidatorRegistry,
     ValidationFrame,
     ValidationParams,
-    Validator,
-    ValidatorRegistry,
 )
 from .exceptions import ValidationError
 from .inspecting.annotations import Annotation
@@ -37,27 +37,25 @@ __all__ = [
     "FuncValidatorType",
     "ValidationParams",
     "ValidationFrame",
-    "BaseValidator",
-    "BaseGenericValidator",
-    "Validator",
-    "ValidatorRegistry",
+    "BaseTypedValidator",
+    "BaseTypedGenericValidator",
+    "TypedValidator",
+    "TypedValidatorRegistry",
     "validate",
     "normalize_to_list",
 ]
 
-DEFAULT_PARAMS = ValidationParams()
-
-NON_STRICT_REGISTRY = ValidatorRegistry(
-    Validator(str | bytes | bytearray, int),
-    Validator(str | int, float),
+NON_STRICT_REGISTRY = TypedValidatorRegistry(
+    TypedValidator(str | bytes | bytearray, int),
+    TypedValidator(str | int, float),
     # set assignable_to_target=False so it doesn't match conversion to int
-    Validator(Any, bool, match_spec=MatchSpec(assignable_to_target=False)),
-    Validator(Any, str),
-    Validator(ValueCollectionType, list, func=convert_to_list),
-    Validator(ValueCollectionType, tuple, func=convert_to_tuple),
-    Validator(ValueCollectionType, set, func=convert_to_set),
-    Validator(ValueCollectionType, frozenset, func=convert_to_set),
-    Validator(Mapping, dict, func=convert_to_dict),
+    TypedValidator(Any, bool, match_spec=MatchSpec(assignable_to_target=False)),
+    TypedValidator(Any, str),
+    TypedValidator(ValueCollectionType, list, func=convert_to_list),
+    TypedValidator(ValueCollectionType, tuple, func=convert_to_tuple),
+    TypedValidator(ValueCollectionType, set, func=convert_to_set),
+    TypedValidator(ValueCollectionType, frozenset, func=convert_to_set),
+    TypedValidator(Mapping, dict, func=convert_to_dict),
 )
 """
 Registry of validators for non-strict mode.
@@ -65,7 +63,7 @@ Registry of validators for non-strict mode.
 
 
 class ValidationEngine(
-    BaseConversionEngine[ValidatorRegistry, ValidationFrame, ValidationError]
+    BaseConversionEngine[TypedValidatorRegistry, ValidationFrame, ValidationError]
 ):
     """
     Orchestrates validation process.
@@ -75,7 +73,7 @@ class ValidationEngine(
 
     def _get_builtin_registries(
         self, frame: ValidationFrame
-    ) -> tuple[ValidatorRegistry, ...]:
+    ) -> tuple[TypedValidatorRegistry, ...]:
         builtin_registry = (
             (get_builtin_validator_registry(),)
             if frame.params.use_builtin_validators
@@ -90,8 +88,8 @@ def validate[T](
     obj: Any,
     target_type: type[T],
     /,
-    *validators: BaseValidator[Any, T],
-    registry: ValidatorRegistry | None = None,
+    *validators: BaseTypedValidator[Any, T],
+    registry: TypedValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> T: ...
@@ -102,8 +100,8 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators: BaseValidator[Any, Any],
-    registry: ValidatorRegistry | None = None,
+    *validators: BaseTypedValidator[Any, Any],
+    registry: TypedValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> Any: ...
@@ -113,8 +111,8 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators: BaseValidator[Any, Any],
-    registry: ValidatorRegistry | None = None,
+    *validators: BaseTypedValidator[Any, Any],
+    registry: TypedValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> Any:
@@ -137,12 +135,10 @@ def validate(
     :raises ConversionError: If any conversion errors are encountered
     """
     engine = ValidationEngine._setup(converters=validators, registry=registry)
-    frame = ValidationFrame._setup(
-        obj=obj,
-        source_type=None,
-        target_type=target_type,
+    frame = ValidationFrame(
+        source_annotation=Annotation(type(obj)),
+        target_annotation=Annotation._normalize(target_type),
         params=params,
-        default_params=DEFAULT_PARAMS,
         context=context,
         engine=engine,
     )
@@ -154,9 +150,9 @@ def normalize_to_list[T](
     obj_or_objs: Any,
     item_type: type[T],
     /,
-    *validators: Validator[Any, T],
+    *validators: TypedValidator[Any, T],
     params: ValidationParams | None = None,
-    registry: ValidatorRegistry | None = None,
+    registry: TypedValidatorRegistry | None = None,
     context: Any | None = None,
 ) -> list[T]: ...
 
@@ -166,9 +162,9 @@ def normalize_to_list(
     obj_or_objs: Any,
     item_type: Annotation | Any,
     /,
-    *validators: Validator[Any, Any],
+    *validators: TypedValidator[Any, Any],
     params: ValidationParams | None = None,
-    registry: ValidatorRegistry | None = None,
+    registry: TypedValidatorRegistry | None = None,
     context: Any | None = None,
 ) -> list[Any]: ...
 
@@ -177,8 +173,8 @@ def normalize_to_list(
     obj_or_objs: Any,
     item_type: Annotation | Any,
     /,
-    *validators: Validator[Any, Any],
-    registry: ValidatorRegistry | None = None,
+    *validators: TypedValidator[Any, Any],
+    registry: TypedValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> list[Any]:
@@ -195,16 +191,15 @@ def normalize_to_list(
         if isinstance(obj_or_objs, VALUE_COLLECTION_TYPES)
         else [obj_or_objs]
     )
+    target_annotation = Annotation._normalize(item_type)
     engine = ValidationEngine._setup(converters=validators, registry=registry)
     return [
         engine.invoke_process(
             o,
-            ValidationFrame._setup(
-                obj=o,
-                source_type=None,
-                target_type=item_type,
+            ValidationFrame(
+                source_annotation=Annotation(type(o)),
+                target_annotation=target_annotation,
                 params=params,
-                default_params=DEFAULT_PARAMS,
                 context=context,
                 engine=engine,
             ),

@@ -11,11 +11,11 @@ from ..inspecting.generics import extract_arg
 from .converter import MatchSpec
 from .serializer import (
     SerializationFrame,
-    Serializer,
+    TypedSerializer,
 )
 from .validator import (
+    TypedValidator,
     ValidationFrame,
-    Validator,
 )
 
 __all__ = [
@@ -86,7 +86,7 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
         ...
 
     @classmethod
-    def as_validator(cls) -> Validator[SerializedT, ValidatedT]:
+    def as_validator(cls) -> TypedValidator[SerializedT, ValidatedT]:
         """
         Create a `Validator` from this converter's `validate()` method.
 
@@ -94,7 +94,7 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
         """
         source_annotation = cls.__get_serialized_annotation()
         target_annotation = cls.__get_validated_annotation()
-        return Validator(
+        return TypedValidator(
             source_annotation,
             target_annotation,
             func=cls.validate,
@@ -103,7 +103,7 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
         )
 
     @classmethod
-    def as_serializer(cls) -> Serializer[ValidatedT, SerializedT]:
+    def as_serializer(cls) -> TypedSerializer[ValidatedT, SerializedT]:
         """
         Create a `Serializer` from this converter's `serialize()` method.
 
@@ -111,7 +111,7 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
         """
         source_annotation = cls.__get_validated_annotation()
         target_annotation = cls.__get_serialized_annotation()
-        return Serializer[ValidatedT, SerializedT](
+        return TypedSerializer[ValidatedT, SerializedT](
             source_annotation,
             target_annotation,
             func=cls.serialize,

@@ -4,7 +4,7 @@ Test end-to-end serialization via APIs.
 
 from typing import Literal
 
-from typecraft.serializing import Serializer, serialize
+from typecraft.serializing import TypedSerializer, serialize
 
 
 def test_primitives():
@@ -126,6 +126,6 @@ def test_custom():
             self.value = value
 
     obj = CustomClass(42)
-    serializer = Serializer(CustomClass, int, func=lambda obj: obj.value)
+    serializer = TypedSerializer(CustomClass, int, func=lambda obj: obj.value)
     result = serialize(obj, serializer)
     assert result == 42

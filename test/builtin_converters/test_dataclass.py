@@ -11,8 +11,8 @@ from typecraft.converting.builtin_converters import DataclassConverter
 from typecraft.converting.serializer import SerializationParams
 from typecraft.converting.validator import ValidationParams
 from typecraft.exceptions import SerializationError, ValidationError
-from typecraft.serializing import SerializerRegistry, serialize
-from typecraft.validating import ValidatorRegistry, validate
+from typecraft.serializing import TypedSerializerRegistry, serialize
+from typecraft.validating import TypedValidatorRegistry, validate
 
 
 @dataclass
@@ -63,10 +63,8 @@ def test_simple_dataclass():
     serialization_params = SerializationParams(use_builtin_serializers=False)
     adapter = Adapter(
         SimpleDataclass,
-        validation_params=validation_params,
-        serialization_params=serialization_params,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     test_serialized = {"name": "Alice", "age": 30}
@@ -80,13 +78,13 @@ def test_simple_dataclass():
         _ = serialize(test_validated, params=serialization_params)
 
     # test validation
-    validated = adapter.validate(test_serialized)
+    validated = adapter.validate(test_serialized, params=validation_params)
     assert isinstance(validated, SimpleDataclass)
     assert validated.name == test_validated.name
     assert validated.age == test_validated.age
 
     # test serialization
-    serialized = adapter.serialize(test_validated)
+    serialized = adapter.serialize(test_validated, params=serialization_params)
     assert isinstance(serialized, dict)
     assert serialized == test_serialized
 
@@ -105,8 +103,8 @@ def test_dataclass_with_defaults():
     """
     adapter = Adapter(
         DataclassWithDefaults,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     # test with all fields provided
@@ -135,7 +133,7 @@ def test_missing_required_field():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
+        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
     )
 
     # missing 'age' field
@@ -149,8 +147,8 @@ def test_nested():
     """
     adapter = Adapter(
         NestedDataclass,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     test_serialized = {"person": {"name": "Alice", "age": 30}, "location": "NYC"}
@@ -178,8 +176,8 @@ def test_dataclass_with_list():
     """
     adapter = Adapter(
         DataclassWithList,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=SerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     test_serialized = {"name": "Project", "tags": ["python", "testing", "ci"]}
@@ -202,7 +200,7 @@ def test_invalid():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=ValidatorRegistry(DataclassConverter.as_validator()),
+        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
     )
 
     class NonSerializable:
@@ -222,9 +220,9 @@ def test_invalid():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-person.age: "30": <class 'str'> -> <class 'int'>
+person.age: 30: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
-location: "123": <class 'int'> -> <class 'str'>
+location: 123: <class 'int'> -> <class 'str'>: TypeError
   No matching converters"""
     )
 
