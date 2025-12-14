@@ -16,6 +16,7 @@ from typing import (
 from ..converting._types import ERROR_SENTINEL
 from ..converting.converter import MatchSpec
 from ..converting.serializer import (
+    JSON_SERIALIZABLE_ANNOTATION,
     JsonSerializableType,
     SerializationFrame,
 )
@@ -353,12 +354,11 @@ class BaseModel:
         2. Type-based validators
         3. Field validators with `mode="after"`
         """
-        frame = ValidationFrame(
+        frame = field_info._validation_engine.create_frame(
             source_annotation=Annotation(type(obj)),
             target_annotation=field_info.annotation,
             params=self.__validation_params,
             context=self.__validation_context,
-            engine=field_info._validation_engine,
         )
         validated_obj = obj
 
@@ -411,11 +411,11 @@ class BaseModel:
         2. Type-based serializers
         """
         serialized_obj = obj
-        frame = SerializationFrame(
+        frame = field_info._serialization_engine.create_frame(
             source_annotation=field_info.annotation,
+            target_annotation=JSON_SERIALIZABLE_ANNOTATION,
             params=params,
             context=context,
-            engine=field_info._serialization_engine,
         )
 
         try:

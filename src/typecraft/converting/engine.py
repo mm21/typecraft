@@ -3,9 +3,9 @@ from __future__ import annotations
 import itertools
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, Self, cast
+from typing import Any, cast
 
-from ..exceptions import BaseConversionError
+from ..exceptions import BaseConversionError, ConversionErrorDetail
 from ..inspecting.annotations import ANY, Annotation
 from ..inspecting.generics import extract_arg
 from ..types import (
@@ -18,6 +18,7 @@ from ._types import (
 )
 from .converter import (
     BaseConversionFrame,
+    BaseConversionParams,
     BaseTypedConverter,
     BaseTypedConverterRegistry,
 )
@@ -32,7 +33,9 @@ from .utils import (
 
 class BaseConversionEngine[
     RegistryT: BaseTypedConverterRegistry,
+    ConverterT: BaseTypedConverter,
     FrameT: BaseConversionFrame,
+    ParamsT: BaseConversionParams,
     ExceptionT: BaseConversionError,
 ](ABC):
     """
@@ -49,24 +52,40 @@ class BaseConversionEngine[
 
     __registry_cls: type[RegistryT]
     """
-    Registry class with which this conversion engine is parameterized.
+    Registry class with which this engine is parameterized.
+    """
+
+    __frame_cls: type[FrameT]
+    """
+    Frame class with which this engine is parameterized.
     """
 
     __exception_cls: type[ExceptionT]
     """
-    Exception class with which this conversion engine is parameterized.
+    Exception class with which this engine is parameterized.
     """
 
     __user_registry: RegistryT
     """
-    User-registered converters.
+    User-registered typed converters.
     """
 
-    def __init__(self, *, registry: RegistryT | None = None):
+    def __init__(
+        self,
+        *,
+        converters: tuple[BaseTypedConverter, ...] = (),
+        registry: RegistryT | None = None,
+    ):
         from ..validating import ValidationEngine
 
+        # prepare registry and merge additional converters
+        if converters and registry:
+            user_registry = self.__registry_cls(*registry._converters, *converters)
+        else:
+            user_registry = registry or self.__registry_cls(*converters)
+
         self._is_validating = isinstance(self, ValidationEngine)
-        self.__user_registry = registry or self.__registry_cls()
+        self.__user_registry = user_registry
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(registry={self.__user_registry})"
@@ -79,6 +98,10 @@ class BaseConversionEngine[
                 cls, BaseConversionEngine, "RegistryT", BaseTypedConverterRegistry
             ),
         )
+        cls.__frame_cls = cast(
+            type[FrameT],
+            extract_arg(cls, BaseConversionEngine, "FrameT", BaseConversionFrame),
+        )
         cls.__exception_cls = cast(
             type[ExceptionT],
             extract_arg(cls, BaseConversionEngine, "ExceptionT", BaseConversionError),
@@ -87,6 +110,30 @@ class BaseConversionEngine[
     @property
     def registry(self) -> RegistryT:
         return self.__user_registry
+
+    def create_frame(
+        self,
+        source_annotation: Annotation,
+        target_annotation: Annotation,
+        params: ParamsT | None,
+        context: Any | None,
+        path: tuple[str | int, ...] | None = None,
+        seen: set[int] | None = None,
+        errors: list[ConversionErrorDetail] | None = None,
+    ) -> FrameT:
+        """
+        Create a frame bound to this engine for subsequent processing.
+        """
+        return self.__frame_cls(
+            source_annotation=source_annotation,
+            target_annotation=target_annotation,
+            params=params,
+            context=context,
+            engine=self,
+            path=path,
+            seen=seen,
+            errors=errors,
+        )
 
     def invoke_process(self, obj: Any, frame: FrameT) -> Any:
         """
@@ -157,22 +204,6 @@ class BaseConversionEngine[
         """
         Get builtin registries to use for conversion based on the parameters.
         """
-
-    @classmethod
-    def _setup[ConverterT](
-        cls,
-        *,
-        converters: tuple[ConverterT, ...],
-        registry: RegistryT | None,
-    ) -> Self:
-        """
-        Setup engine from user-provided args.
-        """
-        if converters and registry:
-            registry_ = cls.__registry_cls(*registry._converters, *converters)
-        else:
-            registry_ = registry or cls.__registry_cls(*converters)
-        return cls(registry=registry_)
 
     @property
     def _is_serializing(self) -> bool:

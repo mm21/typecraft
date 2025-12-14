@@ -63,7 +63,13 @@ Registry of validators for non-strict mode.
 
 
 class ValidationEngine(
-    BaseConversionEngine[TypedValidatorRegistry, ValidationFrame, ValidationError]
+    BaseConversionEngine[
+        TypedValidatorRegistry,
+        BaseTypedValidator,
+        ValidationFrame,
+        ValidationParams,
+        ValidationError,
+    ]
 ):
     """
     Orchestrates validation process.
@@ -134,13 +140,12 @@ def validate(
     :param context: User-defined context passed to validators
     :raises ConversionError: If any conversion errors are encountered
     """
-    engine = ValidationEngine._setup(converters=validators, registry=registry)
-    frame = ValidationFrame(
+    engine = ValidationEngine(converters=validators, registry=registry)
+    frame = engine.create_frame(
         source_annotation=Annotation(type(obj)),
         target_annotation=Annotation._normalize(target_type),
         params=params,
         context=context,
-        engine=engine,
     )
     return engine.invoke_process(obj, frame)
 
@@ -192,16 +197,15 @@ def normalize_to_list(
         else [obj_or_objs]
     )
     target_annotation = Annotation._normalize(item_type)
-    engine = ValidationEngine._setup(converters=validators, registry=registry)
+    engine = ValidationEngine(converters=validators, registry=registry)
     return [
         engine.invoke_process(
             o,
-            ValidationFrame(
+            engine.create_frame(
                 source_annotation=Annotation(type(o)),
                 target_annotation=target_annotation,
                 params=params,
                 context=context,
-                engine=engine,
             ),
         )
         for o in objs

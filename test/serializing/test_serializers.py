@@ -160,12 +160,9 @@ def _create_frame(
     target_annotation: Any,
     params: SerializationParams | None = None,
 ) -> SerializationFrame:
-    engine = SerializationEngine()
-    frame = SerializationFrame(
+    return SerializationEngine().create_frame(
         source_annotation=Annotation(source_annotation),
         target_annotation=Annotation(target_annotation),
         params=params or SerializationParams(sort_sets=True),
         context=None,
-        engine=engine,
     )
-    return frame

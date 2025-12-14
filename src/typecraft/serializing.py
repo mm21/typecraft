@@ -11,6 +11,7 @@ from typing import (
 from .converting.builtin_converters import get_builtin_serializer_registry
 from .converting.engine import BaseConversionEngine
 from .converting.serializer import (
+    JSON_SERIALIZABLE_ANNOTATION,
     BaseTypedGenericSerializer,
     BaseTypedSerializer,
     FuncSerializerType,
@@ -38,7 +39,11 @@ __all__ = [
 
 class SerializationEngine(
     BaseConversionEngine[
-        TypedSerializerRegistry, SerializationFrame, SerializationError
+        TypedSerializerRegistry,
+        BaseTypedSerializer,
+        SerializationFrame,
+        SerializationParams,
+        SerializationError,
     ]
 ):
     """
@@ -91,11 +96,11 @@ def serialize(
     source_annotation = (
         Annotation._normalize(source_type) if source_type else Annotation(type(obj))
     )
-    engine = SerializationEngine._setup(converters=serializers, registry=registry)
-    frame = SerializationFrame(
+    engine = SerializationEngine(converters=serializers, registry=registry)
+    frame = engine.create_frame(
         source_annotation=source_annotation,
+        target_annotation=JSON_SERIALIZABLE_ANNOTATION,
         params=params,
         context=context,
-        engine=engine,
     )
     return engine.invoke_process(obj, frame)

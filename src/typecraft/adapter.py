@@ -6,8 +6,7 @@ from __future__ import annotations
 
 from typing import Any, overload
 
-from .converting.serializer import SerializationFrame
-from .converting.validator import ValidationFrame
+from .converting.serializer import JSON_SERIALIZABLE_ANNOTATION
 from .inspecting.annotations import Annotation
 from .serializing import (
     JsonSerializableType,
@@ -85,12 +84,11 @@ class Adapter[T]:
         :param context: User-defined context passed to validators
         :return: Validated object
         """
-        frame = ValidationFrame(
+        frame = self.__validation_engine.create_frame(
             source_annotation=Annotation(type(obj)),
             target_annotation=self.__annotation,
             params=params,
             context=context,
-            engine=self.__validation_engine,
         )
         return self.__validation_engine.invoke_process(obj, frame)
 
@@ -109,10 +107,10 @@ class Adapter[T]:
         :param context: User-defined context passed to serializers
         :return: Serialized object
         """
-        frame = SerializationFrame(
+        frame = self.__serialization_engine.create_frame(
             source_annotation=self.__annotation,
+            target_annotation=JSON_SERIALIZABLE_ANNOTATION,
             params=params,
             context=context,
-            engine=self.__serialization_engine,
         )
         return self.__serialization_engine.invoke_process(obj, frame)
