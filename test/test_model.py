@@ -541,6 +541,9 @@ def test_combined_validators_serializers():
 def test_extra_field():
     obj = {"a": "123", "b": "abc", "c": "nonexistent"}
 
+    # ensure no error with default config (extra="ignore")
+    _ = BasicTest(c=123)  # type: ignore
+
     with raises(ValidationError) as exc_info:
         _ = ExtraFieldTest(**obj)  # type: ignore
 
