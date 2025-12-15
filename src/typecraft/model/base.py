@@ -14,7 +14,7 @@ from typing import (
 )
 
 from ..converting._types import ERROR_SENTINEL
-from ..converting.converter import MatchSpec
+from ..converting.converter import BaseConversionFrame, MatchSpec
 from ..converting.serializer import (
     JSON_SERIALIZABLE_ANNOTATION,
     JsonSerializableType,
@@ -32,6 +32,8 @@ from ..serializing import SerializationParams
 from ..validating import ValidationFrame, ValidationParams
 from .fields import FieldInfo
 from .methods import (
+    BaseConversionInfo,
+    BaseFieldConverterInfo,
     RegistrationInfo,
     SerializationInfo,
     ValidationInfo,
@@ -444,28 +446,13 @@ class BaseModel:
         """
         Run field validators with given mode.
         """
-        validated_obj = obj
-        for validator_info in field_info._get_validator_infos(mode=mode):
-            args = validator_info.sig.get_params(positional=True)
-            assert len(args) in {2, 3}
-
-            self_or_cls = type(self) if validator_info.is_classmethod else self
-
-            if len(args) == 2:
-                func = cast(
-                    Callable[[BaseModel | type[BaseModel], Any], Any],
-                    validator_info.func,
-                )
-                validated_obj = func(self_or_cls, validated_obj)
-            else:
-                info = ValidationInfo(field_info, frame)
-                func = cast(
-                    Callable[[BaseModel | type[BaseModel], Any, ValidationInfo], Any],
-                    validator_info.func,
-                )
-                validated_obj = func(self_or_cls, validated_obj, info)
-
-        return validated_obj
+        return self.__run_field_converters(
+            obj,
+            field_info,
+            frame,
+            field_info._get_validator_infos(mode=mode),
+            ValidationInfo,
+        )
 
     def __run_field_serializers(
         self, obj: Any, field_info: FieldInfo, frame: SerializationFrame
@@ -473,23 +460,37 @@ class BaseModel:
         """
         Run field serializers.
         """
-        serialized_obj = obj
-        for serializer_info in field_info._get_serializer_infos():
-            args = serializer_info.sig.get_params(positional=True)
-            assert len(args) in {2, 3}
+        return self.__run_field_converters(
+            obj,
+            field_info,
+            frame,
+            field_info._get_serializer_infos(),
+            SerializationInfo,
+        )
 
-            if len(args) == 2:
-                func = cast(Callable[[BaseModel, Any], Any], serializer_info.func)
-                serialized_obj = func(self, serialized_obj)
+    def __run_field_converters[InfoT: BaseConversionInfo](
+        self,
+        obj: Any,
+        field_info: FieldInfo,
+        frame: BaseConversionFrame,
+        converter_infos: tuple[BaseFieldConverterInfo, ...],
+        conversion_info_cls: type[InfoT],
+    ):
+        """
+        Run field converters.
+        """
+        processed_obj = obj
+        for info in converter_infos:
+            func = info.get_bound_func(self)
+            if info.takes_info:
+                info = conversion_info_cls(field_info, frame)
+                func = cast(Callable[[Any, InfoT], Any], func)
+                processed_obj = func(processed_obj, info)
             else:
-                info = SerializationInfo(field_info, frame)
-                func = cast(
-                    Callable[[BaseModel, Any, SerializationInfo], Any],
-                    serializer_info.func,
-                )
-                serialized_obj = func(self, serialized_obj, info)
+                func = cast(Callable[[Any], Any], func)
+                processed_obj = func(processed_obj)
 
-        return serialized_obj
+        return processed_obj
 
 
 class ModelConverter(BaseSymmetricConverter[Mapping[str, Any], BaseModel]):
