@@ -155,7 +155,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     @typed_validators
     @classmethod
-    def _validators(cls) -> tuple[TypedValidator[Any, Any], ...]:
+    def _get_validators(cls) -> tuple[TypedValidator[Any, Any], ...]:
         return VALIDATORS
 
     @field_validator(mode="before")
