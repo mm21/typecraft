@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass
 from types import MappingProxyType
 from typing import (
     Any,
@@ -24,6 +24,7 @@ from ..converting.symmetric_converter import BaseSymmetricConverter
 from ..exceptions import (
     ConversionErrorDetail,
     ExtraFieldError,
+    MissingFieldError,
     SerializationError,
     ValidationError,
 )
@@ -322,8 +323,18 @@ class BaseModel:
         extra_fields = [k for k in values if k not in self.__fields]
 
         # delete extra fields before propagating to dataclass's init
-        for key in extra_fields:
-            del values[key]
+        for field_name in extra_fields:
+            del values[field_name]
+
+        # fill in missing fields
+        required_fields = [
+            f
+            for f in self.__fields.values()
+            if f.field.default is MISSING and f.field.default_factory is MISSING
+        ]
+        missing_fields = [f for f in required_fields if f.name not in kwargs]
+        for f in missing_fields:
+            values[f.name] = ERROR_SENTINEL
 
         # invoke dataclass's init to set attributes from user, aggregating errors
         # since __init_done has not been set yet
@@ -331,16 +342,28 @@ class BaseModel:
 
         # raise errors if extra fields not allowed
         if self.__model_config.extra == "forbid":
-            for key in extra_fields:
+            for field_name in extra_fields:
                 frame = ValidationFrame(
                     source_annotation=ANY,
                     target_annotation=ANY,
                     params=self.__validation_params,
                     context=self.__validation_context,
-                    path=(key,),
+                    path=(field_name,),
                 )
-                exc = ExtraFieldError("Unknown field")
+                exc = ExtraFieldError()
                 self.__validation_errors.append(ConversionErrorDetail(Any, frame, exc))
+
+        # raise errors if required fields not passed
+        for f in missing_fields:
+            frame = ValidationFrame(
+                source_annotation=ANY,
+                target_annotation=f.annotation,
+                params=self.__validation_params,
+                context=self.__validation_context,
+                path=(f.name,),
+            )
+            exc = MissingFieldError()
+            self.__validation_errors.append(ConversionErrorDetail(Any, frame, exc))
 
         # raise any aggregated validation errors
         if errors := self.__validation_errors:
@@ -356,6 +379,10 @@ class BaseModel:
         2. Type-based validators
         3. Field validators with `mode="after"`
         """
+        # pass through error sentinel
+        if obj is ERROR_SENTINEL:
+            return obj
+
         frame = field_info._validation_engine.create_frame(
             source_annotation=Annotation(type(obj)),
             target_annotation=field_info.annotation,

@@ -12,9 +12,11 @@ if TYPE_CHECKING:
     from .converting.converter import BaseConversionFrame
 
 __all__ = [
+    "ConversionErrorDetail",
     "ValidationError",
     "SerializationError",
-    "ConversionErrorDetail",
+    "ExtraFieldError",
+    "MissingFieldError",
 ]
 
 
@@ -68,9 +70,9 @@ class ConversionErrorDetail:
         """
         Format this error for display.
         """
-        if isinstance(self.exc, ExtraFieldError):
-            # extra field: simplified output
-            yield f"{self.path}: Unknown field"
+        # simplified output for extra/missing field
+        if isinstance(self.exc, (ExtraFieldError, MissingFieldError)):
+            yield f"{self.path}: {str(self.exc)}"
             return
 
         # summary of conversion and exception name
@@ -146,3 +148,15 @@ class ExtraFieldError(Exception):
     """
     Captures an extra field when model's configuration has extra="forbid".
     """
+
+    def __str__(self) -> str:
+        return "Extra field"
+
+
+class MissingFieldError(Exception):
+    """
+    Captures a missing field.
+    """
+
+    def __str__(self) -> str:
+        return "Missing field"

@@ -553,7 +553,7 @@ def test_extra_field():
 Errors occurred during validation:
 a: 123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
-c: Unknown field"""
+c: Extra field"""
     )
 
     with raises(ValidationError) as exc_info:
@@ -565,5 +565,18 @@ c: Unknown field"""
 Errors occurred during validation:
 extra_field_test.a: 123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
-extra_field_test.c: Unknown field"""
+extra_field_test.c: Extra field"""
+    )
+
+
+def test_missing_field():
+
+    with raises(ValidationError) as exc_info:
+        _ = NestedTest(basic=BasicTest())  # type: ignore
+
+    assert (
+        str(exc_info.value)
+        == """\
+Error occurred during validation:
+union: Missing field"""
     )
