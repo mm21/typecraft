@@ -570,13 +570,16 @@ extra_field_test.c: Extra field"""
 
 
 def test_missing_field():
+    obj = {"basic": {"a": "123", "b": "abc"}}
 
     with raises(ValidationError) as exc_info:
-        _ = NestedTest(basic=BasicTest())  # type: ignore
+        _ = NestedTest(**obj)  # type: ignore
 
     assert (
         str(exc_info.value)
         == """\
-Error occurred during validation:
+Errors occurred during validation:
+basic.a: 123: <class 'str'> -> <class 'int'>: TypeError
+  No matching converters
 union: Missing field"""
     )
