@@ -362,11 +362,12 @@ def test_nested_invalid():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-basic.a: 123: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.test_model.NestedTest'>
+basic.a=123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
-basic.b: 123: <class 'int'> -> <class 'str'>: TypeError
+basic.b=123: <class 'int'> -> <class 'str'>: TypeError
   No matching converters
-union.a: 1.5: <class 'float'> -> int | str: TypeError
+union.a=1.5: <class 'float'> -> int | str: TypeError
   Errors during union member conversion:
     <class 'int'>: No matching converters
     <class 'str'>: No matching converters"""
@@ -388,11 +389,12 @@ def test_nested_invalid_validator():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-basic.a: 123: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.test_model.NestedTest'>
+basic.a=123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
-basic.b: 123: <class 'int'> -> <class 'str'>: TypeError
+basic.b=123: <class 'int'> -> <class 'str'>: TypeError
   No matching converters
-union.a: 1.5: <class 'float'> -> int | str: TypeError
+union.a=1.5: <class 'float'> -> int | str: TypeError
   Errors during union member conversion:
     <class 'int'>: No matching converters
     <class 'str'>: No matching converters"""
@@ -473,7 +475,8 @@ def test_typed_validators():
         str(exc_info.value)
         == """\
 Error occurred during validation:
-my_int2: 321: <class 'int'> -> <class 'test.test_model.MyInt'>: TypeError
+<class 'test.test_model.TypedValidatorsTest'>
+my_int2=321: <class 'int'> -> <class 'test.test_model.MyInt'>: TypeError
   No matching converters"""
     )
 
@@ -551,7 +554,8 @@ def test_extra_field():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-a: 123: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.test_model.ExtraFieldTest'>
+a=123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
 c: Extra field"""
     )
@@ -563,7 +567,8 @@ c: Extra field"""
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-extra_field_test.a: 123: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.test_model.NestedExtraFieldTest'>
+extra_field_test.a=123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
 extra_field_test.c: Extra field"""
     )
@@ -579,7 +584,8 @@ def test_missing_field():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-basic.a: 123: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.test_model.NestedTest'>
+basic.a=123: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
 union: Missing field"""
     )

@@ -94,7 +94,8 @@ def test_basic():
         str(exc_info.value)
         == """\
 Error occurred during validation:
-<root>: 123: <class 'int'> -> <class 'test.test_symmetric_converter.MyClass'>: TypeError
+<class 'test.test_symmetric_converter.MyClass'>
+<root>=123: <class 'int'> -> <class 'test.test_symmetric_converter.MyClass'>: TypeError
   No matching converters"""
     )
 
@@ -105,7 +106,8 @@ Error occurred during validation:
         str(exc_info.value)
         == """\
 Error occurred during serialization:
-<root>: MyClass(val=321): <class 'test.test_symmetric_converter.MyClass'> -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: TypeError
+<class 'test.test_symmetric_converter.MyClass'>
+<root>=MyClass(val=321): <class 'test.test_symmetric_converter.MyClass'> -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'int'>: No matching converters

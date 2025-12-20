@@ -8,6 +8,8 @@ import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generator
 
+from .inspecting.annotations import Annotation
+
 if TYPE_CHECKING:
     from .converting.converter import BaseConversionFrame
 
@@ -76,7 +78,7 @@ class ConversionErrorDetail:
             return
 
         # summary of conversion and exception name
-        yield "{}: {}: {} -> {}: {}".format(
+        yield "{}={}: {} -> {}: {}".format(
             self.path,
             self.obj,
             self.frame.source_annotation.raw,
@@ -106,12 +108,14 @@ class BaseConversionError(Exception):
     Pydantic-style error display with paths to each error.
     """
 
+    ref_annotation: Annotation
     errors: list[ConversionErrorDetail]
 
     _action: str
 
-    def __init__(self, errors: list[ConversionErrorDetail]):
+    def __init__(self, ref_annotation: Annotation, errors: list[ConversionErrorDetail]):
         assert errors
+        self.ref_annotation = ref_annotation
         self.errors = errors
         super().__init__(self.__format_errors())
 
@@ -120,7 +124,10 @@ class BaseConversionError(Exception):
         Format all errors in a readable format with paths.
         """
         plural = "s" if len(self.errors) > 1 else ""
-        lines = [f"Error{plural} occurred during {self._action}:"]
+        lines = [
+            f"Error{plural} occurred during {self._action}:",
+            str(self.ref_annotation.raw),
+        ]
 
         for error in self.errors:
             lines += list(error.format_error())

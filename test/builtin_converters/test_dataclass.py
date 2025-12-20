@@ -220,9 +220,10 @@ def test_invalid():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-person.age: 30: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.builtin_converters.test_dataclass.NestedDataclass'>
+person.age=30: <class 'str'> -> <class 'int'>: TypeError
   No matching converters
-location: 123: <class 'int'> -> <class 'str'>: TypeError
+location=123: <class 'int'> -> <class 'str'>: TypeError
   No matching converters"""
     )
 

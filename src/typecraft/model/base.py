@@ -282,7 +282,7 @@ class BaseModel:
                 values[mapping_name] = serialized_obj
 
         if errors:
-            raise SerializationError(errors)
+            raise SerializationError(Annotation(type(self)), errors)
 
         return values
 
@@ -357,7 +357,7 @@ class BaseModel:
         for f in missing_fields:
             frame = ValidationFrame(
                 source_annotation=ANY,
-                target_annotation=f.annotation,
+                target_annotation=ANY,
                 params=self.__validation_params,
                 context=self.__validation_context,
                 path=(f.name,),
@@ -367,7 +367,7 @@ class BaseModel:
 
         # raise any aggregated validation errors
         if errors := self.__validation_errors:
-            raise ValidationError(errors)
+            raise ValidationError(Annotation(type(self)), errors)
 
         self.__init_done = True
 
@@ -419,7 +419,7 @@ class BaseModel:
             validated_obj = ERROR_SENTINEL
             if self.__init_done:
                 # setting attribute after creating object: raise errors immediately
-                raise ValidationError(errors)
+                raise ValidationError(field_info.annotation, errors)
             else:
                 # still creating object: aggregate errors; will be raised after all
                 # attributes are set
@@ -458,7 +458,9 @@ class BaseModel:
         except SerializationError as e:
             raise e
         except Exception as e:
-            raise SerializationError([ConversionErrorDetail(serialized_obj, frame, e)])
+            raise SerializationError(
+                field_info.annotation, [ConversionErrorDetail(serialized_obj, frame, e)]
+            )
 
         return cast(JsonSerializableType, serialized_obj)
 

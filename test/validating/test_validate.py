@@ -7,7 +7,7 @@ from typing import Annotated, Generator, Literal
 
 from pytest import raises
 
-from typecraft.exceptions import BaseConversionError, ValidationError
+from typecraft.exceptions import ValidationError
 from typecraft.validating import (
     TypedValidator,
     ValidationParams,
@@ -53,7 +53,7 @@ def test_invalid():
     Test with no conversions: validation should raise an error.
     """
 
-    with raises(BaseConversionError) as exc_info:
+    with raises(ValidationError) as exc_info:
         _ = validate([1, 2, "3"], list[str | float])
 
     assert len(exc_info.value.errors) == 2
@@ -61,17 +61,18 @@ def test_invalid():
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-[0]: 1: <class 'int'> -> str | float: TypeError
+list[str | float]
+[0]=1: <class 'int'> -> str | float: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'float'>: No matching converters
-[1]: 2: <class 'int'> -> str | float: TypeError
+[1]=2: <class 'int'> -> str | float: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'float'>: No matching converters"""
     )
 
-    with raises(BaseConversionError) as exc_info:
+    with raises(ValidationError) as exc_info:
         _ = validate(["1.5", "2.5"], list[int], params=ValidationParams(strict=False))
 
     assert len(exc_info.value.errors) == 2
@@ -79,13 +80,14 @@ Errors occurred during validation:
         str(exc_info.value)
         == """\
 Errors occurred during validation:
-[0]: 1.5: <class 'str'> -> <class 'int'>: ValueError
+list[int]
+[0]=1.5: <class 'str'> -> <class 'int'>: ValueError
   TypedValidator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '1.5'
-[1]: 2.5: <class 'str'> -> <class 'int'>: ValueError
+[1]=2.5: <class 'str'> -> <class 'int'>: ValueError
   TypedValidator(str | bytes | bytearray -> <class 'int'>) failed: invalid literal for int() with base 10: '2.5'"""
     )
 
-    with raises(BaseConversionError) as exc_info:
+    with raises(ValidationError) as exc_info:
         _ = validate(0, str | bool)
 
     assert len(exc_info.value.errors) == 1
@@ -93,13 +95,14 @@ Errors occurred during validation:
         str(exc_info.value)
         == """\
 Error occurred during validation:
-<root>: 0: <class 'int'> -> str | bool: TypeError
+str | bool
+<root>=0: <class 'int'> -> str | bool: TypeError
   Errors during union member conversion:
     <class 'str'>: No matching converters
     <class 'bool'>: No matching converters"""
     )
 
-    with raises(BaseConversionError) as exc_info:
+    with raises(ValidationError) as exc_info:
         _ = validate("abc", Literal["def", "ghi"])
 
     assert len(exc_info.value.errors) == 1
@@ -107,7 +110,8 @@ Error occurred during validation:
         str(exc_info.value)
         == """\
 Error occurred during validation:
-<root>: abc: <class 'str'> -> typing.Literal['def', 'ghi']: TypeError
+typing.Literal['def', 'ghi']
+<root>=abc: <class 'str'> -> typing.Literal['def', 'ghi']: TypeError
   No matching converters"""
     )
 
@@ -199,7 +203,8 @@ def test_collection_subclass():
         str(exc_info.value)
         == """\
 Error occurred during validation:
-[2]: 2: <class 'str'> -> <class 'int'>: TypeError
+<class 'test.validating.test_validate.IntList'>
+[2]=2: <class 'str'> -> <class 'int'>: TypeError
   No matching converters"""
     )
 

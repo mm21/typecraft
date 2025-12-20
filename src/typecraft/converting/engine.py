@@ -143,7 +143,12 @@ class BaseConversionEngine[
 
         # check if any errors were collected during conversion
         if frame.errors:
-            raise self.__exception_cls(frame.errors)
+            ref_annotation = (
+                frame.source_annotation
+                if self._is_serializing
+                else frame.target_annotation
+            )
+            raise self.__exception_cls(ref_annotation, frame.errors)
 
         return processed_obj
 
