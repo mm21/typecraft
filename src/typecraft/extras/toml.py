@@ -43,8 +43,8 @@ from ..converting.converter import MatchSpec
 from ..converting.validator import ValidationParams
 from ..inspecting.generics import extract_arg
 from ..model import BaseModel, FieldInfo, ModelConfig
-from ..model.methods import ValidationInfo, field_validator, typed_validators
-from ..validating import TypedValidator, ValidationFrame
+from ..model.methods import ValidationInfo, field_validator, type_validators
+from ..validating import TypeValidator, ValidationFrame
 
 __all__ = [
     "BaseDocumentWrapper",
@@ -153,9 +153,9 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
 
     model_config = ModelConfig(validate_on_assignment=True)
 
-    @typed_validators
+    @type_validators
     @classmethod
-    def _get_validators(cls) -> tuple[TypedValidator[Any, Any], ...]:
+    def _get_validators(cls) -> tuple[TypeValidator[Any, Any], ...]:
         return VALIDATORS
 
     @field_validator(mode="before")
@@ -427,18 +427,18 @@ def validate_array(
 
 
 VALIDATORS = (
-    TypedValidator(
+    TypeValidator(
         Table,
         BaseTableWrapper,
         func=validate_table,
         match_spec=MatchSpec(assignable_from_target=True),
     ),
-    TypedValidator(
+    TypeValidator(
         InlineTable,
         BaseInlineTableWrapper,
         func=validate_table,
         match_spec=MatchSpec(assignable_from_target=True),
     ),
-    TypedValidator(Array, ArrayWrapper, func=validate_array),
-    TypedValidator(AoT, TableArrayWrapper, func=validate_array),
+    TypeValidator(Array, ArrayWrapper, func=validate_array),
+    TypeValidator(AoT, TableArrayWrapper, func=validate_array),
 )

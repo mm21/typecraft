@@ -10,8 +10,8 @@ from .fields import (
 from .methods import (
     field_serializer,
     field_validator,
-    typed_serializers,
-    typed_validators,
+    type_serializers,
+    type_validators,
 )
 
 __all__ = [
@@ -21,6 +21,6 @@ __all__ = [
     "FieldInfo",
     "field_serializer",
     "field_validator",
-    "typed_serializers",
-    "typed_validators",
+    "type_serializers",
+    "type_validators",
 ]

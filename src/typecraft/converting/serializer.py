@@ -12,8 +12,8 @@ from ..inspecting.annotations import Annotation
 from .converter import (
     BaseConversionFrame,
     BaseConversionParams,
-    BaseTypedConverter,
-    BaseTypedConverterRegistry,
+    BaseTypeConverter,
+    BaseTypeConverterRegistry,
     FuncConverterType,
 )
 from .mixins import FuncConverterMixin, GenericConverterMixin
@@ -26,10 +26,10 @@ __all__ = [
     "FuncSerializerType",
     "SerializationParams",
     "SerializationFrame",
-    "BaseTypedSerializer",
-    "BaseTypedGenericSerializer",
-    "TypedSerializer",
-    "TypedSerializerRegistry",
+    "BaseTypeSerializer",
+    "BaseGenericTypeSerializer",
+    "TypeSerializer",
+    "TypeSerializerRegistry",
 ]
 
 type JsonSerializableType = str | int | float | bool | NoneType | list[
@@ -118,17 +118,17 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
         )
 
 
-class BaseTypedSerializer[SourceT, TargetT](
-    BaseTypedConverter[SourceT, TargetT, SerializationFrame]
+class BaseTypeSerializer[SourceT, TargetT](
+    BaseTypeConverter[SourceT, TargetT, SerializationFrame]
 ):
     """
     Base class for type-based serializers.
     """
 
 
-class BaseTypedGenericSerializer[SourceT, TargetT](
+class BaseGenericTypeSerializer[SourceT, TargetT](
     GenericConverterMixin[SourceT, TargetT, SerializationFrame],
-    BaseTypedSerializer[SourceT, TargetT],
+    BaseTypeSerializer[SourceT, TargetT],
 ):
     """
     Generic serializer: subclass with type parameters to determine source/target
@@ -136,16 +136,16 @@ class BaseTypedGenericSerializer[SourceT, TargetT](
     """
 
 
-class TypedSerializer[SourceT, TargetT](
+class TypeSerializer[SourceT, TargetT](
     FuncConverterMixin[SourceT, TargetT, SerializationFrame],
-    BaseTypedSerializer[SourceT, TargetT],
+    BaseTypeSerializer[SourceT, TargetT],
 ):
     """
     Function-based serializer with optional type inference.
     """
 
 
-class TypedSerializerRegistry(BaseTypedConverterRegistry[BaseTypedSerializer]):
+class TypeSerializerRegistry(BaseTypeConverterRegistry[BaseTypeSerializer]):
     """
     Registry for managing type-based serializers.
 
@@ -156,13 +156,13 @@ class TypedSerializerRegistry(BaseTypedConverterRegistry[BaseTypedSerializer]):
         return f"SerializerRegistry(serializers={self.serializers})"
 
     @property
-    def serializers(self) -> tuple[BaseTypedSerializer, ...]:
+    def serializers(self) -> tuple[BaseTypeSerializer, ...]:
         """
         Get serializers currently registered.
         """
         return tuple(self._converters)
 
-    def register(self, serializer: BaseTypedSerializer, /):
+    def register(self, serializer: BaseTypeSerializer, /):
         """
         Register a serializer.
         """

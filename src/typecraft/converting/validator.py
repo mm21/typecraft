@@ -11,8 +11,8 @@ from ..inspecting.annotations import Annotation
 from .converter import (
     BaseConversionFrame,
     BaseConversionParams,
-    BaseTypedConverter,
-    BaseTypedConverterRegistry,
+    BaseTypeConverter,
+    BaseTypeConverterRegistry,
     FuncConverterType,
 )
 from .mixins import FuncConverterMixin, GenericConverterMixin
@@ -24,10 +24,10 @@ __all__ = [
     "FuncValidatorType",
     "ValidationParams",
     "ValidationFrame",
-    "BaseTypedValidator",
-    "BaseTypedGenericValidator",
-    "TypedValidator",
-    "TypedValidatorRegistry",
+    "BaseTypeValidator",
+    "BaseGenericTypeValidator",
+    "TypeValidator",
+    "TypeValidatorRegistry",
 ]
 
 type FuncValidatorType[TargetT] = FuncConverterType[Any, TargetT, ValidationFrame]
@@ -85,17 +85,17 @@ class ValidationFrame(BaseConversionFrame[ValidationParams]):
         )
 
 
-class BaseTypedValidator[SourceT, TargetT](
-    BaseTypedConverter[SourceT, TargetT, ValidationFrame]
+class BaseTypeValidator[SourceT, TargetT](
+    BaseTypeConverter[SourceT, TargetT, ValidationFrame]
 ):
     """
     Base class for type-based validators.
     """
 
 
-class BaseTypedGenericValidator[SourceT, TargetT](
+class BaseGenericTypeValidator[SourceT, TargetT](
     GenericConverterMixin[SourceT, TargetT, ValidationFrame],
-    BaseTypedValidator[SourceT, TargetT],
+    BaseTypeValidator[SourceT, TargetT],
 ):
     """
     Generic validator: subclass with type parameters to determine source/target
@@ -103,16 +103,16 @@ class BaseTypedGenericValidator[SourceT, TargetT](
     """
 
 
-class TypedValidator[SourceT, TargetT](
+class TypeValidator[SourceT, TargetT](
     FuncConverterMixin[SourceT, TargetT, ValidationFrame],
-    BaseTypedValidator[SourceT, TargetT],
+    BaseTypeValidator[SourceT, TargetT],
 ):
     """
     Function-based validator with optional type inference.
     """
 
 
-class TypedValidatorRegistry(BaseTypedConverterRegistry[BaseTypedValidator]):
+class TypeValidatorRegistry(BaseTypeConverterRegistry[BaseTypeValidator]):
     """
     Registry for managing type-based validators.
 
@@ -123,13 +123,13 @@ class TypedValidatorRegistry(BaseTypedConverterRegistry[BaseTypedValidator]):
         return f"ValidatorRegistry(validators={self.validators})"
 
     @property
-    def validators(self) -> tuple[BaseTypedValidator, ...]:
+    def validators(self) -> tuple[BaseTypeValidator, ...]:
         """
         Get validators currently registered.
         """
         return tuple(self._converters)
 
-    def register(self, validator: BaseTypedValidator, /):
+    def register(self, validator: BaseTypeValidator, /):
         """
         Register a validator.
         """

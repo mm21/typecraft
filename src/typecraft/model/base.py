@@ -184,15 +184,15 @@ class BaseModel:
         fields: dict[str, FieldInfo] = {}
 
         for f in _get_fields(cls):
-            typed_validators_infos = tuple(
+            type_validators_infos = tuple(
                 i
-                for i in registration_info.typed_validators_infos
+                for i in registration_info.type_validators_infos
                 if i.field_names is None or f.name in i.field_names
             )
 
-            typed_serializers_infos = tuple(
+            type_serializers_infos = tuple(
                 i
-                for i in registration_info.typed_serializers_infos
+                for i in registration_info.type_serializers_infos
                 if i.field_names is None or f.name in i.field_names
             )
 
@@ -210,8 +210,8 @@ class BaseModel:
             fields[f.name] = FieldInfo(
                 f,
                 cls,
-                typed_validators_infos=typed_validators_infos,
-                typed_serializers_infos=typed_serializers_infos,
+                type_validators_infos=type_validators_infos,
+                type_serializers_infos=type_serializers_infos,
                 field_validator_infos=field_validator_infos,
                 field_serializer_infos=field_serializer_infos,
             )
@@ -398,7 +398,7 @@ class BaseModel:
                 validated_obj, field_info, frame, mode="before"
             )
 
-            # invoke typed validators
+            # invoke type-based validators
             frame = frame._copy(source_annotation=Annotation(type(validated_obj)))
             validated_obj = field_info._validation_engine.invoke_process(
                 validated_obj, frame

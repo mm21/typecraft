@@ -19,8 +19,8 @@ from ._types import (
 from .converter import (
     BaseConversionFrame,
     BaseConversionParams,
-    BaseTypedConverter,
-    BaseTypedConverterRegistry,
+    BaseTypeConverter,
+    BaseTypeConverterRegistry,
 )
 from .utils import (
     convert_to_dict,
@@ -32,8 +32,8 @@ from .utils import (
 
 
 class BaseConversionEngine[
-    RegistryT: BaseTypedConverterRegistry,
-    ConverterT: BaseTypedConverter,
+    RegistryT: BaseTypeConverterRegistry,
+    ConverterT: BaseTypeConverter,
     FrameT: BaseConversionFrame,
     ParamsT: BaseConversionParams,
     ExceptionT: BaseConversionError,
@@ -67,13 +67,13 @@ class BaseConversionEngine[
 
     __user_registry: RegistryT
     """
-    User-registered typed converters.
+    User-registered type-based converters.
     """
 
     def __init__(
         self,
         *,
-        converters: tuple[BaseTypedConverter, ...] = (),
+        converters: tuple[BaseTypeConverter, ...] = (),
         registry: RegistryT | None = None,
     ):
         from ..validating import ValidationEngine
@@ -95,7 +95,7 @@ class BaseConversionEngine[
         cls.__registry_cls = cast(
             type[RegistryT],
             extract_arg(
-                cls, BaseConversionEngine, "RegistryT", BaseTypedConverterRegistry
+                cls, BaseConversionEngine, "RegistryT", BaseTypeConverterRegistry
             ),
         )
         cls.__frame_cls = cast(
@@ -347,7 +347,7 @@ class BaseConversionEngine[
 
     def __find_converter(
         self, obj: Any, frame: FrameT, target_annotation: Annotation
-    ) -> BaseTypedConverter | None:
+    ) -> BaseTypeConverter | None:
         for registry in itertools.chain(
             (self.__user_registry,), self._get_builtin_registries(frame)
         ):

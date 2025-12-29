@@ -11,8 +11,8 @@ from typecraft.converting.builtin_converters import DataclassConverter
 from typecraft.converting.serializer import SerializationParams
 from typecraft.converting.validator import ValidationParams
 from typecraft.exceptions import SerializationError, ValidationError
-from typecraft.serializing import TypedSerializerRegistry, serialize
-from typecraft.validating import TypedValidatorRegistry, validate
+from typecraft.serializing import TypeSerializerRegistry, serialize
+from typecraft.validating import TypeValidatorRegistry, validate
 
 
 @dataclass
@@ -63,8 +63,8 @@ def test_simple_dataclass():
     serialization_params = SerializationParams(use_builtin_serializers=False)
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     test_serialized = {"name": "Alice", "age": 30}
@@ -103,8 +103,8 @@ def test_dataclass_with_defaults():
     """
     adapter = Adapter(
         DataclassWithDefaults,
-        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     # test with all fields provided
@@ -133,7 +133,7 @@ def test_missing_required_field():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
+        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
     )
 
     # missing 'age' field
@@ -147,8 +147,8 @@ def test_nested():
     """
     adapter = Adapter(
         NestedDataclass,
-        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     test_serialized = {"person": {"name": "Alice", "age": 30}, "location": "NYC"}
@@ -176,8 +176,8 @@ def test_dataclass_with_list():
     """
     adapter = Adapter(
         DataclassWithList,
-        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
     )
 
     test_serialized = {"name": "Project", "tags": ["python", "testing", "ci"]}
@@ -200,7 +200,7 @@ def test_invalid():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=TypedValidatorRegistry(DataclassConverter.as_validator()),
+        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
     )
 
     class NonSerializable:

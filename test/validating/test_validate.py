@@ -9,7 +9,7 @@ from pytest import raises
 
 from typecraft.exceptions import ValidationError
 from typecraft.validating import (
-    TypedValidator,
+    TypeValidator,
     ValidationParams,
     normalize_to_list,
     validate,
@@ -80,9 +80,9 @@ def test_invalid():
         == """\
 2 validation errors for list[int]
 [0]=1.5: str -> int: ValueError
-  TypedValidator(str | bytes | bytearray -> int) failed: invalid literal for int() with base 10: '1.5'
+  TypeValidator(str | bytes | bytearray -> int) failed: invalid literal for int() with base 10: '1.5'
 [1]=2.5: str -> int: ValueError
-  TypedValidator(str | bytes | bytearray -> int) failed: invalid literal for int() with base 10: '2.5'"""
+  TypeValidator(str | bytes | bytearray -> int) failed: invalid literal for int() with base 10: '2.5'"""
     )
 
     with raises(ValidationError) as exc_info:
@@ -204,7 +204,7 @@ def test_collection_subclass():
     )
 
     obj = [0, 1, 2]
-    result = validate(obj, IntList, TypedValidator(list, IntList))
+    result = validate(obj, IntList, TypeValidator(list, IntList))
     assert isinstance(result, IntList)
     assert result == [0, 1, 2]
 
@@ -212,7 +212,7 @@ def test_collection_subclass():
     result = validate(
         obj,
         IntList,
-        TypedValidator(list, IntList),
+        TypeValidator(list, IntList),
         params=ValidationParams(strict=False),
     )
     assert isinstance(result, IntList)
@@ -223,7 +223,7 @@ def test_collection_subclass():
     assert result is obj
 
     obj = {0: "a"}
-    result = validate(obj, IntStrDict, TypedValidator(dict, IntStrDict))
+    result = validate(obj, IntStrDict, TypeValidator(dict, IntStrDict))
     assert isinstance(result, IntStrDict)
     assert result == {0: "a"}
 
@@ -231,7 +231,7 @@ def test_collection_subclass():
     result = validate(
         obj,
         IntStrDict,
-        TypedValidator(dict, IntStrDict),
+        TypeValidator(dict, IntStrDict),
         params=ValidationParams(strict=False),
     )
     assert isinstance(result, IntStrDict)

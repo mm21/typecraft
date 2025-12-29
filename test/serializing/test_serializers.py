@@ -7,11 +7,11 @@ from typing import Any
 
 from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
-    BaseTypedGenericSerializer,
+    BaseGenericTypeSerializer,
     SerializationEngine,
     SerializationFrame,
     SerializationParams,
-    TypedSerializer,
+    TypeSerializer,
     serialize,
 )
 
@@ -32,10 +32,10 @@ def serialize_company(c: Company) -> dict[str, Any]:
     return {"name": c.name, "employees": c.employees}
 
 
-PERSON_SERIALIZER = TypedSerializer(
+PERSON_SERIALIZER = TypeSerializer(
     Person, dict, func=lambda p: {"name": p.name, "age": p.age}
 )
-COMPANY_SERIALIZER = TypedSerializer.from_func(serialize_company)
+COMPANY_SERIALIZER = TypeSerializer.from_func(serialize_company)
 
 
 def test_custom_serializer():
@@ -67,7 +67,7 @@ def test_nested_custom_serializer():
             ],
         }
 
-    company_serializer = TypedSerializer.from_func(serialize_company)
+    company_serializer = TypeSerializer.from_func(serialize_company)
 
     person1 = Person(name="Alice", age=30)
     person2 = Person(name="Bob", age=25)
@@ -141,7 +141,7 @@ def test_subclass():
     Test subclass of BaseGenericSerializer.
     """
 
-    class MySerializer(BaseTypedGenericSerializer[int, str]):
+    class MySerializer(BaseGenericTypeSerializer[int, str]):
         def convert(self, obj: int, frame: SerializationFrame) -> str:
             _ = frame
             return str(obj)

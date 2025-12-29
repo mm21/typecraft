@@ -9,9 +9,9 @@ from pytest import raises
 from typecraft.converting.converter import MatchSpec
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
-    BaseTypedGenericValidator,
-    TypedValidator,
-    TypedValidatorRegistry,
+    BaseGenericTypeValidator,
+    TypeValidator,
+    TypeValidatorRegistry,
     ValidationEngine,
     ValidationFrame,
     ValidationParams,
@@ -24,14 +24,14 @@ def test_match_any():
     """
 
     # can convert anything to str
-    validator = TypedValidator(Any, str)
+    validator = TypeValidator(Any, str)
 
     assert validator.check_match(Annotation(int), Annotation(str))
     assert validator.check_match(ANY, Annotation(str))
     assert not validator.check_match(ANY, Annotation(int))
 
     # can convert str to anything
-    validator = TypedValidator(str, Any)
+    validator = TypeValidator(str, Any)
     assert validator.check_match(Annotation(str), ANY)
     assert validator.check_match(Annotation(str), Annotation(int))
     assert validator.check_match(ANY, Annotation(str))
@@ -43,19 +43,19 @@ def test_match_assignable():
     """
 
     # convert to int, but not bool
-    validator = TypedValidator(str, int)
+    validator = TypeValidator(str, int)
     assert validator.check_match(Annotation(str), Annotation(int))
     assert not validator.check_match(Annotation(str), Annotation(bool))
 
     # convert to bool, but not int
-    validator = TypedValidator(
+    validator = TypeValidator(
         str, bool, match_spec=MatchSpec(assignable_to_target=False)
     )
     assert validator.check_match(Annotation(str), Annotation(bool))
     assert not validator.check_match(Annotation(str), Annotation(int))
 
     # convert to int, or bool since it's a subtype of int
-    validator = TypedValidator(
+    validator = TypeValidator(
         str,
         int,
         func=lambda obj, frame: frame.target_annotation.concrete_type(obj),
@@ -77,21 +77,21 @@ def test_match_custom():
         pass
 
     # can convert to str, but not custom str
-    validator = TypedValidator(int, str)
+    validator = TypeValidator(int, str)
     assert validator.check_match(Annotation(int), Annotation(str))
     assert validator.check_match(Annotation(CustomInt), Annotation(str))
     assert not validator.check_match(Annotation(int), Annotation(CustomStr))
     assert not validator.check_match(Annotation(CustomInt), Annotation(CustomStr))
 
     # can convert to custom str, but not str
-    validator = TypedValidator(
+    validator = TypeValidator(
         int, CustomStr, match_spec=MatchSpec(assignable_to_target=False)
     )
     assert validator.check_match(Annotation(int), Annotation(CustomStr))
     assert not validator.check_match(Annotation(int), Annotation(str))
 
     # can convert from custom int, but not int
-    validator = TypedValidator(CustomInt, str)
+    validator = TypeValidator(CustomInt, str)
     assert validator.check_match(Annotation(CustomInt), Annotation(str))
     assert not validator.check_match(Annotation(int), Annotation(str))
 
@@ -105,13 +105,13 @@ def test_match_union_target():
         TypeError,
         match="Cannot use direct object construction when target annotation is a union",
     ):
-        _ = TypedValidator(str, int | float)
+        _ = TypeValidator(str, int | float)
 
     # convert based on format of input
     def convert_to_numeric(obj: str) -> int | float:
         return int(obj) if obj.isnumeric() else float(obj)
 
-    validator = TypedValidator.from_func(convert_to_numeric)
+    validator = TypeValidator.from_func(convert_to_numeric)
     assert validator.check_match(Annotation(str), Annotation(int | float))
     assert validator.check_match(Annotation(str), Annotation(int | float | str))
     assert not validator.check_match(Annotation(str), Annotation(int))
@@ -133,7 +133,7 @@ def test_match_union_target():
             assert frame.target_annotation.raw is float
             return float(obj)
 
-    validator = TypedValidator.from_func(
+    validator = TypeValidator.from_func(
         convert_to_numeric_2, match_spec=MatchSpec(assignable_from_target=True)
     )
     assert validator.check_match(Annotation(str), Annotation(int))
@@ -159,8 +159,8 @@ def test_any():
     obj = 1
 
     # test both function types
-    validator1 = TypedValidator(Any, Any, func=func1)
-    validator2 = TypedValidator(Any, Any, func=func2)
+    validator1 = TypeValidator(Any, Any, func=func1)
+    validator2 = TypeValidator(Any, Any, func=func2)
 
     assert validator1.can_convert(obj, ANY, ANY)
     conv_obj = validator1.convert(obj, _create_frame(Any, Any))
@@ -186,7 +186,7 @@ def test_generic():
         assert all(isinstance(o, int) for o in obj)
         return all(o > 0 for o in obj)
 
-    validator = TypedValidator(
+    validator = TypeValidator(
         list[int], list[str], func=func, predicate_func=predicate_func
     )
     obj = [123]
@@ -216,7 +216,7 @@ def test_subclass():
     Test subclass of BaseGenericValidator.
     """
 
-    class MyValidator(BaseTypedGenericValidator[str, int]):
+    class MyValidator(BaseGenericTypeValidator[str, int]):
 
         def can_convert(
             self, obj: str, source_annotation: Annotation, target_annotation: Annotation
@@ -259,13 +259,13 @@ def test_registry():
         return frame.target_annotation.concrete_type(s)
 
     # register converters (will be checked in reverse order)
-    registry = TypedValidatorRegistry()
+    registry = TypeValidatorRegistry()
     registry.register(
-        TypedValidator.from_func(
+        TypeValidator.from_func(
             str_to_int_subtype, match_spec=MatchSpec(assignable_from_target=True)
         )
     )
-    registry.register(TypedValidator.from_func(str_to_int))
+    registry.register(TypeValidator.from_func(str_to_int))
 
     # use the registry
     obj = "42"

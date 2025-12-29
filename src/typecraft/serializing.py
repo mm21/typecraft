@@ -12,14 +12,14 @@ from .converting.builtin_converters import get_builtin_serializer_registry
 from .converting.engine import BaseConversionEngine
 from .converting.serializer import (
     JSON_SERIALIZABLE_ANNOTATION,
-    BaseTypedGenericSerializer,
-    BaseTypedSerializer,
+    BaseGenericTypeSerializer,
+    BaseTypeSerializer,
     FuncSerializerType,
     JsonSerializableType,
     SerializationFrame,
     SerializationParams,
-    TypedSerializer,
-    TypedSerializerRegistry,
+    TypeSerializer,
+    TypeSerializerRegistry,
 )
 from .exceptions import SerializationError
 from .inspecting.annotations import Annotation
@@ -29,18 +29,18 @@ __all__ = [
     "FuncSerializerType",
     "SerializationParams",
     "SerializationFrame",
-    "BaseTypedSerializer",
-    "BaseTypedGenericSerializer",
-    "TypedSerializer",
-    "TypedSerializerRegistry",
+    "BaseTypeSerializer",
+    "BaseGenericTypeSerializer",
+    "TypeSerializer",
+    "TypeSerializerRegistry",
     "serialize",
 ]
 
 
 class SerializationEngine(
     BaseConversionEngine[
-        TypedSerializerRegistry,
-        BaseTypedSerializer,
+        TypeSerializerRegistry,
+        BaseTypeSerializer,
         SerializationFrame,
         SerializationParams,
         SerializationError,
@@ -54,7 +54,7 @@ class SerializationEngine(
 
     def _get_builtin_registries(
         self, frame: SerializationFrame
-    ) -> tuple[TypedSerializerRegistry, ...]:
+    ) -> tuple[TypeSerializerRegistry, ...]:
         _ = frame
         return (
             (get_builtin_serializer_registry(),)
@@ -66,8 +66,8 @@ class SerializationEngine(
 def serialize(
     obj: Any,
     /,
-    *serializers: BaseTypedSerializer[Any, Any],
-    registry: TypedSerializerRegistry | None = None,
+    *serializers: BaseTypeSerializer[Any, Any],
+    registry: TypeSerializerRegistry | None = None,
     params: SerializationParams | None = None,
     context: Any | None = None,
     source_type: Annotation | Any | None = None,

@@ -12,10 +12,10 @@ from .serializing import (
     JsonSerializableType,
     SerializationEngine,
     SerializationParams,
-    TypedSerializerRegistry,
+    TypeSerializerRegistry,
 )
 from .validating import (
-    TypedValidatorRegistry,
+    TypeValidatorRegistry,
     ValidationEngine,
     ValidationParams,
 )
@@ -43,8 +43,8 @@ class Adapter[T]:
         annotation: type[T],
         /,
         *,
-        validator_registry: TypedValidatorRegistry | None = None,
-        serializer_registry: TypedSerializerRegistry | None = None,
+        validator_registry: TypeValidatorRegistry | None = None,
+        serializer_registry: TypeSerializerRegistry | None = None,
     ): ...
 
     @overload
@@ -53,8 +53,8 @@ class Adapter[T]:
         annotation: Annotation | Any,
         /,
         *,
-        validator_registry: TypedValidatorRegistry | None = None,
-        serializer_registry: TypedSerializerRegistry | None = None,
+        validator_registry: TypeValidatorRegistry | None = None,
+        serializer_registry: TypeSerializerRegistry | None = None,
     ): ...
 
     def __init__(
@@ -62,8 +62,8 @@ class Adapter[T]:
         annotation: type[T] | Annotation | Any,
         /,
         *,
-        validator_registry: TypedValidatorRegistry | None = None,
-        serializer_registry: TypedSerializerRegistry | None = None,
+        validator_registry: TypeValidatorRegistry | None = None,
+        serializer_registry: TypeSerializerRegistry | None = None,
     ):
         self.__annotation = Annotation._normalize(annotation)
         self.__validation_engine = ValidationEngine(registry=validator_registry)

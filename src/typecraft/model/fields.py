@@ -11,16 +11,16 @@ from typing import (
     overload,
 )
 
-from ..converting.serializer import TypedSerializerRegistry
-from ..converting.validator import TypedValidatorRegistry
+from ..converting.serializer import TypeSerializerRegistry
+from ..converting.validator import TypeValidatorRegistry
 from ..inspecting.annotations import Annotation
 from ..serializing import SerializationEngine
 from ..validating import ValidationEngine
 from .methods import (
     FieldSerializerInfo,
     FieldValidatorInfo,
-    TypedSerializersInfo,
-    TypedValidatorsInfo,
+    TypeSerializersInfo,
+    TypeValidatorsInfo,
 )
 
 if TYPE_CHECKING:
@@ -95,8 +95,8 @@ class FieldInfo:
         field: dataclasses.Field,
         model_cls: type[BaseModel],
         *,
-        typed_validators_infos: tuple[TypedValidatorsInfo, ...],
-        typed_serializers_infos: tuple[TypedSerializersInfo, ...],
+        type_validators_infos: tuple[TypeValidatorsInfo, ...],
+        type_serializers_infos: tuple[TypeSerializersInfo, ...],
         field_validator_infos: tuple[FieldValidatorInfo, ...],
         field_serializer_infos: tuple[FieldSerializerInfo, ...],
     ):
@@ -109,12 +109,12 @@ class FieldInfo:
         raw_annotation = type_hints[field.name]
         annotation = Annotation(raw_annotation)
 
-        # get typed validators/serializers
-        typed_validators = TypedValidatorsInfo.aggregate_converters(
-            model_cls, typed_validators_infos
+        # get type-based validators/serializers
+        type_validators = TypeValidatorsInfo.aggregate_converters(
+            model_cls, type_validators_infos
         )
-        typed_serializers = TypedSerializersInfo.aggregate_converters(
-            model_cls, typed_serializers_infos
+        type_serializers = TypeSerializersInfo.aggregate_converters(
+            model_cls, type_serializers_infos
         )
 
         metadata = field.metadata.get("metadata") or FieldMetadata()
@@ -124,10 +124,10 @@ class FieldInfo:
         self.annotation = annotation
         self.metadata = metadata
         self._validation_engine = ValidationEngine(
-            registry=TypedValidatorRegistry(*typed_validators)
+            registry=TypeValidatorRegistry(*type_validators)
         )
         self._serialization_engine = SerializationEngine(
-            registry=TypedSerializerRegistry(*typed_serializers)
+            registry=TypeSerializerRegistry(*type_serializers)
         )
         self.__field_validator_infos = field_validator_infos
         self.__field_serializer_infos = field_serializer_infos

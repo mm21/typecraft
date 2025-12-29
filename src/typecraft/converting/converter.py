@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MatchSpec",
-    "BaseTypedConverter",
-    "BaseTypedConverterRegistry",
+    "BaseTypeConverter",
+    "BaseTypeConverterRegistry",
 ]
 
 
@@ -431,11 +431,11 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
         """
 
 
-class BaseTypedConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
+class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
     ConverterInterface[SourceT, TargetT, FrameT], ABC
 ):
     """
-    Base class for typed converters (validators and serializers).
+    Base class for type converters (validators and serializers).
 
     Encapsulates common conversion parameters and logic for type-based conversion
     between source and target annotations.
@@ -552,7 +552,7 @@ class BaseTypedConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
             return my_annotation.equals(requested_annotation, match_any=True)
 
 
-class BaseTypedConverterRegistry[ConverterT: BaseTypedConverter](ABC):
+class BaseTypeConverterRegistry[ConverterT: BaseTypeConverter](ABC):
     """
     Base class for converter registries.
     """
@@ -601,6 +601,6 @@ class BaseTypedConverterRegistry[ConverterT: BaseTypedConverter](ABC):
     @cached_property
     def _converter_cls(self) -> type[ConverterT]:
         converter_cls = extract_arg(
-            type(self), BaseTypedConverterRegistry, "ConverterT", BaseTypedConverter
+            type(self), BaseTypeConverterRegistry, "ConverterT", BaseTypeConverter
         )
         return cast(type[ConverterT], converter_cls)

@@ -7,9 +7,9 @@ from pytest import raises
 from typecraft.adapter import Adapter
 from typecraft.converting.symmetric_converter import BaseSymmetricConverter
 from typecraft.exceptions import SerializationError, ValidationError
-from typecraft.serializing import SerializationFrame, TypedSerializerRegistry, serialize
+from typecraft.serializing import SerializationFrame, TypeSerializerRegistry, serialize
 from typecraft.validating import (
-    TypedValidatorRegistry,
+    TypeValidatorRegistry,
     ValidationFrame,
     validate,
 )
@@ -82,8 +82,8 @@ def test_basic():
 
     adapter = Adapter(
         MyClass,
-        validator_registry=TypedValidatorRegistry(validator),
-        serializer_registry=TypedSerializerRegistry(serializer),
+        validator_registry=TypeValidatorRegistry(validator),
+        serializer_registry=TypeSerializerRegistry(serializer),
     )
 
     # make sure we get an exception without the adapter
@@ -133,8 +133,8 @@ def test_range():
     serializer = RangeConverter.as_serializer()
     adapter = Adapter(
         range,
-        validator_registry=TypedValidatorRegistry(validator),
-        serializer_registry=TypedSerializerRegistry(serializer),
+        validator_registry=TypeValidatorRegistry(validator),
+        serializer_registry=TypeSerializerRegistry(serializer),
     )
 
     result = adapter.validate([10])

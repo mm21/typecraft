@@ -15,8 +15,8 @@ from typecraft.converting.builtin_converters import (
 from typecraft.converting.serializer import SerializationParams
 from typecraft.converting.validator import ValidationParams
 from typecraft.exceptions import SerializationError, ValidationError
-from typecraft.serializing import TypedSerializerRegistry, serialize
-from typecraft.validating import TypedValidatorRegistry, validate
+from typecraft.serializing import TypeSerializerRegistry, serialize
+from typecraft.validating import TypeValidatorRegistry, validate
 
 
 def test_date_converter():
@@ -25,8 +25,8 @@ def test_date_converter():
     """
     adapter = Adapter(
         date,
-        validator_registry=TypedValidatorRegistry(DateConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(DateConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DateConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(DateConverter.as_serializer()),
     )
     validation_params = ValidationParams(use_builtin_validators=False)
     serialization_params = SerializationParams(use_builtin_serializers=False)
@@ -68,8 +68,8 @@ def test_datetime_converter():
     """
     adapter = Adapter(
         datetime,
-        validator_registry=TypedValidatorRegistry(DateTimeConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(DateTimeConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DateTimeConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(DateTimeConverter.as_serializer()),
     )
     validation_params = ValidationParams(use_builtin_validators=False)
     serialization_params = SerializationParams(use_builtin_serializers=False)
@@ -108,8 +108,8 @@ def test_time_converter():
     """
     adapter = Adapter(
         time,
-        validator_registry=TypedValidatorRegistry(TimeConverter.as_validator()),
-        serializer_registry=TypedSerializerRegistry(TimeConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(TimeConverter.as_validator()),
+        serializer_registry=TypeSerializerRegistry(TimeConverter.as_serializer()),
     )
     validation_params = ValidationParams(use_builtin_validators=False)
     serialization_params = SerializationParams(use_builtin_serializers=False)

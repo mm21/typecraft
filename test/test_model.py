@@ -6,7 +6,7 @@ from typing import Any
 
 from pytest import raises
 
-from typecraft.converting.serializer import SerializationParams, TypedSerializer
+from typecraft.converting.serializer import SerializationParams, TypeSerializer
 from typecraft.exceptions import ValidationError
 from typecraft.model import (
     BaseModel,
@@ -14,12 +14,12 @@ from typecraft.model import (
     ModelConfig,
     field_serializer,
     field_validator,
-    typed_serializers,
-    typed_validators,
+    type_serializers,
+    type_validators,
 )
 from typecraft.model.methods import ValidationInfo
 from typecraft.serializing import serialize
-from typecraft.validating import TypedValidator, ValidationParams, validate
+from typecraft.validating import TypeValidator, ValidationParams, validate
 
 
 class BasicTest(BaseModel):
@@ -175,19 +175,19 @@ class FieldSerializerAllFieldsTest(BaseModel):
         return obj
 
 
-class TypedValidatorsTest(BaseModel):
+class TypeValidatorsTest(BaseModel):
     """
-    Test typed validators via decorator.
+    Test type-based validators via decorator.
     """
 
     my_int: MyInt
     my_int2: MyInt
 
-    @typed_validators("my_int")
+    @type_validators("my_int")
     @classmethod
-    def validators(cls) -> tuple[TypedValidator, ...]:
+    def validators(cls) -> tuple[TypeValidator, ...]:
         return (
-            TypedValidator(
+            TypeValidator(
                 int,
                 MyInt,
                 func=lambda obj: MyInt(obj),
@@ -195,18 +195,18 @@ class TypedValidatorsTest(BaseModel):
         )
 
 
-class TypedSerializersTest(BaseModel):
+class TypeSerializersTest(BaseModel):
     """
-    Test typed serializers via decorator.
+    Test type-based serializers via decorator.
     """
 
     my_int: MyInt
 
-    @typed_serializers
+    @type_serializers
     @classmethod
-    def serializers(cls) -> tuple[TypedSerializer, ...]:
+    def serializers(cls) -> tuple[TypeSerializer, ...]:
         return (
-            TypedSerializer(
+            TypeSerializer(
                 MyInt,
                 int,
                 func=lambda obj: obj,
@@ -248,28 +248,28 @@ class MultipleFieldValidatorTest(BaseModel):
 
 class CombinedValidatorSerializerTest(BaseModel):
     """
-    Test combining typed validators/serializers with field validators/serializers.
+    Test combining type-based validators/serializers with field validators/serializers.
     """
 
     my_int: MyInt
     plain_int: int
 
-    @typed_validators
+    @type_validators
     @classmethod
-    def validators(cls) -> tuple[TypedValidator[Any, Any], ...]:
+    def validators(cls) -> tuple[TypeValidator[Any, Any], ...]:
         return (
-            TypedValidator(
+            TypeValidator(
                 int,
                 MyInt,
                 func=lambda obj: MyInt(obj),
             ),
         )
 
-    @typed_serializers
+    @type_serializers
     @classmethod
-    def serializers(cls) -> tuple[TypedSerializer[Any, Any], ...]:
+    def serializers(cls) -> tuple[TypeSerializer[Any, Any], ...]:
         return (
-            TypedSerializer(
+            TypeSerializer(
                 int,
                 MyInt,
                 func=lambda obj: obj.val,
@@ -456,33 +456,33 @@ def test_field_serializer_all_fields():
     assert dump == {"a": 123, "b": 456}
 
 
-def test_typed_validators():
+def test_type_validators():
     """
-    Test @typed_validators decorator.
+    Test @type_validators decorator.
     """
-    dc = TypedValidatorsTest(my_int=123, my_int2=MyInt(321))  # type: ignore
+    dc = TypeValidatorsTest(my_int=123, my_int2=MyInt(321))  # type: ignore
     assert isinstance(dc.my_int, MyInt)
     assert dc.my_int == 123
     assert dc.my_int2 == 321
 
     # type-based validator not applied to my_int2
     with raises(ValidationError) as exc_info:
-        _ = dc(TypedValidatorsTest(my_int=123, my_int2=321))  # type: ignore
+        _ = dc(TypeValidatorsTest(my_int=123, my_int2=321))  # type: ignore
 
     assert (
         str(exc_info.value)
         == """\
-1 validation error for TypedValidatorsTest
+1 validation error for TypeValidatorsTest
 my_int2=321: int -> MyInt: TypeError
   No matching converters"""
     )
 
 
-def test_typed_serializers():
+def test_type_serializers():
     """
-    Test @typed_serializers decorator.
+    Test @type_serializers decorator.
     """
-    dc = TypedSerializersTest(my_int=MyInt(123))
+    dc = TypeSerializersTest(my_int=MyInt(123))
     assert isinstance(dc.my_int, MyInt)
     assert dc.my_int == 123
 
@@ -527,7 +527,7 @@ def test_multiple_field_validators():
 
 def test_combined_validators_serializers():
     """
-    Test combining typed and field-level validators/serializers.
+    Test combining type-based and field-level validators/serializers.
     """
     dc = CombinedValidatorSerializerTest(my_int=123, plain_int="456")  # type: ignore
     assert isinstance(dc.my_int, MyInt)

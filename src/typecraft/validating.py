@@ -21,11 +21,11 @@ from .converting.utils import (
     convert_to_tuple,
 )
 from .converting.validator import (
-    BaseTypedGenericValidator,
-    BaseTypedValidator,
+    BaseGenericTypeValidator,
+    BaseTypeValidator,
     FuncValidatorType,
-    TypedValidator,
-    TypedValidatorRegistry,
+    TypeValidator,
+    TypeValidatorRegistry,
     ValidationFrame,
     ValidationParams,
 )
@@ -37,25 +37,25 @@ __all__ = [
     "FuncValidatorType",
     "ValidationParams",
     "ValidationFrame",
-    "BaseTypedValidator",
-    "BaseTypedGenericValidator",
-    "TypedValidator",
-    "TypedValidatorRegistry",
+    "BaseTypeValidator",
+    "BaseGenericTypeValidator",
+    "TypeValidator",
+    "TypeValidatorRegistry",
     "validate",
     "normalize_to_list",
 ]
 
-NON_STRICT_REGISTRY = TypedValidatorRegistry(
-    TypedValidator(str | bytes | bytearray, int),
-    TypedValidator(str | int, float),
+NON_STRICT_REGISTRY = TypeValidatorRegistry(
+    TypeValidator(str | bytes | bytearray, int),
+    TypeValidator(str | int, float),
     # set assignable_to_target=False so it doesn't match conversion to int
-    TypedValidator(Any, bool, match_spec=MatchSpec(assignable_to_target=False)),
-    TypedValidator(Any, str),
-    TypedValidator(ValueCollectionType, list, func=convert_to_list),
-    TypedValidator(ValueCollectionType, tuple, func=convert_to_tuple),
-    TypedValidator(ValueCollectionType, set, func=convert_to_set),
-    TypedValidator(ValueCollectionType, frozenset, func=convert_to_set),
-    TypedValidator(Mapping, dict, func=convert_to_dict),
+    TypeValidator(Any, bool, match_spec=MatchSpec(assignable_to_target=False)),
+    TypeValidator(Any, str),
+    TypeValidator(ValueCollectionType, list, func=convert_to_list),
+    TypeValidator(ValueCollectionType, tuple, func=convert_to_tuple),
+    TypeValidator(ValueCollectionType, set, func=convert_to_set),
+    TypeValidator(ValueCollectionType, frozenset, func=convert_to_set),
+    TypeValidator(Mapping, dict, func=convert_to_dict),
 )
 """
 Registry of validators for non-strict mode.
@@ -64,8 +64,8 @@ Registry of validators for non-strict mode.
 
 class ValidationEngine(
     BaseConversionEngine[
-        TypedValidatorRegistry,
-        BaseTypedValidator,
+        TypeValidatorRegistry,
+        BaseTypeValidator,
         ValidationFrame,
         ValidationParams,
         ValidationError,
@@ -79,7 +79,7 @@ class ValidationEngine(
 
     def _get_builtin_registries(
         self, frame: ValidationFrame
-    ) -> tuple[TypedValidatorRegistry, ...]:
+    ) -> tuple[TypeValidatorRegistry, ...]:
         builtin_registry = (
             (get_builtin_validator_registry(),)
             if frame.params.use_builtin_validators
@@ -94,8 +94,8 @@ def validate[T](
     obj: Any,
     target_type: type[T],
     /,
-    *validators: BaseTypedValidator[Any, T],
-    registry: TypedValidatorRegistry | None = None,
+    *validators: BaseTypeValidator[Any, T],
+    registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> T: ...
@@ -106,8 +106,8 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators: BaseTypedValidator[Any, Any],
-    registry: TypedValidatorRegistry | None = None,
+    *validators: BaseTypeValidator[Any, Any],
+    registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> Any: ...
@@ -117,8 +117,8 @@ def validate(
     obj: Any,
     target_type: Annotation | Any,
     /,
-    *validators: BaseTypedValidator[Any, Any],
-    registry: TypedValidatorRegistry | None = None,
+    *validators: BaseTypeValidator[Any, Any],
+    registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> Any:
@@ -155,9 +155,9 @@ def normalize_to_list[T](
     obj_or_objs: Any,
     item_type: type[T],
     /,
-    *validators: TypedValidator[Any, T],
+    *validators: TypeValidator[Any, T],
     params: ValidationParams | None = None,
-    registry: TypedValidatorRegistry | None = None,
+    registry: TypeValidatorRegistry | None = None,
     context: Any | None = None,
 ) -> list[T]: ...
 
@@ -167,9 +167,9 @@ def normalize_to_list(
     obj_or_objs: Any,
     item_type: Annotation | Any,
     /,
-    *validators: TypedValidator[Any, Any],
+    *validators: TypeValidator[Any, Any],
     params: ValidationParams | None = None,
-    registry: TypedValidatorRegistry | None = None,
+    registry: TypeValidatorRegistry | None = None,
     context: Any | None = None,
 ) -> list[Any]: ...
 
@@ -178,8 +178,8 @@ def normalize_to_list(
     obj_or_objs: Any,
     item_type: Annotation | Any,
     /,
-    *validators: TypedValidator[Any, Any],
-    registry: TypedValidatorRegistry | None = None,
+    *validators: TypeValidator[Any, Any],
+    registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
     context: Any | None = None,
 ) -> list[Any]:

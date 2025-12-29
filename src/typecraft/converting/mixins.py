@@ -7,7 +7,7 @@ from ..inspecting.annotations import Annotation
 from ..inspecting.generics import extract_arg_map
 from .converter import (
     BaseConversionFrame,
-    BaseTypedConverter,
+    BaseTypeConverter,
     ConverterInterface,
     FuncConverterType,
     FuncConverterWrapper,
@@ -171,7 +171,7 @@ class GenericConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
 
     def _get_annotations(self) -> tuple[Annotation, Annotation]:
         # get annotations from type params
-        arg_map = extract_arg_map(type(self), BaseTypedConverter)
+        arg_map = extract_arg_map(type(self), BaseTypeConverter)
         source_type = arg_map.get("SourceT")
         target_type = arg_map.get("TargetT")
         if not (source_type and target_type):
