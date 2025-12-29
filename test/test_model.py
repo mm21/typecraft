@@ -317,11 +317,19 @@ def test_union():
         dc.a = 123.0  # type: ignore
 
 
-def test_conversion():
+def test_validate_on_assignment():
     dc = ValidateOnAssignmentTest()
 
-    with raises(ValidationError):
+    with raises(ValidationError) as exc_info:
         dc.a = "321"  # type: ignore
+
+    assert (
+        str(exc_info.value)
+        == """\
+1 validation error for ValidateOnAssignmentTest
+a=321: str -> int: TypeError
+  No matching converters"""
+    )
 
     dc = CoercionTest(a="321")  # type: ignore
     assert dc.a == 321

@@ -419,7 +419,7 @@ class BaseModel:
             validated_obj = ERROR_SENTINEL
             if self.__init_done:
                 # setting attribute after creating object: raise errors immediately
-                raise ValidationError(field_info.annotation, errors)
+                raise ValidationError(Annotation(type(self)), errors)
             else:
                 # still creating object: aggregate errors; will be raised after all
                 # attributes are set
