@@ -219,11 +219,10 @@ def test_invalid():
     assert (
         str(exc_info.value)
         == """\
-Errors occurred during validation:
-<class 'test.builtin_converters.test_dataclass.NestedDataclass'>
-person.age=30: <class 'str'> -> <class 'int'>: TypeError
+2 validation errors for NestedDataclass
+person.age=30: str -> int: TypeError
   No matching converters
-location=123: <class 'int'> -> <class 'str'>: TypeError
+location=123: int -> str: TypeError
   No matching converters"""
     )
 

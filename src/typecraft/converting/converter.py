@@ -381,7 +381,7 @@ class ConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC):
 
     @property
     def _params_str(self) -> str:
-        return f"{self._source_annotation.raw} -> {self._target_annotation.raw}"
+        return f"{self._source_annotation.name} -> {self._target_annotation.name}"
 
     def can_convert(
         self,

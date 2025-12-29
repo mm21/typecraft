@@ -81,8 +81,8 @@ class ConversionErrorDetail:
         yield "{}={}: {} -> {}: {}".format(
             self.path,
             self.obj,
-            self.frame.source_annotation.raw,
-            self.frame.target_annotation.raw,
+            self.frame.source_annotation.name,
+            self.frame.target_annotation.name,
             type(self.exc).__name__,
         )
         # details from the exception string
@@ -125,8 +125,9 @@ class BaseConversionError(Exception):
         """
         plural = "s" if len(self.errors) > 1 else ""
         lines = [
-            f"Error{plural} occurred during {self._action}:",
-            str(self.ref_annotation.raw),
+            "{} {} error{} for {}".format(
+                len(self.errors), self._action, plural, self.ref_annotation.name
+            ),
         ]
 
         for error in self.errors:

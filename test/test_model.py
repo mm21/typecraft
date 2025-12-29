@@ -361,16 +361,15 @@ def test_nested_invalid():
     assert (
         str(exc_info.value)
         == """\
-Errors occurred during validation:
-<class 'test.test_model.NestedTest'>
-basic.a=123: <class 'str'> -> <class 'int'>: TypeError
+3 validation errors for NestedTest
+basic.a=123: str -> int: TypeError
   No matching converters
-basic.b=123: <class 'int'> -> <class 'str'>: TypeError
+basic.b=123: int -> str: TypeError
   No matching converters
-union.a=1.5: <class 'float'> -> int | str: TypeError
+union.a=1.5: float -> int | str: TypeError
   Errors during union member conversion:
-    <class 'int'>: No matching converters
-    <class 'str'>: No matching converters"""
+    int: No matching converters
+    str: No matching converters"""
     )
 
 
@@ -388,16 +387,15 @@ def test_nested_invalid_validator():
     assert (
         str(exc_info.value)
         == """\
-Errors occurred during validation:
-<class 'test.test_model.NestedTest'>
-basic.a=123: <class 'str'> -> <class 'int'>: TypeError
+3 validation errors for NestedTest
+basic.a=123: str -> int: TypeError
   No matching converters
-basic.b=123: <class 'int'> -> <class 'str'>: TypeError
+basic.b=123: int -> str: TypeError
   No matching converters
-union.a=1.5: <class 'float'> -> int | str: TypeError
+union.a=1.5: float -> int | str: TypeError
   Errors during union member conversion:
-    <class 'int'>: No matching converters
-    <class 'str'>: No matching converters"""
+    int: No matching converters
+    str: No matching converters"""
     )
 
 
@@ -474,9 +472,8 @@ def test_typed_validators():
     assert (
         str(exc_info.value)
         == """\
-Error occurred during validation:
-<class 'test.test_model.TypedValidatorsTest'>
-my_int2=321: <class 'int'> -> <class 'test.test_model.MyInt'>: TypeError
+1 validation error for TypedValidatorsTest
+my_int2=321: int -> MyInt: TypeError
   No matching converters"""
     )
 
@@ -553,9 +550,8 @@ def test_extra_field():
     assert (
         str(exc_info.value)
         == """\
-Errors occurred during validation:
-<class 'test.test_model.ExtraFieldTest'>
-a=123: <class 'str'> -> <class 'int'>: TypeError
+2 validation errors for ExtraFieldTest
+a=123: str -> int: TypeError
   No matching converters
 c: Extra field"""
     )
@@ -566,9 +562,8 @@ c: Extra field"""
     assert (
         str(exc_info.value)
         == """\
-Errors occurred during validation:
-<class 'test.test_model.NestedExtraFieldTest'>
-extra_field_test.a=123: <class 'str'> -> <class 'int'>: TypeError
+2 validation errors for NestedExtraFieldTest
+extra_field_test.a=123: str -> int: TypeError
   No matching converters
 extra_field_test.c: Extra field"""
     )
@@ -583,9 +578,8 @@ def test_missing_field():
     assert (
         str(exc_info.value)
         == """\
-Errors occurred during validation:
-<class 'test.test_model.NestedTest'>
-basic.a=123: <class 'str'> -> <class 'int'>: TypeError
+2 validation errors for NestedTest
+basic.a=123: str -> int: TypeError
   No matching converters
 union: Missing field"""
     )

@@ -171,6 +171,13 @@ class Annotation:
             return False
         return self.equals(other)
 
+    @property
+    def name(self) -> str:
+        """
+        Get name of class, or annotation's `str()` if not a class.
+        """
+        return self.raw.__name__ if isinstance(self.raw, type) else str(self.raw)
+
     def equals(self, other: Annotation, /, *, match_any: bool = False) -> bool:
         if self is other:
             return True

@@ -299,7 +299,7 @@ class BaseConversionEngine[
 
         # no union member converted
         error = "Errors during union member conversion:\n{}".format(
-            "\n".join((f"  {t.raw}: {e}" for t, e in exceptions))
+            "\n".join((f"  {t.name}: {e}" for t, e in exceptions))
         )
         exception = TypeError(error)
         frame.append_error(obj, exception)

@@ -93,9 +93,8 @@ def test_basic():
     assert (
         str(exc_info.value)
         == """\
-Error occurred during validation:
-<class 'test.test_symmetric_converter.MyClass'>
-<root>=123: <class 'int'> -> <class 'test.test_symmetric_converter.MyClass'>: TypeError
+1 validation error for MyClass
+<root>=123: int -> MyClass: TypeError
   No matching converters"""
     )
 
@@ -105,15 +104,14 @@ Error occurred during validation:
     assert (
         str(exc_info.value)
         == """\
-Error occurred during serialization:
-<class 'test.test_symmetric_converter.MyClass'>
-<root>=MyClass(val=321): <class 'test.test_symmetric_converter.MyClass'> -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: TypeError
+1 serialization error for MyClass
+<root>=MyClass(val=321): MyClass -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: TypeError
   Errors during union member conversion:
-    <class 'str'>: No matching converters
-    <class 'int'>: No matching converters
-    <class 'float'>: No matching converters
-    <class 'bool'>: No matching converters
-    <class 'NoneType'>: No matching converters
+    str: No matching converters
+    int: No matching converters
+    float: No matching converters
+    bool: No matching converters
+    NoneType: No matching converters
     list[JsonSerializableType]: No matching converters
     dict[str | int | float | bool, JsonSerializableType]: No matching converters"""
     )
