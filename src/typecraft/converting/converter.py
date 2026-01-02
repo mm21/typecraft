@@ -131,6 +131,11 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
     Can be overridden when recursing into the next frame.
     """
 
+    _seen: set[int]
+    """
+    Object ids for cycle detection.
+    """
+
     __params_cls: type[ParamsT]
     """
     Params class extracted from type arg.
@@ -144,11 +149,6 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
     __path: tuple[str | int, ...]
     """
     Field path at this level in recursion.
-    """
-
-    __seen: set[int]
-    """
-    Object ids for cycle detection.
     """
 
     __errors: list[ConversionErrorDetail]
@@ -179,9 +179,9 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
         self.target_annotation = target_annotation
         self.context = context
         self.params = params or type(self).__params_cls()
+        self._seen = seen or set()
         self.__engine = engine
         self.__path = path or ()
-        self.__seen = seen or set()
         self.__errors = errors if errors is not None else []
 
     def __repr__(self) -> str:
@@ -250,16 +250,16 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
 
         # recurse and add/remove this object for cycle detection
         if check_cycle:
-            if id(obj) in next_frame.__seen:
+            if id(obj) in next_frame._seen:
                 exception = ValueError(
                     f"Already processed object: '{obj}', can't recurse"
                 )
                 next_frame.append_error(obj, exception)
                 return ERROR_SENTINEL
-            next_frame.__seen.add(id(obj))
+            next_frame._seen.add(id(obj))
         next_obj = self.__engine.process(obj, next_frame)
         if check_cycle:
-            next_frame.__seen.remove(id(obj))
+            next_frame._seen.remove(id(obj))
 
         return next_obj
 
@@ -301,7 +301,7 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
             context=context if context is not ... else self.context,
             engine=self.__engine,
             path=path,
-            seen=self.__seen,
+            seen=self._seen,
             errors=self.__errors,
         )
 
