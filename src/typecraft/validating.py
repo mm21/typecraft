@@ -12,7 +12,7 @@ from typing import (
 
 from typecraft.converting.builtin_converters import get_builtin_validator_registry
 
-from .converting.converter import MatchSpec
+from .converting.converter.type import MatchSpec
 from .converting.engine import BaseConversionEngine
 from .converting.utils import (
     convert_to_dict,

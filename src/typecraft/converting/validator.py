@@ -8,12 +8,10 @@ from typing import (
 
 from ..exceptions import ConversionErrorDetail
 from ..inspecting.annotations import Annotation
-from .converter import (
-    BaseConversionFrame,
-    BaseConversionParams,
+from .converter.base import BaseConversionFrame, BaseConversionParams, FuncConverterType
+from .converter.type import (
     BaseTypeConverter,
     BaseTypeConverterRegistry,
-    FuncConverterType,
 )
 from .mixins import FuncConverterMixin, GenericConverterMixin
 

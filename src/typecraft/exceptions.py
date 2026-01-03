@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator
 from .inspecting.annotations import Annotation
 
 if TYPE_CHECKING:
-    from .converting.converter import BaseConversionFrame
+    from .converting.converter.base import BaseConversionFrame
 
 __all__ = [
     "ConversionErrorDetail",

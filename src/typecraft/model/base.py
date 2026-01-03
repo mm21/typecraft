@@ -14,13 +14,14 @@ from typing import (
 )
 
 from ..converting._types import ERROR_SENTINEL
-from ..converting.converter import BaseConversionFrame, MatchSpec
+from ..converting.converter.base import BaseConversionFrame
+from ..converting.converter.symmetric import BaseSymmetricTypeConverter
+from ..converting.converter.type import MatchSpec
 from ..converting.serializer import (
     JSON_SERIALIZABLE_ANNOTATION,
     JsonSerializableType,
     SerializationFrame,
 )
-from ..converting.symmetric_converter import BaseSymmetricConverter
 from ..exceptions import (
     ConversionErrorDetail,
     ExtraFieldError,
@@ -522,7 +523,7 @@ class BaseModel:
         return processed_obj
 
 
-class ModelConverter(BaseSymmetricConverter[Mapping[str, Any], BaseModel]):
+class ModelConverter(BaseSymmetricTypeConverter[Mapping[str, Any], BaseModel]):
     """
     Converts a mapping to/from a model.
     """

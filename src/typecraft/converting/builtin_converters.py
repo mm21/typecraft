@@ -13,13 +13,13 @@ from typecraft.converting.utils import convert_to_list
 
 from ..inspecting.annotations import Annotation
 from ..types import DataclassProtocol, ValueCollectionType
-from .converter import MatchSpec
+from .converter.symmetric import BaseSymmetricTypeConverter
+from .converter.type import MatchSpec
 from .serializer import SerializationFrame, TypeSerializer, TypeSerializerRegistry
-from .symmetric_converter import BaseSymmetricConverter
 from .validator import TypeValidatorRegistry, ValidationFrame
 
 
-class DateConverter(BaseSymmetricConverter[str, date]):
+class DateConverter(BaseSymmetricTypeConverter[str, date]):
     """
     Converter for ISO date strings to/from python date objects.
     """
@@ -33,7 +33,7 @@ class DateConverter(BaseSymmetricConverter[str, date]):
         return obj.isoformat()
 
 
-class DateTimeConverter(BaseSymmetricConverter[str, datetime]):
+class DateTimeConverter(BaseSymmetricTypeConverter[str, datetime]):
     """
     Converter for ISO datetime strings to/from python datetime objects.
     """
@@ -47,7 +47,7 @@ class DateTimeConverter(BaseSymmetricConverter[str, datetime]):
         return obj.isoformat()
 
 
-class TimeConverter(BaseSymmetricConverter[str, time]):
+class TimeConverter(BaseSymmetricTypeConverter[str, time]):
     """
     Converter for ISO time strings to/from python time objects, i.e. `HH:MM:SS` or
     `HH:MM:SS.ffffff`.
@@ -62,7 +62,7 @@ class TimeConverter(BaseSymmetricConverter[str, time]):
         return obj.isoformat()
 
 
-class DataclassConverter(BaseSymmetricConverter[dict[str, Any], DataclassProtocol]):
+class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassProtocol]):
     """
     Converter for dictionaries to/from dataclass instances.
 
@@ -178,7 +178,7 @@ def serialize_to_list(obj: ValueCollectionType, frame: SerializationFrame) -> li
         return obj_list
 
 
-BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricConverter], ...] = (
+BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricTypeConverter], ...] = (
     TimeConverter,
     DateTimeConverter,
     DateConverter,
@@ -193,7 +193,7 @@ Extra serializers to use for json serialization.
 """
 
 
-def get_model_converter() -> type[BaseSymmetricConverter]:
+def get_model_converter() -> type[BaseSymmetricTypeConverter]:
     """
     Get converter for `BaseModel`; must be lazy-loaded to avoid circular dependency.
     """
@@ -202,7 +202,7 @@ def get_model_converter() -> type[BaseSymmetricConverter]:
     return ModelConverter
 
 
-def get_builtin_converters() -> tuple[type[BaseSymmetricConverter], ...]:
+def get_builtin_converters() -> tuple[type[BaseSymmetricTypeConverter], ...]:
     return (*BUILTIN_SYMMETRIC_CONVERTERS, get_model_converter())
 
 

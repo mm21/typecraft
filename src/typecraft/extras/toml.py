@@ -39,7 +39,7 @@ from tomlkit.items import (
     Trivia,
 )
 
-from ..converting.converter import MatchSpec
+from ..converting.converter.type import MatchSpec
 from ..converting.validator import ValidationParams
 from ..inspecting.generics import extract_arg
 from ..model import BaseModel, FieldInfo, ModelConfig

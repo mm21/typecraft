@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal, Self, cast, overload
 
-from ..converting.converter import BaseConversionFrame, BaseTypeConverter
+from ..converting.converter.base import BaseConversionFrame
+from ..converting.converter.type import BaseTypeConverter
 from ..converting.serializer import (
     BaseTypeSerializer,
     JsonSerializableType,

@@ -16,9 +16,8 @@ from ._types import (
     ERROR_SENTINEL,
     ErrorSentinel,
 )
-from .converter import (
-    BaseConversionFrame,
-    BaseConversionParams,
+from .converter.base import BaseConversionFrame, BaseConversionParams
+from .converter.type import (
     BaseTypeConverter,
     BaseTypeConverterRegistry,
 )

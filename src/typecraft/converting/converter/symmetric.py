@@ -1,29 +1,29 @@
 """
-Mechanism to wrap symmetric validator and serializer.
+Interface to wrap symmetric type-based validator and serializer in a class.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from ..inspecting.annotations import Annotation
-from ..inspecting.generics import extract_arg
-from .converter import MatchSpec
-from .serializer import (
+from ...inspecting.annotations import Annotation
+from ...inspecting.generics import extract_arg
+from ..serializer import (
     SerializationFrame,
     TypeSerializer,
 )
-from .validator import (
+from ..validator import (
     TypeValidator,
     ValidationFrame,
 )
+from .type import MatchSpec
 
 __all__ = [
-    "BaseSymmetricConverter",
+    "BaseSymmetricTypeConverter",
 ]
 
 
-class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
+class BaseSymmetricTypeConverter[SerializedT, ValidatedT](ABC):
     """
     Base class to encapsulate bidirectional type conversion.
 
@@ -120,8 +120,8 @@ class BaseSymmetricConverter[SerializedT, ValidatedT](ABC):
 
     @classmethod
     def __get_serialized_annotation(cls) -> Annotation:
-        return Annotation(extract_arg(cls, BaseSymmetricConverter, "SerializedT"))
+        return Annotation(extract_arg(cls, BaseSymmetricTypeConverter, "SerializedT"))
 
     @classmethod
     def __get_validated_annotation(cls) -> Annotation:
-        return Annotation(extract_arg(cls, BaseSymmetricConverter, "ValidatedT"))
+        return Annotation(extract_arg(cls, BaseSymmetricTypeConverter, "ValidatedT"))

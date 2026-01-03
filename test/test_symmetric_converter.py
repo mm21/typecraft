@@ -5,7 +5,7 @@ Test `BaseSymmetricConverter`.
 from pytest import raises
 
 from typecraft.adapter import Adapter
-from typecraft.converting.symmetric_converter import BaseSymmetricConverter
+from typecraft.converting.converter.symmetric import BaseSymmetricTypeConverter
 from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import SerializationFrame, TypeSerializerRegistry, serialize
 from typecraft.validating import (
@@ -29,7 +29,7 @@ class MyClass:
         return f"MyClass(val={self.val})"
 
 
-class BasicConverter(BaseSymmetricConverter[int, MyClass]):
+class BasicConverter(BaseSymmetricTypeConverter[int, MyClass]):
     """
     Adapter for values stored as int but serialized as str.
     """
@@ -43,7 +43,7 @@ class BasicConverter(BaseSymmetricConverter[int, MyClass]):
         return obj.val
 
 
-class RangeConverter(BaseSymmetricConverter[list[int], range]):
+class RangeConverter(BaseSymmetricTypeConverter[list[int], range]):
     """
     Adapter for range objects serialized as (start, stop, step) list or any other
     overloads of `range()`.

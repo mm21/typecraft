@@ -6,7 +6,7 @@ from typing import Any
 
 from pytest import raises
 
-from typecraft.converting.converter import MatchSpec
+from typecraft.converting.converter.type import MatchSpec
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
     BaseGenericTypeValidator,
@@ -248,37 +248,76 @@ def test_registry():
 
     def str_to_int(s: str) -> int:
         """
-        Convert string to integer, not encompassing bool.
+        Convert str to int (not encompassing bool).
         """
         return int(s)
 
     def str_to_int_subtype(s: str, frame: ValidationFrame) -> int:
         """
-        Convert string to integer, also encompassing bool.
+        Convert str to int (encompassing bool).
         """
         return frame.target_annotation.concrete_type(s)
 
+    def int_to_str(i: int) -> str:
+        """
+        Convert int (not encompassing bool) to str.
+        """
+        assert isinstance(i, int)
+        assert not isinstance(i, bool)
+        return str(i)
+
+    def int_subtype_to_str(i: int) -> str:
+        """
+        Convert int (encompassing bool) to str.
+        """
+        assert isinstance(i, int)
+        assert isinstance(i, bool)
+        return str(i)
+
+    str_to_int_validator = TypeValidator.from_func(str_to_int)
+    str_to_int_subtype_validator = TypeValidator.from_func(
+        str_to_int_subtype, match_spec=MatchSpec(assignable_from_target=True)
+    )
+    int_to_str_validator = TypeValidator.from_func(
+        int_to_str, match_spec=MatchSpec(assignable_from_source=False)
+    )
+    int_subtype_to_str_validator = TypeValidator.from_func(int_subtype_to_str)
+
     # register converters (will be checked in reverse order)
     registry = TypeValidatorRegistry()
-    registry.register(
-        TypeValidator.from_func(
-            str_to_int_subtype, match_spec=MatchSpec(assignable_from_target=True)
-        )
-    )
-    registry.register(TypeValidator.from_func(str_to_int))
+    registry.register(str_to_int_subtype_validator)
+    registry.register(str_to_int_validator)
+    registry.register(int_subtype_to_str_validator)
+    registry.register(int_to_str_validator)
 
     # use the registry
     obj = "42"
 
+    # str to int (not encompassing bool)
     validator = registry.find(obj, Annotation(str), Annotation(int))
     assert validator
-    assert validator.match_spec.assignable_from_target is False
+    assert validator is str_to_int_validator
     assert validator.convert(obj, _create_frame(str, int)) == 42
 
+    # str to int (encompassing bool)
     validator = registry.find(obj, Annotation(str), Annotation(bool))
     assert validator
-    assert validator.match_spec.assignable_from_target is True
+    assert validator is str_to_int_subtype_validator
     assert validator.convert(obj, _create_frame(str, bool)) is True
+
+    # int (not encompassing bool) to str
+    obj = 42
+    validator = registry.find(obj, Annotation(int), Annotation(str))
+    assert validator
+    assert validator is int_to_str_validator
+    assert validator.convert(obj, _create_frame(str, bool)) == "42"
+
+    # int (encompassing bool) to str
+    obj = True
+    validator = registry.find(obj, Annotation(bool), Annotation(str))
+    assert validator
+    assert validator is int_subtype_to_str_validator
+    assert validator.convert(obj, _create_frame(str, bool)) == "True"
 
 
 def _create_frame(

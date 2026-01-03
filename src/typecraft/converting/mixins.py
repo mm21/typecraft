@@ -5,19 +5,13 @@ from typing import Any, Iterable, Self, TypeVar, cast, overload
 
 from ..inspecting.annotations import Annotation
 from ..inspecting.generics import extract_arg_map
-from .converter import (
-    BaseConversionFrame,
-    BaseTypeConverter,
-    ConverterInterface,
-    FuncConverterType,
-    FuncConverterWrapper,
-    MatchSpec,
-)
+from .converter.base import BaseConversionFrame, FuncConverterType, FuncConverterWrapper
+from .converter.type import BaseTypeConverter, MatchSpec, TypeConverterInterface
 from .utils import convert_to_dict, convert_to_list, convert_to_set, convert_to_tuple
 
 
 class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
-    ConverterInterface[SourceT, TargetT, FrameT]
+    TypeConverterInterface[SourceT, TargetT, FrameT]
 ):
     """
     Mixin class for function-based converters.
@@ -163,7 +157,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
 
 
 class GenericConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
-    ConverterInterface[SourceT, TargetT, FrameT]
+    TypeConverterInterface[SourceT, TargetT, FrameT]
 ):
     """
     Mixin class for extracting source/destination types from type parameters.

@@ -13,7 +13,7 @@ from ..inspecting.annotations import ANY, Annotation, extract_tuple_args
 from ..inspecting.generics import extract_args
 from ..types import COLLECTION_TYPES
 from ._types import ERROR_SENTINEL
-from .converter import BaseConversionFrame
+from .converter.base import BaseConversionFrame
 
 
 def convert_to_list(
@@ -281,7 +281,7 @@ def _extract_value_item_anns(
     if issubclass(ann.concrete_type, tuple):
         source_args = extract_tuple_args(ann)
         if isinstance(source_args, tuple) and len(obj) != len(source_args):
-            # TODO: append to errors in frame and return ERROR_SENTINEL
+            # TODO: append to errors in frame and return ERROR_SENTINEL, add test
             raise ValueError(
                 f"Tuple length mismatch: expected {len(source_args)} from annotation {ann}, got {len(obj)}: {obj}"
             )
