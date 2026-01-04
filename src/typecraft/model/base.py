@@ -528,7 +528,7 @@ class ModelConverter(BaseSymmetricTypeConverter[Mapping[str, Any], BaseModel]):
     Converts a mapping to/from a model.
     """
 
-    validation_match_spec = MatchSpec(assignable_from_target=True)
+    validation_match_spec = MatchSpec(narrowable_target=True)
 
     @classmethod
     def validate(cls, obj: Mapping[str, Any], frame: ValidationFrame) -> BaseModel:

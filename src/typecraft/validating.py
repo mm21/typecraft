@@ -48,8 +48,8 @@ __all__ = [
 NON_STRICT_REGISTRY = TypeValidatorRegistry(
     TypeValidator(str | bytes | bytearray, int),
     TypeValidator(str | int, float),
-    # set assignable_to_target=False so it doesn't match conversion to int
-    TypeValidator(Any, bool, match_spec=MatchSpec(assignable_to_target=False)),
+    # set widenable_target=False so it doesn't match conversion to int
+    TypeValidator(Any, bool, match_spec=MatchSpec(widenable_target=False)),
     TypeValidator(Any, str),
     TypeValidator(ValueCollectionType, list, func=convert_to_list),
     TypeValidator(ValueCollectionType, tuple, func=convert_to_tuple),

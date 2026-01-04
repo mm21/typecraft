@@ -69,7 +69,7 @@ class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassPro
     Recursively validates and serializes all fields based on their type annotations.
     """
 
-    validation_match_spec = MatchSpec(assignable_from_target=True)
+    validation_match_spec = MatchSpec(narrowable_target=True)
 
     @classmethod
     def validate(

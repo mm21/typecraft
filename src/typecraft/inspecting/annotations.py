@@ -27,7 +27,7 @@ from .utils import robust_issubclass
 __all__ = [
     "ANY",
     "Annotation",
-    "is_assignable",
+    "is_narrower",
     "is_instance",
     "is_union",
     "unwrap_alias",
@@ -178,27 +178,6 @@ class Annotation:
         """
         return self.raw.__name__ if isinstance(self.raw, type) else str(self.raw)
 
-    def equals(self, other: Annotation, /, *, match_any: bool = False) -> bool:
-        if self is other:
-            return True
-        if match_any and (self.raw is Any or other.raw is Any):
-            return True
-        if self.concrete_type is not other.concrete_type:
-            return False
-
-        my_args = list(self.arg_annotations)
-        other_args = list(other.arg_annotations)
-
-        if len(my_args) < len(other_args):
-            my_args += [ANY] * (len(other_args) - len(my_args))
-        elif len(other_args) < len(my_args):
-            my_args += [ANY] * (len(my_args) - len(other_args))
-
-        return all(
-            my_arg.equals(other_arg, match_any=match_any)
-            for my_arg, other_arg in zip(my_args, other_args)
-        )
-
     @property
     def is_union(self) -> bool:
         return self.concrete_type is UnionType
@@ -211,14 +190,15 @@ class Annotation:
     def is_callable(self) -> bool:
         return self.origin is Callable
 
-    def is_assignable(self, other: Annotation | Any, /) -> bool:
+    def is_narrower(self, other: Annotation | Any, /) -> bool:
         """
-        Check whether a value of this annotation can be assigned to a value of `other`.
+        Check whether this annotation is narrower (more specific) than `other`.
 
-        This is a relaxed compatibility check that:
-        - Treats generic types as covariant (read-only context)
-        - Allows `int` to match `int | str`
-        - Allows `list[int]` to match `list[int | str]`
+        Examples:
+        - `int` is narrower than `int | str`
+        - `Dog` is narrower than `Animal`
+        - `list[int]` is narrower than `list[int | str]`
+        - `MyClass[bool] is narrower than `MyClass[int]`
         """
         other_ann = Annotation._normalize(other)
 
@@ -232,11 +212,11 @@ class Annotation:
 
         # handle union for self
         if self.is_union:
-            return all(a.is_assignable(other_ann) for a in self.arg_annotations)
+            return all(a.is_narrower(other_ann) for a in self.arg_annotations)
 
         # handle union for other
         if other_ann.is_union:
-            return any(self.is_assignable(a) for a in other_ann.arg_annotations)
+            return any(self.is_narrower(a) for a in other_ann.arg_annotations)
 
         # handle literal for self
         if self.is_literal:
@@ -250,8 +230,8 @@ class Annotation:
         if self.is_callable or other_ann.is_callable:
             if not self.is_callable and other_ann.is_callable:
                 # callable type (e.g., int, str) being compared to Callable
-                return self._is_assignable_callable_type(other_ann)
-            return self._is_assignable_callable(other_ann)
+                return self._is_narrower_callable_type(other_ann)
+            return self._is_narrower_callable(other_ann)
 
         # check concrete type relationship
         # - for ABCs/protocols, issubclass may succeed even if not in MRO
@@ -276,7 +256,7 @@ class Annotation:
 
         # recurse into args
         for my_arg, other_arg in zip(my_args, other_args):
-            if not my_arg.is_assignable(other_arg):
+            if not my_arg.is_narrower(other_arg):
                 return False
 
         return True
@@ -289,8 +269,10 @@ class Annotation:
         Examples:
 
         - `Annotation(Any).check_instance(1)` returns `True`
+        - `Annotation(int | str).check_instance(1) returns `True`
         - `Annotation(list[int]).check_instance([1, 2, 3])` returns `True`
         - `Annotation(list[int]).check_instance([1, 2, "3"])` returns `False`
+        - `Annotation(Literal["a", "b", "c"]).check_instance("a") returns `True`
         """
         if self.is_literal:
             return any(obj == value for value in self.args)
@@ -312,13 +294,40 @@ class Annotation:
         # concrete type matches and is not a collection (or we're not recursing)
         return True
 
+    def equals(self, other: Annotation, /, *, match_any: bool = False) -> bool:
+        """
+        Check whether this annotation is equivalent to `other`.
+
+        Comparison against `Any`
+        returns `True` if `match_any=True`.
+        """
+        if self is other:
+            return True
+        if match_any and (self.raw is Any or other.raw is Any):
+            return True
+        if self.concrete_type is not other.concrete_type:
+            return False
+
+        my_args = list(self.arg_annotations)
+        other_args = list(other.arg_annotations)
+
+        if len(my_args) < len(other_args):
+            my_args += [ANY] * (len(other_args) - len(my_args))
+        elif len(other_args) < len(my_args):
+            my_args += [ANY] * (len(my_args) - len(other_args))
+
+        return all(
+            my_arg.equals(other_arg, match_any=match_any)
+            for my_arg, other_arg in zip(my_args, other_args)
+        )
+
     @classmethod
     def _normalize(cls, obj: Annotation | Any) -> Annotation:
         return obj if isinstance(obj, Annotation) else Annotation(obj)
 
-    def _is_assignable_callable(self, other: Annotation) -> bool:
+    def _is_narrower_callable(self, other: Annotation) -> bool:
         """
-        Check if this callable is a subclass of another callable.
+        Check if this callable is narrower than another callable.
 
         Callables are contravariant in parameters and covariant in return type.
         """
@@ -329,7 +338,7 @@ class Annotation:
         # handle ... parameters (any parameters acceptable)
         if other.param_annotations is None:
             # other accepts any params, check return type only
-            return self.return_annotation.is_assignable(other.return_annotation)
+            return self.return_annotation.is_narrower(other.return_annotation)
 
         if self.param_annotations is None:
             # we accept any params, but other doesn't - not a subclass
@@ -343,14 +352,14 @@ class Annotation:
         for my_param, other_param in zip(
             self.param_annotations, other.param_annotations
         ):
-            if not other_param.is_assignable(my_param):
+            if not other_param.is_narrower(my_param):
                 return False
 
-        return self.return_annotation.is_assignable(other.return_annotation)
+        return self.return_annotation.is_narrower(other.return_annotation)
 
-    def _is_assignable_callable_type(self, other: Annotation) -> bool:
+    def _is_narrower_callable_type(self, other: Annotation) -> bool:
         """
-        Check if this type annotation (e.g., type[int], type[str]) is a subclass of a
+        Check if this type annotation (e.g., type[int], type[str]) is narrower than a
         Callable annotation. Treats self as Callable[..., X] where X is the type
         parameter (accepts any parameters, returns instances of X).
 
@@ -374,7 +383,7 @@ class Annotation:
 
         # with ... parameters we accept any parameters, so contravariance always
         # satisfied
-        return return_ann.is_assignable(other.return_annotation)
+        return return_ann.is_narrower(other.return_annotation)
 
     def _check_callable(self, obj: Any) -> bool:
         """
@@ -472,33 +481,28 @@ class Annotation:
         return tuple(Annotation(a) for a in my_args)
 
 
-def is_assignable(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
+def is_narrower(annotation: Annotation | Any, other: Annotation | Any, /) -> bool:
     """
-    Check whether a value of `annotation` can be assigned to a value of `other`.
+    Check whether `annotation` is narrower (more specific) than `other`.
 
-    This is a relaxed compatibility check that:
-    - Treats generic types as covariant (read-only context)
-    - Allows `int` to match `int | str`
-    - Allows `list[int]` to match `list[int | str]`
-
-    Accommodates generic types and fully resolves type aliases, unions, and
-    `Annotated`.
+    Examples:
+    - `int` is narrower than `int | str`
+    - `Dog` is narrower than `Animal`
+    - `list[int]` is narrower than `list[int | str]`
+    - `MyClass[bool] is narrower than `MyClass[int]`
     """
-    return Annotation._normalize(annotation).is_assignable(other)
+    return Annotation._normalize(annotation).is_narrower(other)
 
 
 def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:
     """
-    Check whether an object is an "instance" of an annotation.
+    Check whether an object is an "instance" of an annotation -- whether its type
+    matches or is narrower than the annotation.
 
-    Accommodates generic types and fully resolves type aliases, unions, and
-    `Annotated`.
-
-    Example:
-
-    ```python
-    assert is_instance([1, 2, "3"], list[int | str])
-    ```
+    Examples:
+    - `is_instance(1, int | str)` returns `True`
+    - `is_instance([1, 2, "3"], list[int | str])` returns `True`
+    - `is_instance([1, 2, "3"], list[int])` returns `False`
     """
     return Annotation._normalize(annotation).check_instance(obj)
 

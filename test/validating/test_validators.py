@@ -37,9 +37,9 @@ def test_match_any():
     assert validator.check_match(ANY, Annotation(str))
 
 
-def test_match_assignable():
+def test_match_widenable():
     """
-    Test converter with and without assignable_to_target=True.
+    Test converter with and without widenable_target=True.
     """
 
     # convert to int, but not bool
@@ -48,9 +48,7 @@ def test_match_assignable():
     assert not validator.check_match(Annotation(str), Annotation(bool))
 
     # convert to bool, but not int
-    validator = TypeValidator(
-        str, bool, match_spec=MatchSpec(assignable_to_target=False)
-    )
+    validator = TypeValidator(str, bool, match_spec=MatchSpec(widenable_target=False))
     assert validator.check_match(Annotation(str), Annotation(bool))
     assert not validator.check_match(Annotation(str), Annotation(int))
 
@@ -59,7 +57,7 @@ def test_match_assignable():
         str,
         int,
         func=lambda obj, frame: frame.target_annotation.concrete_type(obj),
-        match_spec=MatchSpec(assignable_from_target=True),
+        match_spec=MatchSpec(narrowable_target=True),
     )
     assert validator.check_match(Annotation(str), Annotation(int))
     assert validator.check_match(Annotation(str), Annotation(bool))
@@ -85,7 +83,7 @@ def test_match_custom():
 
     # can convert to custom str, but not str
     validator = TypeValidator(
-        int, CustomStr, match_spec=MatchSpec(assignable_to_target=False)
+        int, CustomStr, match_spec=MatchSpec(widenable_target=False)
     )
     assert validator.check_match(Annotation(int), Annotation(CustomStr))
     assert not validator.check_match(Annotation(int), Annotation(str))
@@ -134,7 +132,7 @@ def test_match_union_target():
             return float(obj)
 
     validator = TypeValidator.from_func(
-        convert_to_numeric_2, match_spec=MatchSpec(assignable_from_target=True)
+        convert_to_numeric_2, match_spec=MatchSpec(narrowable_target=True)
     )
     assert validator.check_match(Annotation(str), Annotation(int))
     assert validator.check_match(Annotation(str), Annotation(float))
@@ -246,48 +244,48 @@ def test_registry():
     Test converter registry.
     """
 
-    def str_to_int(s: str) -> int:
+    def narrowable_str_to_int(s: str) -> int:
         """
-        Convert str to int (not encompassing bool).
+        Convert str (or subclass) to int (not subclass).
         """
         return int(s)
 
-    def str_to_int_subtype(s: str, frame: ValidationFrame) -> int:
+    def narrowable_str_to_narrowable_int(s: str, frame: ValidationFrame) -> int:
         """
-        Convert str to int (encompassing bool).
+        Convert str (or subclass) to int (or subclass).
         """
         return frame.target_annotation.concrete_type(s)
 
     def int_to_str(i: int) -> str:
         """
-        Convert int (not encompassing bool) to str.
+        Convert int (not subclass) to str (not subclass).
         """
         assert isinstance(i, int)
         assert not isinstance(i, bool)
         return str(i)
 
-    def int_subtype_to_str(i: int) -> str:
+    def narrowable_int_to_str(i: int) -> str:
         """
-        Convert int (encompassing bool) to str.
+        Convert int (or subclass) to str (not subclass).
         """
         assert isinstance(i, int)
         assert isinstance(i, bool)
         return str(i)
 
-    str_to_int_validator = TypeValidator.from_func(str_to_int)
-    str_to_int_subtype_validator = TypeValidator.from_func(
-        str_to_int_subtype, match_spec=MatchSpec(assignable_from_target=True)
+    narrowable_str_to_int_validator = TypeValidator.from_func(narrowable_str_to_int)
+    narrowable_str_to_narrowable_int_validator = TypeValidator.from_func(
+        narrowable_str_to_narrowable_int, match_spec=MatchSpec(narrowable_target=True)
     )
     int_to_str_validator = TypeValidator.from_func(
-        int_to_str, match_spec=MatchSpec(assignable_from_source=False)
+        int_to_str, match_spec=MatchSpec(narrowable_source=False)
     )
-    int_subtype_to_str_validator = TypeValidator.from_func(int_subtype_to_str)
+    narrowable_int_to_str_validator = TypeValidator.from_func(narrowable_int_to_str)
 
     # register converters (will be checked in reverse order)
     registry = TypeValidatorRegistry()
-    registry.register(str_to_int_subtype_validator)
-    registry.register(str_to_int_validator)
-    registry.register(int_subtype_to_str_validator)
+    registry.register(narrowable_str_to_narrowable_int_validator)
+    registry.register(narrowable_str_to_int_validator)
+    registry.register(narrowable_int_to_str_validator)
     registry.register(int_to_str_validator)
 
     # use the registry
@@ -296,13 +294,13 @@ def test_registry():
     # str to int (not encompassing bool)
     validator = registry.find(obj, Annotation(str), Annotation(int))
     assert validator
-    assert validator is str_to_int_validator
+    assert validator is narrowable_str_to_int_validator
     assert validator.convert(obj, _create_frame(str, int)) == 42
 
     # str to int (encompassing bool)
     validator = registry.find(obj, Annotation(str), Annotation(bool))
     assert validator
-    assert validator is str_to_int_subtype_validator
+    assert validator is narrowable_str_to_narrowable_int_validator
     assert validator.convert(obj, _create_frame(str, bool)) is True
 
     # int (not encompassing bool) to str
@@ -316,8 +314,26 @@ def test_registry():
     obj = True
     validator = registry.find(obj, Annotation(bool), Annotation(str))
     assert validator
-    assert validator is int_subtype_to_str_validator
+    assert validator is narrowable_int_to_str_validator
     assert validator.convert(obj, _create_frame(str, bool)) == "True"
+
+    # verify repr strings
+    assert (
+        str(narrowable_str_to_int_validator)
+        == "TypeValidator(str[narrowable] -> int[!narrowable][widenable])"
+    )
+    assert (
+        str(narrowable_str_to_narrowable_int_validator)
+        == "TypeValidator(str[narrowable] -> int[narrowable][widenable])"
+    )
+    assert (
+        str(int_to_str_validator)
+        == "TypeValidator(int[!narrowable] -> str[!narrowable][widenable])"
+    )
+    assert (
+        str(narrowable_int_to_str_validator)
+        == "TypeValidator(int[narrowable] -> str[!narrowable][widenable])"
+    )
 
 
 def _create_frame(

@@ -80,9 +80,9 @@ def test_invalid():
         == """\
 2 validation errors for list[int]
 [0]=1.5: str -> int: ValueError
-  TypeValidator(str | bytes | bytearray -> int) failed: invalid literal for int() with base 10: '1.5'
+  TypeValidator(str | bytes | bytearray[narrowable] -> int[!narrowable][widenable]) failed: invalid literal for int() with base 10: '1.5'
 [1]=2.5: str -> int: ValueError
-  TypeValidator(str | bytes | bytearray -> int) failed: invalid literal for int() with base 10: '2.5'"""
+  TypeValidator(str | bytes | bytearray[narrowable] -> int[!narrowable][widenable]) failed: invalid literal for int() with base 10: '2.5'"""
     )
 
     with raises(ValidationError) as exc_info:

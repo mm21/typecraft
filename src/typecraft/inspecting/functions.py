@@ -176,7 +176,7 @@ class SignatureInfo:
                 # annotation filter is not Any, but this parameter is Any
                 # - asking for a specific type, which Any would normally match
                 return False
-            return check_ann.is_assignable(filter_ann)
+            return check_ann.is_narrower(filter_ann)
 
         return tuple(
             p

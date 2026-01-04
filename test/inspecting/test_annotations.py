@@ -49,91 +49,91 @@ def test_union():
     assert a.is_union
 
 
-def test_is_assignable():
+def test_is_narrower():
     """
-    Test `Annotation.is_assignable()` checks.
+    Test `Annotation.is_narrower()` checks.
     """
 
     # int is a subtype of itself
     a1 = Annotation(int)
     a2 = Annotation(int)
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # list[int] is not a subtype of list[float]
     a1 = Annotation(list[int])
     a2 = Annotation(list[float])
-    assert not a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert not a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     # nested generics with Any maintain bidirectionality
     a1 = Annotation(list[list[bool]])
     a2 = Annotation(list[list[int]])
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     a1 = Annotation(list[list[bool]])
     a2 = Annotation(list[list[Any]])
-    assert a1.is_assignable(a2)  # top type
-    assert a2.is_assignable(a1)  # bottom type
+    assert a1.is_narrower(a2)  # top type
+    assert a2.is_narrower(a1)  # bottom type
 
     a1 = Annotation(list[list[Any]])
     a2 = Annotation(list[Any])
-    assert a1.is_assignable(a2)  # both work due to Any
-    assert a2.is_assignable(a1)  # bidirectional
+    assert a1.is_narrower(a2)  # both work due to Any
+    assert a2.is_narrower(a1)  # bidirectional
 
     # list is assumed to be list[Any]
     a1 = Annotation(list[int])
     a2 = Annotation(list)
-    assert a1.is_assignable(a2)
-    assert a2.is_assignable(a1)  # bidirectional now
+    assert a1.is_narrower(a2)
+    assert a2.is_narrower(a1)  # bidirectional now
 
     a1 = Annotation(list[Any])
     a2 = Annotation(list)
-    assert a1.is_assignable(a2)
-    assert a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert a2.is_narrower(a1)
 
     a1 = Annotation(int)
     a2 = Annotation(int | str)
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     a1 = Annotation(int | str)
     a2 = Annotation(int | str | float)
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     a1 = Annotation(list[int | str])
     a2 = Annotation(list)
-    assert a1.is_assignable(a2)
-    assert a2.is_assignable(a1)  # bidirectional
+    assert a1.is_narrower(a2)
+    assert a2.is_narrower(a1)  # bidirectional
 
     a1 = Annotation(int | str)
     a2 = Annotation(Any)
-    assert a1.is_assignable(a2)  # top type
-    assert a2.is_assignable(a1)  # bottom type
+    assert a1.is_narrower(a2)  # top type
+    assert a2.is_narrower(a1)  # bottom type
 
     # literals with Any
     a1 = Annotation(Literal["a"])
     a2 = Annotation(Literal["a", "b"])
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     a2 = Annotation(str)
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     a3 = Annotation(Literal["a", "b"] | int)
     a4 = Annotation(int)
-    assert a1.is_assignable(a3)
-    assert a4.is_assignable(a3)
-    assert not a3.is_assignable(a1)
-    assert not a3.is_assignable(a4)
+    assert a1.is_narrower(a3)
+    assert a4.is_narrower(a3)
+    assert not a3.is_narrower(a1)
+    assert not a3.is_narrower(a4)
 
     # literals with Any are bidirectional
     a1 = Annotation(Literal["a", "b"])
     a2 = Annotation(Any)
-    assert a1.is_assignable(a2)  # top type
-    assert a2.is_assignable(a1)  # bottom type
+    assert a1.is_narrower(a2)  # top type
+    assert a2.is_narrower(a1)  # bottom type
 
 
 def test_check_instance():
@@ -248,13 +248,13 @@ def test_generic_subclass():
         pass
 
     a = Annotation(IntList)
-    assert a.is_assignable(list[int])
+    assert a.is_narrower(list[int])
     assert a.check_instance(IntList([1]))
     assert not a.check_instance(IntList(["a"]))  # type: ignore
     assert not a.check_instance([1])
 
     a = Annotation(IntStrDict)
-    assert a.is_assignable(dict[int, str])
+    assert a.is_narrower(dict[int, str])
     assert a.check_instance(IntStrDict({1: "a"}))
     assert not a.check_instance(IntStrDict({1: 1}))  # type: ignore
     assert not a.check_instance({1: "a"})
@@ -284,60 +284,60 @@ def test_any_vs_object():
     `object` is a concrete class - only actual object subclasses are subtypes of object.
     """
     # Any as TOP type - everything is a subtype of Any
-    assert Annotation(int).is_assignable(Any)
-    assert Annotation(str).is_assignable(Any)
-    assert Annotation(list).is_assignable(Any)
-    assert Annotation(list[int]).is_assignable(Any)
-    assert Annotation(dict[str, Any]).is_assignable(Any)
-    assert Annotation(Callable[[int], str]).is_assignable(Any)
+    assert Annotation(int).is_narrower(Any)
+    assert Annotation(str).is_narrower(Any)
+    assert Annotation(list).is_narrower(Any)
+    assert Annotation(list[int]).is_narrower(Any)
+    assert Annotation(dict[str, Any]).is_narrower(Any)
+    assert Annotation(Callable[[int], str]).is_narrower(Any)
 
     # Any as BOTTOM type - Any is a subtype of everything
-    assert Annotation(Any).is_assignable(int)
-    assert Annotation(Any).is_assignable(str)
-    assert Annotation(Any).is_assignable(object)
-    assert Annotation(Any).is_assignable(list)
-    assert Annotation(Any).is_assignable(list[int])
-    assert Annotation(Any).is_assignable(Callable[[str], bool])
+    assert Annotation(Any).is_narrower(int)
+    assert Annotation(Any).is_narrower(str)
+    assert Annotation(Any).is_narrower(object)
+    assert Annotation(Any).is_narrower(list)
+    assert Annotation(Any).is_narrower(list[int])
+    assert Annotation(Any).is_narrower(Callable[[str], bool])
 
     # Any is both a subtype of itself (top meets bottom)
-    assert Annotation(Any).is_assignable(Any)
+    assert Annotation(Any).is_narrower(Any)
 
     # object is a concrete type
-    assert Annotation(int).is_assignable(object)
-    assert Annotation(str).is_assignable(object)
-    assert Annotation(list).is_assignable(object)
+    assert Annotation(int).is_narrower(object)
+    assert Annotation(str).is_narrower(object)
+    assert Annotation(list).is_narrower(object)
     # Any is also a subtype of object (bottom type property)
-    assert Annotation(Any).is_assignable(object)
+    assert Annotation(Any).is_narrower(object)
     # object is a subtype of Any (top type property)
-    assert Annotation(object).is_assignable(Any)
+    assert Annotation(object).is_narrower(Any)
 
     # in generic type parameters, Any maintains its dual nature
-    assert Annotation(list[int]).is_assignable(list[Any])  # top type
-    assert Annotation(list[Any]).is_assignable(list[int])  # bottom type
-    assert Annotation(dict[str, int]).is_assignable(dict[str, Any])  # top type
-    assert Annotation(dict[Any, Any]).is_assignable(dict[str, int])  # bottom type
+    assert Annotation(list[int]).is_narrower(list[Any])  # top type
+    assert Annotation(list[Any]).is_narrower(list[int])  # bottom type
+    assert Annotation(dict[str, int]).is_narrower(dict[str, Any])  # top type
+    assert Annotation(dict[Any, Any]).is_narrower(dict[str, int])  # bottom type
 
     # list[object] is different from list[Any]
-    assert Annotation(list[int]).is_assignable(list[object])  # normal covariance
-    assert not Annotation(list[object]).is_assignable(list[int])
+    assert Annotation(list[int]).is_narrower(list[object])  # normal covariance
+    assert not Annotation(list[object]).is_narrower(list[int])
 
     # with callables, Any in parameters and return types:
     # Any in return (bottom type): can return anything
-    assert Annotation(Callable[[int], Any]).is_assignable(Callable[[int], str])
+    assert Annotation(Callable[[int], Any]).is_narrower(Callable[[int], str])
     # Any in parameters (bottom type meets contravariance)
-    assert Annotation(Callable[[Any], str]).is_assignable(Callable[[int], str])
-    assert Annotation(Callable[[int], str]).is_assignable(Callable[[Any], Any])
-    assert Annotation(Callable[[Any], Any]).is_assignable(Callable[[int], str])
+    assert Annotation(Callable[[Any], str]).is_narrower(Callable[[int], str])
+    assert Annotation(Callable[[int], str]).is_narrower(Callable[[Any], Any])
+    assert Annotation(Callable[[Any], Any]).is_narrower(Callable[[int], str])
 
     # nested generics
-    assert Annotation(list[list[int]]).is_assignable(list[list[Any]])
-    assert Annotation(list[list[Any]]).is_assignable(list[list[int]])
-    assert Annotation(list[list[int]]).is_assignable(list[Any])
-    assert Annotation(list[Any]).is_assignable(list[list[int]])
+    assert Annotation(list[list[int]]).is_narrower(list[list[Any]])
+    assert Annotation(list[list[Any]]).is_narrower(list[list[int]])
+    assert Annotation(list[list[int]]).is_narrower(list[Any])
+    assert Annotation(list[Any]).is_narrower(list[list[int]])
 
     # unions with Any
-    assert Annotation(int | str).is_assignable(Any)
-    assert Annotation(Any).is_assignable(int | str)
+    assert Annotation(int | str).is_narrower(Any)
+    assert Annotation(Any).is_narrower(int | str)
 
 
 def test_callable():
@@ -371,9 +371,9 @@ def test_callable():
     assert a.return_annotation.raw is str
 
 
-def test_callable_is_assignable():
+def test_callable_is_narrower():
     """
-    Test is_assignable for callables.
+    Test is_narrower() for callables.
 
     Callables are contravariant in parameters and covariant in return type. With Any as
     both top and bottom type, callable relationships become bidirectional with Any.
@@ -381,78 +381,78 @@ def test_callable_is_assignable():
     # same signature
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[int], str])
-    assert a1.is_assignable(a2)
-    assert a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert a2.is_narrower(a1)
 
     # covariant return type (bool is subclass of int)
     a1 = Annotation(Callable[[int], bool])
     a2 = Annotation(Callable[[int], int])
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     # contravariant parameters (bool is subclass of int)
     # - Callable[[int], str] accepts any int, including bool so it's a subtype of
     # Callable[[bool], str]
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[bool], str])
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     # different parameter count
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[int, int], str])
-    assert not a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert not a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     # Callable[..., T] accepts any parameters
     a1 = Annotation(Callable[[int, str], bool])
     a2 = Annotation(Callable[..., bool])
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     # return type still matters with ...
     a1 = Annotation(Callable[..., bool])
     a2 = Annotation(Callable[..., int])
-    assert a1.is_assignable(a2)  # bool is subclass of int
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)  # bool is subclass of int
+    assert not a2.is_narrower(a1)
 
     # Callable with Any in return type - bidirectional due to Any
     a1 = Annotation(Callable[[int], str])
     a2 = Annotation(Callable[[int], Any])
-    assert a1.is_assignable(a2)  # str is subtype of Any (covariant + top)
-    assert a2.is_assignable(a1)  # Any is subtype of str (bottom type)
+    assert a1.is_narrower(a2)  # str is subtype of Any (covariant + top)
+    assert a2.is_narrower(a1)  # Any is subtype of str (bottom type)
 
     # Callable with Any in parameters - bidirectional due to Any
     a1 = Annotation(Callable[[Any], str])
     a2 = Annotation(Callable[[int], str])
-    assert a1.is_assignable(a2)  # Any accepts more (contravariant + bottom)
-    assert a2.is_assignable(a1)  # int subtype of Any (top type)
+    assert a1.is_narrower(a2)  # Any accepts more (contravariant + bottom)
+    assert a2.is_narrower(a1)  # int subtype of Any (top type)
 
     # Callable[[Any], Any] is bidirectionally related to everything
     a1 = Annotation(Callable[[Any], Any])
     a2 = Annotation(Callable[[int], str])
-    assert a1.is_assignable(a2)  # Any dual nature
-    assert a2.is_assignable(a1)  # Any dual nature
+    assert a1.is_narrower(a2)  # Any dual nature
+    assert a2.is_narrower(a1)  # Any dual nature
 
     # multiple parameters with contravariance
     a1 = Annotation(Callable[[int, str], bool])
     a2 = Annotation(Callable[[bool, str], bool])
-    assert a1.is_assignable(a2)
-    assert not a2.is_assignable(a1)
+    assert a1.is_narrower(a2)
+    assert not a2.is_narrower(a1)
 
     # complex nested types
     a1 = Annotation(Callable[[list[int]], str])
     a2 = Annotation(Callable[[list[bool]], str])
     a3 = Annotation(Callable[[tuple[int]], str])
     a4 = Annotation(Callable[[Sequence[int]], str])
-    assert a1.is_assignable(a2)  # list[int] accepts list[bool]
-    assert not a2.is_assignable(a1)
-    assert not a1.is_assignable(a3)
-    assert not a1.is_assignable(a4)
-    assert a4.is_assignable(a1)
+    assert a1.is_narrower(a2)  # list[int] accepts list[bool]
+    assert not a2.is_narrower(a1)
+    assert not a1.is_narrower(a3)
+    assert not a1.is_narrower(a4)
+    assert a4.is_narrower(a1)
 
 
-def test_callable_type_is_assignable():
+def test_callable_type_is_narrower():
     """
     Test that type annotations (type[int], type[str], etc.) are recognized as callables.
 
@@ -462,53 +462,53 @@ def test_callable_type_is_assignable():
     # type[int] is like Callable[..., int]
     a1 = Annotation(type[int])
     a2 = Annotation(Callable[[Any], int])
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # type[int] is also a subclass of Callable[..., int]
     a2 = Annotation(Callable[..., int])
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # type[int] is a subclass of Callable[[str], int] (broader params)
     a2 = Annotation(Callable[[str], int])
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # type[int] is NOT a subclass of Callable[[Any], bool] (wrong return type)
     a2 = Annotation(Callable[[Any], bool])
-    assert not a1.is_assignable(a2)
+    assert not a1.is_narrower(a2)
 
     # type[int] is NOT a subclass of Callable[[Any], str] (wrong return type)
     a2 = Annotation(Callable[[Any], str])
-    assert not a1.is_assignable(a2)
+    assert not a1.is_narrower(a2)
 
     # type[str] is like Callable[..., str]
     a1 = Annotation(type[str])
     a2 = Annotation(Callable[[Any], str])
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # type[list] is like Callable[..., list]
     a1 = Annotation(type[list])
     a2 = Annotation(Callable[[Any], list])
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # more complex: type[int] with union in Callable
     a1 = Annotation(type[int])
     a2 = Annotation(Callable[[int | str], int])
-    assert a1.is_assignable(a2)
+    assert a1.is_narrower(a2)
 
     # test with multiple parameters
     a1 = Annotation(type[int])
     a2 = Annotation(Callable[[Any, Any], int])
-    assert a1.is_assignable(a2)  # type[int] accepts any number of args
+    assert a1.is_narrower(a2)  # type[int] accepts any number of args
 
     # but Callable[[Any], int] is NOT a subclass of type[int]
     a1 = Annotation(Callable[[Any], int])
     a2 = Annotation(type[int])
-    assert not a1.is_assignable(a2)
+    assert not a1.is_narrower(a2)
 
     # verify that plain `int` is NOT treated as callable
     a1 = Annotation(int)
     a2 = Annotation(Callable[[Any], int])
-    assert not a1.is_assignable(a2)  # int instances are not callable
+    assert not a1.is_narrower(a2)  # int instances are not callable
 
 
 def test_callable_check_instance():

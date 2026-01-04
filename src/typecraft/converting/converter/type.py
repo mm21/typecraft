@@ -31,21 +31,19 @@ class MatchSpec:
     converter.
     """
 
-    assignable_from_source: bool = True
+    narrowable_source: bool = True
     """
-    Whether to match when the converter's source type is assignable from the requested
-    source type. Essentially asks:
+    Whether this converter matches when the requested source type is narrower than the
+    converter's declared source type. Essentially asks:
 
     - "If I convert from `Animal`, can I also handle a request to convert from `Dog`?"
     - "If I convert from `int | str`, can I also handle a request to convert from `int`?
-
-    This should generally be true as it describes regular subtype polymorphism.
     """
 
-    assignable_from_target: bool = False
+    narrowable_target: bool = False
     """
-    Whether to match when the converter's target type is assignable from the requested
-    target type. Essentially asks:
+    Whether to match when the requested target type is narrower than the converter's
+    declared target type. Essentially asks:
 
     - "If I convert to `Animal`, can I also handle a request to convert to `Dog`?"
     - "If I convert to `int | str`, can I also handle a request to convert to `int`?
@@ -54,10 +52,10 @@ class MatchSpec:
     during conversion.
     """
 
-    assignable_to_target: bool = True
+    widenable_target: bool = True
     """
-    Whether to match when the converter's target type is assignable to the requested
-    target type. Essentially asks:
+    Whether to match when the requested target type is wider than the converter's
+    declared target type. Essentially asks:
 
     - "If I convert to `Dog`, can I also handle a request to convert to `Animal`?"
     - "If I convert to `int`, can I also handle a request to convert to `int | str`?
@@ -96,24 +94,6 @@ class TypeConverterInterface[SourceT, TargetT, FrameT: BaseConversionFrame](ABC)
     ):
         if match_spec:
             self.match_spec = match_spec
-
-    @property
-    def _params_str(self) -> str:
-        src_suffix = (
-            "[!assignable-from]" if not self.match_spec.assignable_from_source else ""
-        )
-        tgt_suffix = (
-            "[assignable-from]" if self.match_spec.assignable_from_target else ""
-        )
-        tgt_suffix += (
-            "[!assignable-to]" if not self.match_spec.assignable_to_target else ""
-        )
-        return "{}{} -> {}{}".format(
-            self._source_annotation.name,
-            src_suffix,
-            self._target_annotation.name,
-            tgt_suffix,
-        )
 
     def can_convert(
         self,
@@ -182,7 +162,15 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         self._source_annotation, self._target_annotation = self._get_annotations()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self._params_str})"
+        prefixes = ["!", ""]
+        params = "{}[{}narrowable] -> {}[{}narrowable][{}widenable]".format(
+            self._source_annotation.name,
+            prefixes[self.match_spec.narrowable_source],
+            self._target_annotation.name,
+            prefixes[self.match_spec.narrowable_target],
+            prefixes[self.match_spec.widenable_target],
+        )
+        return f"{type(self).__name__}({params})"
 
     @property
     def source_annotation(self) -> Annotation:
@@ -208,13 +196,13 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         if not self.__check_match(
             self._source_annotation,
             source_annotation,
-            assignable_from=self.match_spec.assignable_from_source,
-            assignable_to=False,
+            narrowable=self.match_spec.narrowable_source,
+            widenable=False,
         ):
             return False
 
         # try all possible target annotations in case of union
-        # - if assignable_from_target is True, only one union member needs to match
+        # - if narrowable_target is True, only one union member needs to match
         # - otherwise, all union members must match requested target: we don't know
         #   which one the converter will return
         target_annotations = (
@@ -226,7 +214,7 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         # check whether we're producing a union and only one member needs to match
         # (converter must produce the requested type)
         match_any_union = (
-            self._target_annotation.is_union and self.match_spec.assignable_from_target
+            self._target_annotation.is_union and self.match_spec.narrowable_target
         )
 
         # check each target annotation
@@ -234,8 +222,8 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
             if self.__check_match(
                 ann,
                 target_annotation,
-                assignable_from=self.match_spec.assignable_from_target,
-                assignable_to=self.match_spec.assignable_to_target,
+                narrowable=self.match_spec.narrowable_target,
+                widenable=self.match_spec.widenable_target,
             ):
                 if match_any_union:
                     return True
@@ -268,14 +256,14 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         my_annotation: Annotation,
         requested_annotation: Annotation,
         *,
-        assignable_from: bool,
-        assignable_to: bool,
+        narrowable: bool,
+        widenable: bool,
     ) -> bool:
-        if assignable_from and requested_annotation.is_assignable(my_annotation):
-            # match a more specific type, e.g. `Animal -> Dog`
+        if narrowable and requested_annotation.is_narrower(my_annotation):
+            # match a narrower type, e.g. Animal -> Dog
             return True
-        elif assignable_to and my_annotation.is_assignable(requested_annotation):
-            # match a more general type, e.g. `int -> int | str`
+        elif widenable and my_annotation.is_narrower(requested_annotation):
+            # match a wider type, e.g. int -> int | str
             return True
         else:
             # must match exactly, but allow match against Any
