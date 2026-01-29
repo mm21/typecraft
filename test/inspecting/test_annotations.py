@@ -3,7 +3,7 @@ Tests for `Annotation` class.
 """
 
 from collections.abc import Callable
-from typing import Any, Literal, Sequence, Union
+from typing import Annotated, Any, Literal, Sequence, Union
 
 from typecraft.inspecting.annotations import Annotation
 
@@ -562,3 +562,12 @@ def test_callable_check_instance():
     assert a.check_instance(int)
     assert a.check_instance(str)
     assert a.check_instance(list)
+
+
+def test_additional_extras():
+    """
+    Test adding/getting additional extras.
+    """
+    a = Annotation(Annotated[int, "a", "b", "c"])
+    a.add_extras("d", "e", "f")
+    assert a.get_extras() == ("a", "b", "c", "d", "e", "f")
