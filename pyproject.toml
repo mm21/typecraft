@@ -1,6 +1,6 @@
 [project]
 authors = [
-  {email = "mm21.dev@gmail.com", name = "mm21"}
+  {name = "mm21", email = "mm21.dev@gmail.com"}
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -17,43 +17,29 @@ classifiers = [
 description = "Annotation-native toolkit for data validation, transformation, and type inspection"
 name = "typecraft"
 readme = "README.md"
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.12,<4"
 version = "0.1.0"
+
+[project.optional-dependencies]
+toml = ["tomlkit>=0.13.3,<0.14"]
 
 [project.urls]
 homepage = "https://github.com/mm21/typecraft"
 
-[project.scripts]
-
-[build-system]
-build-backend = "poetry.core.masonry.api"
-requires = ["poetry-core>=1.0.0"]
-
-[tool.poetry]
-packages = [{include = "typecraft", from = "src"}]
-
-[tool.poetry.dependencies]
-tomlkit = {version = "^0.13.3", optional = true}
-
-[tool.poetry.group.dev.dependencies]
-autoflake = "^2.3.1"
-black = "^25.1.0"
-docformatter = "^1.7.7"
-doit = "^0.36.0"
-isort = "^6.0.1"
-pytest = "^8.4.2"
-toml-sort = "^0.24.2"
-
-[tool.poetry.group.toml.dependencies]
-tomlkit = "*"
-
-[tool.poetry.extras]
-toml = [
-  "tomlkit"
+[dependency-groups]
+dev = [
+  "autoflake>=2.3.1,<3",
+  "black>=25.1.0,<26",
+  "docformatter>=1.7.7,<2",
+  "doit>=0.36.0,<0.37",
+  "isort>=6.0.1,<7",
+  "pytest>=8.4.2,<9",
+  "toml-sort>=0.24.2,<0.25"
 ]
 
-[tool.doit]
-verbosity = 2
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
 
 [tool.autoflake]
 in_place = true
@@ -65,10 +51,6 @@ remove-unused-variables = true
 quiet = true
 target-version = ["py312", "py313"]
 
-[tool.isort]
-profile = "black"
-quiet = true
-
 [tool.docformatter]
 black = true
 in-place = true
@@ -77,10 +59,23 @@ non-strict = true
 pre-summary-newline = true
 recursive = true
 
-[tool.tomlsort]
-no_sort_tables = true
-sort_table_keys = true
+[tool.doit]
+verbosity = 2
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/typecraft"]
+
+[tool.isort]
+profile = "black"
+quiet = true
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib -s -v -rA"
 testpaths = "test"
+
+[tool.tomlsort]
+sort_first = ["project", "dependency-groups", "build-system"]
+sort_table_keys = true
+
+[tool.uv]
+package = true

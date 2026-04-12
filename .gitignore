@@ -1,5 +1,7 @@
-build
-dist
+__pycache__
+.claude
 .doit*
 .pytest_cache
-__pycache__
+.venv
+build
+dist
