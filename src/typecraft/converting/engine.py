@@ -347,6 +347,18 @@ class BaseConversionEngine[
     def __find_converter(
         self, obj: Any, frame: FrameT, target_annotation: Annotation
     ) -> BaseTypeConverter | None:
+        # try converters from annotation extras first (Annotated[])
+        extras = (
+            target_annotation.extras
+            if self._is_validating
+            else frame.source_annotation.extras
+        )
+        for extra in extras:
+            if isinstance(extra, BaseTypeConverter) and extra._check_convert(
+                obj, frame.source_annotation, target_annotation
+            ):
+                return extra
+
         for registry in itertools.chain(
             (self.__user_registry,), self._get_builtin_registries(frame)
         ):

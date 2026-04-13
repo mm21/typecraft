@@ -106,11 +106,6 @@ class Annotation:
     Whether initialization has already been completed.
     """
 
-    __additional_extras: list[Any]
-    """
-    Extras passed via `add_extras()`.
-    """
-
     __cache: dict[int, Self] = {}
     """
     Cache to prevent infinite recursion with recursive type aliases.
@@ -135,7 +130,6 @@ class Annotation:
             return
 
         self.__init_done = True
-        self.__additional_extras = []
         raw, extras = split_annotated(unwrap_alias(annotation))
         raw = unwrap_alias(raw)
 
@@ -326,21 +320,6 @@ class Annotation:
             my_arg.equals(other_arg, match_any=match_any)
             for my_arg, other_arg in zip(my_args, other_args)
         )
-
-    def add_extras(self, *extras: Any):
-        """
-        Add extras as if they were passed in `Annotated[]`.
-
-        Does not affect the original annotation.
-        """
-        self.__additional_extras += extras
-
-    def get_extras(self) -> tuple[Any, ...]:
-        """
-        Get all extras, including those passed in `Annotated[]` and added via
-        `add_extras()`.
-        """
-        return (*self.extras, *self.__additional_extras)
 
     @classmethod
     def _normalize(cls, obj: Annotation | Any) -> Annotation:

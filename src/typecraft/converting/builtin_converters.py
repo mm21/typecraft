@@ -9,13 +9,13 @@ from datetime import date, datetime, time
 from functools import cache
 from typing import Any, Protocol, TypeVar, cast, get_type_hints, runtime_checkable
 
-from typecraft.converting.utils import convert_to_list
-
 from ..inspecting.annotations import Annotation
 from ..types import DataclassProtocol, ValueCollectionType
+from ._types import ERROR_SENTINEL, ErrorSentinel
 from .converter.symmetric import BaseSymmetricTypeConverter
 from .converter.type import MatchSpec
 from .serializer import SerializationFrame, TypeSerializer, TypeSerializerRegistry
+from .utils import convert_to_list
 from .validator import TypeValidatorRegistry, ValidationFrame
 
 
@@ -161,11 +161,15 @@ class SupportsComparison(Protocol[_T_contra]):
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
-def serialize_to_list(obj: ValueCollectionType, frame: SerializationFrame) -> list:
+def serialize_to_list(
+    obj: ValueCollectionType, frame: SerializationFrame
+) -> list | ErrorSentinel:
     """
     Serialize to list with optional sorting.
     """
     obj_list = convert_to_list(obj, frame)
+    if isinstance(obj_list, ErrorSentinel):
+        return ERROR_SENTINEL
 
     if isinstance(obj, (set, frozenset)) and frame.params.sort_sets:
         for o in obj_list:
