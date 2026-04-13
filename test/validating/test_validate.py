@@ -28,6 +28,18 @@ class IntStrDict(dict[int, str]):
     """
 
 
+class MyInt(int):
+    pass
+
+
+class MyList[T](list[T]):
+    pass
+
+
+class MyDict[K, V](dict[K, V]):
+    pass
+
+
 def test_valid():
     """
     Test with no conversions: the validated type should be the same object as the
@@ -108,6 +120,37 @@ def test_invalid():
         == """\
 1 validation error for typing.Literal['def', 'ghi']
 <root>=abc: str -> typing.Literal['def', 'ghi']: TypeError
+  No matching converters"""
+    )
+
+
+def test_nested_invalid():
+    """
+    Test nested invalid types.
+    """
+
+    with raises(ValidationError) as exc_info:
+        _ = validate([0, 1, 2], MyList[MyInt], TypeValidator(list, MyList))
+
+    # TODO: actually outputs:
+    # 4 validation errors for test.validating.test_validate.MyList[test.validating.test_validate.MyInt]
+    # [0]=0: int -> MyInt: TypeError
+    #   No matching converters
+    # [1]=1: int -> MyInt: TypeError
+    #   No matching converters
+    # [2]=2: int -> MyInt: TypeError
+    #   No matching converters
+    # <root>=[0, 1, 2]: list -> test.validating.test_validate.MyList[test.validating.test_validate.MyInt]: ValueError
+    #   ValidationEngine(registry=ValidatorRegistry(validators=(TypeValidator(list[narrowable] -> MyList[!narrowable][widenable]),))) failed: got [ErrorSentinel, ErrorSentinel, ErrorSentinel] (<class 'list'>)
+    assert (
+        str(exc_info.value)
+        == """\
+3 validation errors for test.validating.test_validate.MyList[test.validating.test_validate.MyInt]
+[0]=0: int -> MyInt: TypeError
+  No matching converters
+[1]=1: int -> MyInt: TypeError
+  No matching converters
+[2]=2: int -> MyInt: TypeError
   No matching converters"""
     )
 
@@ -242,12 +285,6 @@ def test_generic_subclass():
     """
     Test generic subclasses of builtins.
     """
-
-    class MyList[T](list[T]):
-        pass
-
-    class MyDict[K, V](dict[K, V]):
-        pass
 
     # custom list type
     obj = MyList([0, 1, 2])

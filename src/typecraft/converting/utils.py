@@ -12,13 +12,13 @@ from typing import (
 from ..inspecting.annotations import ANY, Annotation, extract_tuple_args
 from ..inspecting.generics import extract_args
 from ..types import COLLECTION_TYPES
-from ._types import ERROR_SENTINEL
+from ._types import ERROR_SENTINEL, ErrorSentinel
 from .converter.base import BaseConversionFrame
 
 
 def convert_to_list(
     obj: Iterable, frame: BaseConversionFrame, /, *, construct: bool = False
-) -> list:
+) -> list | ErrorSentinel:
     """
     Convert collection to list.
     """
@@ -47,8 +47,8 @@ def convert_to_list(
     ]
 
     if any(o is ERROR_SENTINEL for o in converted_objs):
-        # conversions failed
-        return converted_objs
+        # conversions failed; errors already added to frame
+        return ERROR_SENTINEL
     elif isinstance(obj, target_type) and all(
         o is n for o, n in zip(sized_obj, converted_objs)
     ):
@@ -65,12 +65,12 @@ def convert_to_list(
         f"Cannot construct instance of target type {target_type}; create a custom converter for it"
     )
     frame.append_error(obj, exception)
-    return converted_objs
+    return ERROR_SENTINEL
 
 
 def convert_to_tuple(
     obj: Iterable, frame: BaseConversionFrame, /, *, construct: bool = False
-) -> tuple:
+) -> tuple | ErrorSentinel:
     """
     Convert collection to tuple.
     """
@@ -122,8 +122,8 @@ def convert_to_tuple(
     )
 
     if any(o is ERROR_SENTINEL for o in converted_objs):
-        # conversions failed
-        return converted_objs
+        # conversions failed; errors already added to frame
+        return ERROR_SENTINEL
     elif isinstance(obj, target_type) and all(
         o is v for o, v in zip(sized_obj, converted_objs)
     ):
@@ -139,12 +139,12 @@ def convert_to_tuple(
         f"Cannot construct instance of target type {target_type}; create a custom converter for it"
     )
     frame.append_error(obj, exception)
-    return converted_objs
+    return ERROR_SENTINEL
 
 
 def convert_to_set(
     obj: Iterable, frame: BaseConversionFrame, /, *, construct: bool = False
-) -> set | frozenset:
+) -> set | frozenset | ErrorSentinel:
     """
     Convert collection to set.
     """
@@ -173,8 +173,8 @@ def convert_to_set(
     }
 
     if any(o is ERROR_SENTINEL for o in converted_objs):
-        # conversions failed
-        return converted_objs
+        # conversions failed; errors already added to frame
+        return ERROR_SENTINEL
     elif isinstance(obj, target_type):
         obj_ids = {id(o) for o in sized_obj}
         if all(id(o) in obj_ids for o in converted_objs):
@@ -190,12 +190,12 @@ def convert_to_set(
         f"Cannot construct instance of target type {target_type}; create a custom converter for it"
     )
     frame.append_error(obj, exception)
-    return converted_objs
+    return ERROR_SENTINEL
 
 
 def convert_to_dict(
     obj: Mapping, frame: BaseConversionFrame, /, *, construct: bool = False
-) -> dict:
+) -> dict | ErrorSentinel:
     """
     Convert mapping to dict.
     """
@@ -230,8 +230,8 @@ def convert_to_dict(
         o is ERROR_SENTINEL
         for o in itertools.chain(converted_objs.keys(), converted_objs.values())
     ):
-        # conversions failed
-        return converted_objs
+        # conversions failed; errors already added to frame
+        return ERROR_SENTINEL
     elif isinstance(obj, target_type) and all(
         k_obj is k_conv and obj[k_obj] is converted_objs[k_conv]
         for k_obj, k_conv in zip(obj, converted_objs)
@@ -248,7 +248,7 @@ def convert_to_dict(
         f"Cannot construct instance of target type {target_type}; create a custom converter for it"
     )
     frame.append_error(obj, exception)
-    return converted_objs
+    return ERROR_SENTINEL
 
 
 def select_ann_from_union(obj: Any, union: Annotation) -> Annotation:
