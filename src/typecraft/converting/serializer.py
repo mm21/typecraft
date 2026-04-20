@@ -10,6 +10,7 @@ from typing import (
 from ..exceptions import ConversionErrorDetail
 from ..inspecting.annotations import Annotation
 from .converter.base import BaseConversionFrame, BaseConversionParams, FuncConverterType
+from .converter.plain import BasePlainTransformer
 from .converter.type import (
     BaseTypeConverter,
     BaseTypeConverterRegistry,
@@ -28,6 +29,7 @@ __all__ = [
     "BaseGenericTypeSerializer",
     "TypeSerializer",
     "TypeSerializerRegistry",
+    "PlainSerializer",
 ]
 
 type JsonSerializableType = str | int | float | bool | NoneType | list[
@@ -165,3 +167,10 @@ class TypeSerializerRegistry(BaseTypeConverterRegistry[BaseTypeSerializer]):
         Register a serializer.
         """
         self._register_converter(serializer)
+
+
+class PlainSerializer(BasePlainTransformer[SerializationFrame]):
+    """
+    Plain serializer: runs before or after type-based serialization at its annotation
+    level. Return value replaces the object; exceptions are captured as errors.
+    """

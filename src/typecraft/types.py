@@ -9,6 +9,7 @@ from typing import (
     Any,
     ClassVar,
     Generator,
+    Literal,
     Protocol,
     runtime_checkable,
 )
@@ -16,6 +17,7 @@ from typing import (
 from .inspecting.annotations import Annotation, flatten_union
 
 __all__ = [
+    "ModeType",
     "DataclassProtocol",
 ]
 
@@ -29,6 +31,14 @@ mappings.
 type CollectionType = ValueCollectionType | dict
 """
 Superset of all types convertible to builtin collections.
+"""
+
+type ModeType = Literal["before", "after"]
+"""
+Conversion mode:
+
+- `"before"`: Invoked before builtin type-based conversion
+- `"after"`: Invoked after builtin type-based conversion
 """
 
 

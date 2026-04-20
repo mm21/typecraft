@@ -31,6 +31,7 @@ from ..exceptions import (
 )
 from ..inspecting.annotations import ANY, Annotation
 from ..serializing import SerializationParams
+from ..types import ModeType
 from ..validating import ValidationFrame, ValidationParams
 from .fields import FieldInfo
 from .methods import (
@@ -39,7 +40,6 @@ from .methods import (
     RegistrationInfo,
     SerializationInfo,
     ValidationInfo,
-    ValidatorModeType,
 )
 
 __all__ = [
@@ -471,7 +471,7 @@ class BaseModel:
         field_info: FieldInfo,
         frame: ValidationFrame,
         *,
-        mode: ValidatorModeType,
+        mode: ModeType,
     ):
         """
         Run field validators with given mode.

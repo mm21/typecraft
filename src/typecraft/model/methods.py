@@ -5,7 +5,7 @@ Mechanism to register validator/serializer methods.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Literal, Self, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Self, cast, overload
 
 from ..converting.converter.base import BaseConversionFrame
 from ..converting.converter.type import BaseTypeConverter
@@ -16,6 +16,7 @@ from ..converting.serializer import (
 )
 from ..converting.validator import BaseTypeValidator, ValidationFrame
 from ..inspecting.functions import SignatureInfo
+from ..types import ModeType
 
 if TYPE_CHECKING:
     from .base import BaseModel
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "ValidatorModeType",
     "TypeValidatorsFuncType",
     "TypeSerializersFuncType",
     "FieldValidatorFuncType",
@@ -41,14 +41,6 @@ TYPED_SERIALIZERS_ATTR = "__typecraft_type_serializers__"
 FIELD_VALIDATOR_ATTR = "__typecraft_field_validator__"
 FIELD_SERIALIZER_ATTR = "__typecraft_field_serializer__"
 
-
-type ValidatorModeType = Literal["before", "after"]
-"""
-Validator mode:
-
-- `"before"`: Invoked before builtin validation
-- `"after"`: Invoked after builtin validation
-"""
 
 type TypeConvertersFuncType[
     ModelT: BaseModel, ConverterT: BaseTypeConverter
@@ -285,7 +277,7 @@ class FieldValidatorInfo(
 
     attr_name = FIELD_VALIDATOR_ATTR
 
-    mode: ValidatorModeType
+    mode: ModeType
     """
     Validator mode.
     """
@@ -294,7 +286,7 @@ class FieldValidatorInfo(
         self,
         func: FieldValidatorFuncType,
         field_names: tuple[str, ...] | None,
-        mode: ValidatorModeType,
+        mode: ModeType,
     ):
         super().__init__(func, field_names)
         self.mode = mode
@@ -455,14 +447,14 @@ def field_validator[FuncT: FieldValidatorFuncType](
 @overload
 def field_validator[FuncT: FieldValidatorFuncType](
     *field_names: str,
-    mode: Literal["before", "after"] = "before",
+    mode: ModeType = "after",
 ) -> Callable[[FuncT], FuncT]: ...
 
 
 def field_validator[FuncT: FieldValidatorFuncType](
     func_or_name: FuncT | str | None = None,
     *names: str,
-    mode: ValidatorModeType = "before",
+    mode: ModeType = "after",
 ) -> FuncT | Callable[[FuncT], FuncT]:
     """
     Decorator to register a field-level validator.

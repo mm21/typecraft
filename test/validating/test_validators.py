@@ -2,19 +2,23 @@
 Test low-level validation via `Validator` instances.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 from pytest import raises
 
 from typecraft.converting.converter.type import MatchSpec
+from typecraft.exceptions import ValidationError
 from typecraft.inspecting.annotations import ANY, Annotation
 from typecraft.validating import (
     BaseGenericTypeValidator,
+    PlainValidator,
+    PredicateValidator,
     TypeValidator,
     TypeValidatorRegistry,
     ValidationEngine,
     ValidationFrame,
     ValidationParams,
+    validate,
 )
 
 
@@ -333,6 +337,103 @@ def test_registry():
     assert (
         str(narrowable_int_to_str_validator)
         == "TypeValidator(int[narrowable] -> str[!narrowable][widenable])"
+    )
+
+
+def test_plain():
+    """
+    Test plain validators.
+    """
+
+    # lambda predicate
+    predicate = PredicateValidator(lambda x: x > 0)
+    obj = validate([1, 2, 3], list[Annotated[int, predicate]])
+    assert obj == [1, 2, 3]
+
+    with raises(ValidationError) as exc_info:
+        _ = validate(
+            [-1, 0, 1],
+            list[Annotated[int, predicate]],
+        )
+
+    assert (
+        str(exc_info.value)
+        == """\
+2 validation errors for list[typing.Annotated[int, PredicateValidator(<lambda>)]]
+[0]=-1: int -> int: PredicateError
+  Predicate failed: <lambda>
+[1]=0: int -> int: PredicateError
+  Predicate failed: <lambda>"""
+    )
+
+    # named-function predicate
+    def positive_check(val: int) -> bool:
+        return val > 0
+
+    obj = validate([1, 2, 3], list[Annotated[int, PredicateValidator(positive_check)]])
+    assert obj == [1, 2, 3]
+
+    with raises(ValidationError) as exc_info:
+        _ = validate(
+            [-1, 0, 1],
+            list[Annotated[int, PredicateValidator(positive_check)]],
+        )
+
+    assert (
+        str(exc_info.value)
+        == """\
+2 validation errors for list[typing.Annotated[int, PredicateValidator(positive_check)]]
+[0]=-1: int -> int: PredicateError
+  Predicate failed: positive_check
+[1]=0: int -> int: PredicateError
+  Predicate failed: positive_check"""
+    )
+
+    # transformer raising exception (function also takes frame)
+    def plain_validate(val: int, frame: ValidationFrame) -> int:
+        _ = frame
+        if val > 0:
+            return val
+        raise ValueError("Value not positive")
+
+    validator = PlainValidator(plain_validate)
+    obj = validate([1, 2, 3], list[Annotated[int, validator]])
+    assert obj == [1, 2, 3]
+
+    with raises(ValidationError) as exc_info:
+        _ = validate([-1, 0, 1], list[Annotated[int, validator]])
+
+    assert (
+        str(exc_info.value)
+        == """\
+2 validation errors for list[typing.Annotated[int, PlainValidator(plain_validate)]]
+[0]=-1: int -> int: ValueError
+  Value not positive
+[1]=0: int -> int: ValueError
+  Value not positive"""
+    )
+
+    # transformer raising exception with mode=before
+    def plain_validate_before(val: object) -> int:
+        if not isinstance(val, int):
+            raise TypeError(f"Invalid type: {type(val).__name__}")
+        return val
+
+    validator = PlainValidator(plain_validate_before, mode="before")
+    obj = validate([1, 2, 3], list[Annotated[int, validator]])
+    assert obj == [1, 2, 3]
+
+    with raises(ValidationError) as exc_info:
+        _ = validate(["1", 2.5, 3], list[Annotated[int, validator]])
+
+    assert (
+        str(exc_info.value)
+        == """\
+2 validation errors for list[typing.Annotated[int, PlainValidator(plain_validate_before)]]
+[0]=1: str -> int: TypeError
+  Invalid type: str
+[1]=2.5: float -> int: TypeError
+  Invalid type: float"""
     )
 
 

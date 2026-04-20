@@ -1,5 +1,9 @@
 """
 Dataclass-based data models with validation.
+
+TODO:
+- Implement `model_validator`, `model_serializer`
+- Take field validators/serializers in annotations
 """
 
 from .base import BaseModel, ModelConfig

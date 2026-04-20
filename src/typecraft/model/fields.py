@@ -6,7 +6,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Literal,
     get_type_hints,
     overload,
 )
@@ -15,6 +14,7 @@ from ..converting.serializer import TypeSerializerRegistry
 from ..converting.validator import TypeValidatorRegistry
 from ..inspecting.annotations import Annotation
 from ..serializing import SerializationEngine
+from ..types import ModeType
 from ..validating import ValidationEngine
 from .methods import (
     FieldSerializerInfo,
@@ -145,9 +145,7 @@ class FieldInfo:
         """
         return self.metadata.alias or self.name if by_alias else self.name
 
-    def _get_validator_infos(
-        self, *, mode: Literal["before", "after"]
-    ) -> tuple[FieldValidatorInfo, ...]:
+    def _get_validator_infos(self, *, mode: ModeType) -> tuple[FieldValidatorInfo, ...]:
         """
         Get field validators filtered by mode.
         """

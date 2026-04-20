@@ -16,6 +16,7 @@ from .converting.serializer import (
     BaseTypeSerializer,
     FuncSerializerType,
     JsonSerializableType,
+    PlainSerializer,
     SerializationFrame,
     SerializationParams,
     TypeSerializer,
@@ -33,6 +34,7 @@ __all__ = [
     "BaseGenericTypeSerializer",
     "TypeSerializer",
     "TypeSerializerRegistry",
+    "PlainSerializer",
     "serialize",
 ]
 

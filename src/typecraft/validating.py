@@ -24,6 +24,8 @@ from .converting.validator import (
     BaseGenericTypeValidator,
     BaseTypeValidator,
     FuncValidatorType,
+    PlainValidator,
+    PredicateValidator,
     TypeValidator,
     TypeValidatorRegistry,
     ValidationFrame,
@@ -41,6 +43,8 @@ __all__ = [
     "BaseGenericTypeValidator",
     "TypeValidator",
     "TypeValidatorRegistry",
+    "PlainValidator",
+    "PredicateValidator",
     "validate",
     "normalize_to_list",
 ]

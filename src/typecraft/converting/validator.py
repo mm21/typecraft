@@ -6,9 +6,14 @@ from typing import (
     Any,
 )
 
-from ..exceptions import ConversionErrorDetail
+from ..exceptions import ConversionErrorDetail, PredicateError
 from ..inspecting.annotations import Annotation
 from .converter.base import BaseConversionFrame, BaseConversionParams, FuncConverterType
+from .converter.plain import (
+    BasePlainConverter,
+    BasePlainTransformer,
+    PredicateFuncType,
+)
 from .converter.type import (
     BaseTypeConverter,
     BaseTypeConverterRegistry,
@@ -26,6 +31,8 @@ __all__ = [
     "BaseGenericTypeValidator",
     "TypeValidator",
     "TypeValidatorRegistry",
+    "PlainValidator",
+    "PredicateValidator",
 ]
 
 type FuncValidatorType[TargetT] = FuncConverterType[Any, TargetT, ValidationFrame]
@@ -132,3 +139,26 @@ class TypeValidatorRegistry(BaseTypeConverterRegistry[BaseTypeValidator]):
         Register a validator.
         """
         self._register_converter(validator)
+
+
+class PlainValidator(BasePlainTransformer[ValidationFrame]):
+    """
+    Plain validator: runs before or after type-based validation at its annotation
+    level. Return value replaces the object; exceptions are captured as errors.
+    """
+
+
+class PredicateValidator(BasePlainConverter[ValidationFrame]):
+    """
+    Predicate validator: runs after type-based validation on the already-validated
+    object. The object is returned unchanged if the predicate returns `True`;
+    `False` raises `PredicateError`.
+    """
+
+    def __init__(self, func: PredicateFuncType[Any, ValidationFrame], /):
+        super().__init__(func, mode="after")
+
+    def invoke(self, obj: Any, frame: ValidationFrame) -> Any:
+        if self._func_wrapper.invoke(obj, frame):
+            return obj
+        raise PredicateError(f"Predicate failed: {self._func_wrapper.func.__name__}")

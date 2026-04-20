@@ -19,6 +19,7 @@ __all__ = [
     "SerializationError",
     "ExtraFieldError",
     "MissingFieldError",
+    "PredicateError",
 ]
 
 
@@ -168,3 +169,9 @@ class MissingFieldError(Exception):
 
     def __str__(self) -> str:
         return "Missing field"
+
+
+class PredicateError(Exception):
+    """
+    Raised by a predicate validator when its predicate function returns `False`.
+    """

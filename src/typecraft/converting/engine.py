@@ -17,6 +17,7 @@ from ._types import (
     ErrorSentinel,
 )
 from .converter.base import BaseConversionFrame, BaseConversionParams
+from .converter.plain import BasePlainConverter
 from .converter.type import (
     BaseTypeConverter,
     BaseTypeConverterRegistry,
@@ -153,7 +154,37 @@ class BaseConversionEngine[
 
     def process(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
         """
-        Main conversion dispatcher with common logic.
+        Main conversion dispatcher, wrapping type-based conversion with plain converters
+        from `Annotated[...]` extras (before/after mode).
+        """
+        plain_converters = self._get_plain_converters(frame)
+
+        # run plain "before" converters
+        for pc in (pc for pc in plain_converters if pc.mode == "before"):
+            try:
+                obj = pc.invoke(obj, frame)
+            except Exception as e:
+                frame.append_error(obj, e)
+                return ERROR_SENTINEL
+
+        # type-based dispatch
+        result = self._process_inner(obj, frame)
+        if isinstance(result, ErrorSentinel):
+            return result
+
+        # run plain "after" converters
+        for pc in (pc for pc in plain_converters if pc.mode == "after"):
+            try:
+                result = pc.invoke(result, frame)
+            except Exception as e:
+                frame.append_error(result, e)
+                return ERROR_SENTINEL
+
+        return result
+
+    def _process_inner(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+        """
+        Type-based conversion dispatcher.
 
         Walks the object recursively based on reference annotation, invoking type-based
         converters when conversion is needed.
@@ -202,6 +233,20 @@ class BaseConversionEngine[
 
         # no conversion needed, return as-is
         return obj
+
+    def _get_plain_converters(self, frame: FrameT) -> list[BasePlainConverter[FrameT]]:
+        """
+        Collect plain converters from the relevant annotation's `Annotated[]` extras.
+
+        Mirrors the validating/serializing split used for type converters in
+        `__find_converter`.
+        """
+        extras = (
+            frame.target_annotation.extras
+            if self._is_validating
+            else frame.source_annotation.extras
+        )
+        return [e for e in extras if isinstance(e, BasePlainConverter)]
 
     @abstractmethod
     def _get_builtin_registries(self, frame: FrameT) -> tuple[RegistryT, ...]:

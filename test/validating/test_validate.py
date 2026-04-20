@@ -132,16 +132,6 @@ def test_nested_invalid():
     with raises(ValidationError) as exc_info:
         _ = validate([0, 1, 2], MyList[MyInt], TypeValidator(list, MyList))
 
-    # TODO: actually outputs:
-    # 4 validation errors for test.validating.test_validate.MyList[test.validating.test_validate.MyInt]
-    # [0]=0: int -> MyInt: TypeError
-    #   No matching converters
-    # [1]=1: int -> MyInt: TypeError
-    #   No matching converters
-    # [2]=2: int -> MyInt: TypeError
-    #   No matching converters
-    # <root>=[0, 1, 2]: list -> test.validating.test_validate.MyList[test.validating.test_validate.MyInt]: ValueError
-    #   ValidationEngine(registry=ValidatorRegistry(validators=(TypeValidator(list[narrowable] -> MyList[!narrowable][widenable]),))) failed: got [ErrorSentinel, ErrorSentinel, ErrorSentinel] (<class 'list'>)
     assert (
         str(exc_info.value)
         == """\
