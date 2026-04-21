@@ -1,6 +1,7 @@
 __pycache__
 .claude
 .doit*
+.nox
 .pytest_cache
 .venv
 build

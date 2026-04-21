@@ -54,4 +54,4 @@ def _run(cmd: list[str], expect_rc: int | set[int] = 0):
     print(f"=== Running: {cmd[0]}")
     rc = subprocess.call(cmd)
     if not rc in expect_rcs:
-        sys.exit(f"docformatter failed: rc={rc}, cmd={cmd}")
+        sys.exit(f"{cmd[0]} failed: rc={rc}, cmd={cmd}")

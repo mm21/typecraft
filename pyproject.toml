@@ -33,13 +33,14 @@ dev = [
   "docformatter>=1.7.7,<2",
   "doit>=0.36.0,<0.37",
   "isort>=6.0.1,<7",
+  "nox>=2026.4.10",
   "pytest>=8.4.2,<9",
   "toml-sort>=0.24.2,<0.25"
 ]
 
 [build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling"]
+build-backend = "uv_build"
+requires = ["uv_build>=0.11.6,<0.12.0"]
 
 [tool.autoflake]
 in_place = true
@@ -62,12 +63,12 @@ recursive = true
 [tool.doit]
 verbosity = 2
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/typecraft"]
-
 [tool.isort]
 profile = "black"
 quiet = true
+
+[tool.nox]
+default_venv_backend = "uv"
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib -s -v -rA"
@@ -76,6 +77,3 @@ testpaths = "test"
 [tool.tomlsort]
 sort_first = ["project", "dependency-groups", "build-system"]
 sort_table_keys = true
-
-[tool.uv]
-package = true
