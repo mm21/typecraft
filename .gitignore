@@ -1,5 +1,7 @@
 __pycache__
+__out__
 .claude
+.coverage
 .doit*
 .nox
 .pytest_cache
