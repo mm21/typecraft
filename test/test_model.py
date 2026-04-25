@@ -156,6 +156,8 @@ class FieldSerializerTest(BaseModel):
         """
         return int(obj)
 
+    # TODO: before serializer
+
 
 class FieldSerializerAllFieldsTest(BaseModel):
     """

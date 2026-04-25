@@ -97,7 +97,12 @@ def convert_to_tuple(
 
     if isinstance(target_item_anns, tuple) and len(target_item_anns) != len(sized_obj):
         exception = ValueError(
-            f"Tuple length mismatch: expected {len(target_item_anns)} from target annotation {frame.target_annotation}, got {len(sized_obj)}: {sized_obj}"
+            "Tuple length mismatch: expected {} from target annotation {}, got {}: {}".format(
+                len(target_item_anns),
+                frame.target_annotation,
+                len(sized_obj),
+                sized_obj,
+            )
         )
         frame.append_error(obj, exception)
         return ()
@@ -282,7 +287,9 @@ def _extract_value_item_anns(
         source_args = extract_tuple_args(ann)
         if isinstance(source_args, tuple) and len(obj) != len(source_args):
             raise ValueError(
-                f"Tuple length mismatch: expected {len(source_args)} from annotation {ann}, got {len(obj)}: {obj}"
+                "Tuple length mismatch: expected {} from annotation {}, got {}: {}".format(
+                    len(source_args), ann, len(obj), obj
+                )
             )
         return source_args
     else:
@@ -290,7 +297,8 @@ def _extract_value_item_anns(
         collection_cls = next(
             (t for t in COLLECTION_TYPES if issubclass(ann.concrete_type, t)), None
         )
-        assert collection_cls
+        if not collection_cls:
+            raise TypeError(f"Could not determine collection type for annotation {ann}")
         return _extract_value_item_ann(ann, collection_cls, default=ANY)
 
 

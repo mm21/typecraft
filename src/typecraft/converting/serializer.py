@@ -173,4 +173,8 @@ class PlainSerializer(BasePlainTransformer[SerializationFrame]):
     """
     Plain serializer: runs before or after type-based serialization at its annotation
     level. Return value replaces the object; exceptions are captured as errors.
+
+    If `source_type` is given at serialization entry point, it applies to the value
+    returned by any plain serializers with `mode="before"`. This enables subsequent
+    type-based matching.
     """

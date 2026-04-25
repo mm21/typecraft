@@ -3,8 +3,12 @@ Test end-to-end serialization via APIs.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
 
+from pytest import raises
+
+from typecraft.converting.serializer import PlainSerializer
+from typecraft.exceptions import SerializationError
 from typecraft.inspecting.annotations import Annotation
 from typecraft.serializing import (
     BaseGenericTypeSerializer,
@@ -153,6 +157,51 @@ def test_subclass():
     assert serializer.can_convert(obj, Annotation(int), Annotation(str))
     conv_obj = serializer.convert(obj, _create_frame(int, str))
     assert conv_obj == "123"
+
+
+def test_plain():
+    """
+    Test plain serializers.
+    """
+
+    def plain_serialize_before(val: object, frame: SerializationFrame) -> list[Any]:
+        _ = frame
+        assert isinstance(val, set)
+        # reverse the values so we know this serializer kicked in
+        return sorted(val, reverse=True)
+
+    before_serializer = PlainSerializer(plain_serialize_before, mode="before")
+
+    # without before serializer: raises error since we didn't get a list
+    with raises(SerializationError) as exc_info:
+        _ = serialize({1, 2, 3}, source_type=list[int])
+
+    assert (
+        str(exc_info.value)
+        == """\
+1 serialization error for list[int]
+<root>={1, 2, 3}: list[int] -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: ValueError
+  Object "{1, 2, 3}" is not an instance of Annotation(list[int], extras=(), concrete_type=<class 'list'>)"""
+    )
+
+    # with before serializer: no error since before serializer converted to a list
+    obj = serialize({1, 2, 3}, source_type=Annotated[list[int], before_serializer])
+
+    assert obj == [3, 2, 1]
+
+    def plain_serialize_after(val: list[int]) -> list[int]:
+        assert isinstance(val, list)
+        return sorted(val, reverse=True)
+
+    after_serializer = PlainSerializer(plain_serialize_after)
+
+    # without after serializer: list doesn't get reversed
+    obj = serialize([1, 2, 3])
+    assert obj == [1, 2, 3]
+
+    # with after serializer: list gets sorted
+    obj = serialize([1, 2, 3], source_type=Annotated[list[int], after_serializer])
+    assert obj == [3, 2, 1]
 
 
 def _create_frame(

@@ -497,6 +497,7 @@ def field_serializer[T: FieldSerializerFuncType](
 ) -> Callable[[T], T]: ...
 
 
+# TODO
 def field_serializer[T: FieldSerializerFuncType](
     func_or_name: T | str | None = None,
     *names: str,
