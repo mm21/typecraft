@@ -33,7 +33,6 @@ from .utils import (
 
 class BaseConversionEngine[
     RegistryT: BaseTypeConverterRegistry,
-    ConverterT: BaseTypeConverter,
     FrameT: BaseConversionFrame,
     ParamsT: BaseConversionParams,
     ExceptionT: BaseConversionError,
@@ -113,6 +112,7 @@ class BaseConversionEngine[
 
     def create_frame(
         self,
+        *,
         source_annotation: Annotation,
         target_annotation: Annotation,
         params: ParamsT | None,
@@ -162,7 +162,7 @@ class BaseConversionEngine[
         # run plain "before" converters
         for pc in (pc for pc in plain_converters if pc.mode == "before"):
             try:
-                obj = pc.invoke(obj, frame)
+                obj = pc._invoke(obj, frame)
             except Exception as e:
                 frame.append_error(obj, e)
                 return ERROR_SENTINEL
@@ -175,7 +175,7 @@ class BaseConversionEngine[
         # run plain "after" converters
         for pc in (pc for pc in plain_converters if pc.mode == "after"):
             try:
-                result = pc.invoke(result, frame)
+                result = pc._invoke(result, frame)
             except Exception as e:
                 frame.append_error(result, e)
                 return ERROR_SENTINEL

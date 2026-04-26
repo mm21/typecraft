@@ -11,7 +11,6 @@ from ..converting.converter.base import BaseConversionFrame
 from ..converting.converter.type import BaseTypeConverter
 from ..converting.serializer import (
     BaseTypeSerializer,
-    JsonSerializableType,
     SerializationFrame,
 )
 from ..converting.validator import BaseTypeValidator, ValidationFrame
@@ -83,25 +82,42 @@ type BoundTypeSerializersFuncType = BoundTypeConvertersFuncType[BaseTypeSerializ
 Annotates a bound type-based serializer registration method.
 """
 
-type FieldValidatorFuncType[ModelT: BaseModel] = Callable[
-    [ModelT | type[ModelT], Any], Any
-] | Callable[[ModelT | type[ModelT], Any, ValidationInfo], Any]
+type FieldConverterFuncType[
+    ModelT: BaseModel, ConversionInfoT: BaseConversionInfo
+] = Callable[[ModelT | type[ModelT], Any], Any] | Callable[
+    [ModelT | type[ModelT], Any, ConversionInfoT], Any
+]
+"""
+Annotates a field converter (validator/serializer) method which has not been bound to an
+object.
+"""
+
+type BoundFieldConverterFuncType[ConversionInfoT: BaseConversionInfo] = Callable[
+    [Any], Any
+] | Callable[[Any, ConversionInfoT], Any]
+"""
+Annotates a field converter (validator/serializer) method which has been bound to an
+object.
+"""
+
+
+type FieldValidatorFuncType[ModelT: BaseModel] = FieldConverterFuncType[
+    ModelT, ValidationInfo
+]
 """
 Annotates a field validator method which can take an optional `ValidationInfo` argument.
 
 Can decorate an instance method or classmethod.
 """
 
-type BoundFieldValidatorFuncType = Callable[[Any], Any] | Callable[
-    [Any, ValidationInfo], Any
-]
+type BoundFieldValidatorFuncType = BoundFieldConverterFuncType[ValidationInfo]
 """
 Annotates a bound field validator method.
 """
 
-type FieldSerializerFuncType[ModelT: BaseModel] = Callable[
-    [ModelT, Any], JsonSerializableType
-] | Callable[[ModelT, Any, SerializationInfo], JsonSerializableType]
+type FieldSerializerFuncType[ModelT: BaseModel] = FieldConverterFuncType[
+    ModelT, SerializationInfo
+]
 """
 Annotates a field serializer method which can take an optional `SerializationInfo`
 argument.
@@ -109,9 +125,7 @@ argument.
 Must be an instance method.
 """
 
-type BoundFieldSerializerFuncType = Callable[[Any], Any] | Callable[
-    [Any, SerializationInfo], Any
-]
+type BoundFieldSerializerFuncType = BoundFieldConverterFuncType[SerializationInfo]
 """
 Annotates a bound field validator method.
 """
@@ -137,14 +151,14 @@ class SerializationInfo(BaseConversionInfo[SerializationFrame]):
     """
 
 
-class BaseFieldRegistrationInfo[RawFuncT: Callable, BoundFuncT: Callable]:
+class BaseFieldRegistrationInfo[UnboundFuncT: Callable, BoundFuncT: Callable]:
 
     attr_name: str
     """
     Name of the attribute used to access this info, set on subclass.
     """
 
-    func: RawFuncT
+    func: UnboundFuncT
     """
     Registered function.
     """
@@ -159,7 +173,7 @@ class BaseFieldRegistrationInfo[RawFuncT: Callable, BoundFuncT: Callable]:
     Field names to which this info applies, or `None` to apply to all fields.
     """
 
-    def __init__(self, func: RawFuncT, field_names: tuple[str, ...] | None):
+    def __init__(self, func: UnboundFuncT, field_names: tuple[str, ...] | None):
         self.func = func
         self.field_names = field_names
         self.sig = SignatureInfo(func)
@@ -206,8 +220,8 @@ class BaseFieldRegistrationInfo[RawFuncT: Callable, BoundFuncT: Callable]:
 
 
 class BaseTypeConvertersInfo[
-    RawFuncT: Callable, BoundFuncT: Callable, ConverterT: BaseTypeConverter
-](BaseFieldRegistrationInfo[RawFuncT, BoundFuncT]):
+    UnboundFuncT: Callable, BoundFuncT: Callable, ConverterT: BaseTypeConverter
+](BaseFieldRegistrationInfo[UnboundFuncT, BoundFuncT]):
 
     @classmethod
     def aggregate_converters(
@@ -248,14 +262,31 @@ class TypeSerializersInfo(
     attr_name = TYPED_SERIALIZERS_ATTR
 
 
-class BaseFieldConverterInfo[RawFuncT: Callable, BoundFuncT: Callable](
-    BaseFieldRegistrationInfo[RawFuncT, BoundFuncT]
+class BaseFieldConverterInfo[UnboundFuncT: Callable, BoundFuncT: Callable](
+    BaseFieldRegistrationInfo[UnboundFuncT, BoundFuncT]
 ):
     """
     Common info for field validator/serializer.
     """
 
-    takes_info: bool
+    accepts_info: bool
+    """
+    Whether converter function accepts an info parameter.
+    """
+
+    mode: ModeType
+    """
+    Whether converter function is to be invoked before or after built-in conversion.
+    """
+
+    def __init__(
+        self,
+        func: UnboundFuncT,
+        field_names: tuple[str, ...] | None,
+        mode: ModeType,
+    ):
+        super().__init__(func, field_names)
+        self.mode = mode
 
     def _post_init(self):
         args = self.sig.get_params(positional=True)
@@ -265,7 +296,7 @@ class BaseFieldConverterInfo[RawFuncT: Callable, BoundFuncT: Callable](
                     self.func, len(args)
                 )
             )
-        self.takes_info = len(args) == 3
+        self.accepts_info = len(args) == 3
 
 
 class FieldValidatorInfo(
@@ -276,20 +307,6 @@ class FieldValidatorInfo(
     """
 
     attr_name = FIELD_VALIDATOR_ATTR
-
-    mode: ModeType
-    """
-    Validator mode.
-    """
-
-    def __init__(
-        self,
-        func: FieldValidatorFuncType,
-        field_names: tuple[str, ...] | None,
-        mode: ModeType,
-    ):
-        super().__init__(func, field_names)
-        self.mode = mode
 
 
 class FieldSerializerInfo(
@@ -308,8 +325,6 @@ class RegistrationInfo:
     Encapsulates validator/serializer registration info.
     """
 
-    # type_validators: list[BaseValidator]
-    # type_serializers: list[BaseSerializer]
     type_validators_infos: list[TypeValidatorsInfo]
     type_serializers_infos: list[TypeSerializersInfo]
     field_validator_infos: list[FieldValidatorInfo]
@@ -460,6 +475,10 @@ def field_validator[FuncT: FieldValidatorFuncType](
     Decorator to register a field-level validator.
 
     If field names are omitted, the validator applies to all fields.
+
+    Field-level validators are semantically different from `PlainValidator`s since
+    the former has a concept of fields, and thus accepts `ValidationInfo`
+    which additionally contains `FieldInfo`.
     """
 
     def register(
@@ -485,31 +504,36 @@ def field_validator[FuncT: FieldValidatorFuncType](
 
 
 @overload
-def field_serializer[T: FieldSerializerFuncType](
-    func: T,
+def field_serializer[FuncT: FieldSerializerFuncType](
+    func: FuncT,
     /,
-) -> T: ...
+) -> FuncT: ...
 
 
 @overload
-def field_serializer[T: FieldSerializerFuncType](
+def field_serializer[FuncT: FieldSerializerFuncType](
     *field_names: str,
-) -> Callable[[T], T]: ...
+    mode: ModeType = "before",
+) -> Callable[[FuncT], FuncT]: ...
 
 
-# TODO
-def field_serializer[T: FieldSerializerFuncType](
-    func_or_name: T | str | None = None,
+def field_serializer[FuncT: FieldSerializerFuncType](
+    func_or_name: FuncT | str | None = None,
     *names: str,
-) -> T | Callable[[T], T]:
+    mode: ModeType = "before",
+) -> FuncT | Callable[[FuncT], FuncT]:
     """
     Decorator to register a field-level serializer.
 
     If field names are omitted, the serializer applies to all fields.
+
+    Field-level serializer are semantically different from `PlainSerializer`s since
+    the former has a concept of fields, and thus accepts
+    `SerializationInfo` which additionally contains `FieldInfo`.
     """
 
-    def register(func: T, field_names: tuple[str, ...] | None = None) -> T:
-        info = FieldSerializerInfo(func, field_names)
+    def register(func: FuncT, field_names: tuple[str, ...] | None = None) -> FuncT:
+        info = FieldSerializerInfo(func, field_names, mode=mode)
         setattr(func, FIELD_SERIALIZER_ATTR, info)
         return func
 
@@ -520,7 +544,7 @@ def field_serializer[T: FieldSerializerFuncType](
     all_names = (func_or_name, *names) if isinstance(func_or_name, str) else names
     assert all(isinstance(n, str) for n in all_names)
 
-    def decorator(func: T) -> T:
+    def decorator(func: FuncT) -> FuncT:
         return register(func, all_names or None)
 
     return decorator

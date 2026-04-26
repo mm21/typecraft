@@ -42,7 +42,6 @@ __all__ = [
 class SerializationEngine(
     BaseConversionEngine[
         TypeSerializerRegistry,
-        BaseTypeSerializer,
         SerializationFrame,
         SerializationParams,
         SerializationError,

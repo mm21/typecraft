@@ -9,8 +9,9 @@ from typing import (
 
 from ..exceptions import ConversionErrorDetail
 from ..inspecting.annotations import Annotation
+from ..types import ModeType
 from .converter.base import BaseConversionFrame, BaseConversionParams, FuncConverterType
-from .converter.plain import BasePlainTransformer
+from .converter.plain import BasePlainTransformer, PlainFuncType
 from .converter.type import (
     BaseTypeConverter,
     BaseTypeConverterRegistry,
@@ -178,3 +179,12 @@ class PlainSerializer(BasePlainTransformer[SerializationFrame]):
     returned by any plain serializers with `mode="before"`. This enables subsequent
     type-based matching.
     """
+
+    def __init__(
+        self,
+        func: PlainFuncType[Any, SerializationFrame],
+        /,
+        *,
+        mode: ModeType = "before",
+    ):
+        super().__init__(func, mode=mode)

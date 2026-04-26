@@ -17,12 +17,14 @@ from ..converting._types import ERROR_SENTINEL
 from ..converting.converter.base import BaseConversionFrame
 from ..converting.converter.symmetric import BaseSymmetricTypeConverter
 from ..converting.converter.type import MatchSpec
+from ..converting.engine import BaseConversionEngine
 from ..converting.serializer import (
     JSON_SERIALIZABLE_ANNOTATION,
     JsonSerializableType,
     SerializationFrame,
 )
 from ..exceptions import (
+    BaseConversionError,
     ConversionErrorDetail,
     ExtraFieldError,
     MissingFieldError,
@@ -31,7 +33,6 @@ from ..exceptions import (
 )
 from ..inspecting.annotations import ANY, Annotation
 from ..serializing import SerializationParams
-from ..types import ModeType
 from ..validating import ValidationFrame, ValidationParams
 from .fields import FieldInfo
 from .methods import (
@@ -372,6 +373,60 @@ class BaseModel:
 
         self.__init_done = True
 
+    def __invoke_conversion(
+        self,
+        obj: Any,
+        field_info: FieldInfo,
+        engine: BaseConversionEngine,
+        frame: BaseConversionFrame,
+        before_converter_infos: tuple[BaseFieldConverterInfo, ...],
+        after_converter_infos: tuple[BaseFieldConverterInfo, ...],
+        conversion_info_cls: type[BaseConversionInfo],
+    ) -> tuple[Any, list[ConversionErrorDetail] | None]:
+        """
+        Core conversion procedure shared by validation and serialization:
+
+        1. Field converters with `mode="before"`
+        2. Type-based conversion via engine
+        3. Field converters with `mode="after"`
+
+        Returns `(processed_obj, errors)`.
+        """
+        if obj is ERROR_SENTINEL:
+            return (obj, None)
+
+        processed_obj = obj
+        errors: list[ConversionErrorDetail] = []
+        try:
+            # invoke "before" converters
+            processed_obj = self.__invoke_field_converters(
+                processed_obj,
+                field_info,
+                frame,
+                before_converter_infos,
+                conversion_info_cls,
+            )
+
+            # invoke type converters
+            frame = frame._copy(source_annotation=Annotation(type(processed_obj)))
+            processed_obj = engine.invoke_process(processed_obj, frame)
+
+            # invoke "after" converters
+            frame = frame._copy(source_annotation=Annotation(type(processed_obj)))
+            processed_obj = self.__invoke_field_converters(
+                processed_obj,
+                field_info,
+                frame,
+                after_converter_infos,
+                conversion_info_cls,
+            )
+        except BaseConversionError as e:
+            assert e.errors
+            errors += [e._bubble_frame(field_info.name) for e in e.errors]
+        except Exception as e:
+            errors.append(ConversionErrorDetail(processed_obj, frame, e))
+        return processed_obj, errors
+
     def __invoke_validation(self, obj: Any, field_info: FieldInfo) -> Any:
         """
         Invoke validation procedure:
@@ -380,44 +435,22 @@ class BaseModel:
         2. Type-based validators
         3. Field validators with `mode="after"`
         """
-        # pass through error sentinel
-        if obj is ERROR_SENTINEL:
-            return obj
-
-        frame = field_info._validation_engine.create_frame(
-            source_annotation=Annotation(type(obj)),
-            target_annotation=field_info.annotation,
-            params=self.__validation_params,
-            context=self.__validation_context,
+        validated_obj, errors = self.__invoke_conversion(
+            obj,
+            field_info,
+            field_info._validation_engine,
+            field_info._validation_engine.create_frame(
+                source_annotation=Annotation(type(obj)),
+                target_annotation=field_info.annotation,
+                params=self.__validation_params,
+                context=self.__validation_context,
+            ),
+            field_info._get_validator_infos(mode="before"),
+            field_info._get_validator_infos(mode="after"),
+            ValidationInfo,
         )
-        validated_obj = obj
-
-        errors: list[ConversionErrorDetail] = []
-        try:
-            # invoke "before" validators
-            validated_obj = self.__run_field_validators(
-                validated_obj, field_info, frame, mode="before"
-            )
-
-            # invoke type-based validators
-            frame = frame._copy(source_annotation=Annotation(type(validated_obj)))
-            validated_obj = field_info._validation_engine.invoke_process(
-                validated_obj, frame
-            )
-
-            # invoke "after" validators
-            frame = frame._copy(source_annotation=Annotation(type(validated_obj)))
-            validated_obj = self.__run_field_validators(
-                validated_obj, field_info, frame, mode="after"
-            )
-        except ValidationError as e:
-            assert e.errors
-            errors += [e._bubble_frame(field_info.name) for e in e.errors]
-        except Exception as e:
-            errors.append(ConversionErrorDetail(validated_obj, frame, e))
 
         if errors:
-            validated_obj = ERROR_SENTINEL
             if self.__init_done:
                 # setting attribute after creating object: raise errors immediately
                 raise ValidationError(Annotation(type(self)), errors)
@@ -425,6 +458,7 @@ class BaseModel:
                 # still creating object: aggregate errors; will be raised after all
                 # attributes are set
                 self.__validation_errors += errors
+                return ERROR_SENTINEL
 
         return validated_obj
 
@@ -437,68 +471,32 @@ class BaseModel:
     ) -> JsonSerializableType:
         """
         Invoke serialization procedure:
-        1. Field serializers
+
+        1. Field serializers with `mode="before"`
         2. Type-based serializers
+        3. Field serializers with `mode="after"`
         """
-        serialized_obj = obj
-        frame = field_info._serialization_engine.create_frame(
-            source_annotation=field_info.annotation,
-            target_annotation=JSON_SERIALIZABLE_ANNOTATION,
-            params=params,
-            context=context,
-        )
-
-        try:
-            serialized_obj = self.__run_field_serializers(
-                serialized_obj, field_info, frame
-            )
-            frame = frame._copy(source_annotation=Annotation(type(serialized_obj)))
-            serialized_obj = field_info._serialization_engine.invoke_process(
-                serialized_obj, frame
-            )
-        except SerializationError as e:
-            raise e
-        except Exception as e:
-            raise SerializationError(
-                field_info.annotation, [ConversionErrorDetail(serialized_obj, frame, e)]
-            )
-
-        return cast(JsonSerializableType, serialized_obj)
-
-    def __run_field_validators(
-        self,
-        obj: Any,
-        field_info: FieldInfo,
-        frame: ValidationFrame,
-        *,
-        mode: ModeType,
-    ):
-        """
-        Run field validators with given mode.
-        """
-        return self.__run_field_converters(
+        serialized_obj, errors = self.__invoke_conversion(
             obj,
             field_info,
-            frame,
-            field_info._get_validator_infos(mode=mode),
-            ValidationInfo,
-        )
-
-    def __run_field_serializers(
-        self, obj: Any, field_info: FieldInfo, frame: SerializationFrame
-    ) -> Any:
-        """
-        Run field serializers.
-        """
-        return self.__run_field_converters(
-            obj,
-            field_info,
-            frame,
-            field_info._get_serializer_infos(),
+            field_info._serialization_engine,
+            field_info._serialization_engine.create_frame(
+                source_annotation=field_info.annotation,
+                target_annotation=JSON_SERIALIZABLE_ANNOTATION,
+                params=params,
+                context=context,
+            ),
+            field_info._get_serializer_infos(mode="before"),
+            field_info._get_serializer_infos(mode="after"),
             SerializationInfo,
         )
 
-    def __run_field_converters[InfoT: BaseConversionInfo](
+        if errors:
+            raise SerializationError(field_info.annotation, errors)
+
+        return cast(JsonSerializableType, serialized_obj)
+
+    def __invoke_field_converters[InfoT: BaseConversionInfo](
         self,
         obj: Any,
         field_info: FieldInfo,
@@ -512,7 +510,7 @@ class BaseModel:
         processed_obj = obj
         for info in converter_infos:
             func = info.get_bound_func(self)
-            if info.takes_info:
+            if info.accepts_info:
                 info = conversion_info_cls(field_info, frame)
                 func = cast(Callable[[Any, InfoT], Any], func)
                 processed_obj = func(processed_obj, info)

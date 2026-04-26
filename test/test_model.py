@@ -6,7 +6,10 @@ from typing import Any
 
 from pytest import raises
 
-from typecraft.converting.serializer import SerializationParams, TypeSerializer
+from typecraft.converting.serializer import (
+    SerializationParams,
+    TypeSerializer,
+)
 from typecraft.exceptions import ValidationError
 from typecraft.model import (
     BaseModel,
@@ -147,16 +150,18 @@ class FieldSerializerTest(BaseModel):
     Test field-level serializer.
     """
 
-    my_int: MyInt
+    my_set1: set[int]
+    my_set2: set[int]
 
-    @field_serializer("my_int")
-    def serialize_my_int(self, obj: MyInt) -> int:
-        """
-        Serialize MyInt back to int.
-        """
-        return int(obj)
+    @field_serializer("my_set1", mode="before")
+    def serialize_my_set1(self, obj: set[int]) -> list[int]:
+        assert isinstance(obj, set)
+        return sorted(v + 1 for v in obj)
 
-    # TODO: before serializer
+    @field_serializer("my_set2", mode="after")
+    def serialize_my_set2(self, obj: list[int]) -> list[int]:
+        assert isinstance(obj, list)
+        return [v - 1 for v in obj]
 
 
 class FieldSerializerAllFieldsTest(BaseModel):
@@ -168,13 +173,12 @@ class FieldSerializerAllFieldsTest(BaseModel):
     b: MyInt
 
     @field_serializer
-    def serialize_all(self, obj: Any) -> Any:
+    def serialize_all(self, obj: Any) -> int:
         """
         Serialize all MyInt fields back to int.
         """
-        if isinstance(obj, MyInt):
-            return int(obj)
-        return obj
+        assert isinstance(obj, MyInt)
+        return int(obj)
 
 
 class TypeValidatorsTest(BaseModel):
@@ -444,12 +448,10 @@ def test_field_serializer():
     """
     Test @field_serializer decorator with specific fields.
     """
-    dc = FieldSerializerTest(my_int=MyInt(123))
-    assert isinstance(dc.my_int, MyInt)
-    assert dc.my_int == 123
+    dc = FieldSerializerTest(my_set1={1, 2, 3}, my_set2={1, 2, 3})
 
     dump = dc.model_serialize()
-    assert dump == {"my_int": 123}
+    assert dump == {"my_set1": [2, 3, 4], "my_set2": [0, 1, 2]}
 
 
 def test_field_serializer_all_fields():

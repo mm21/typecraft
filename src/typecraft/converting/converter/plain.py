@@ -45,18 +45,18 @@ class BasePlainConverter[FrameT: BaseConversionFrame](ABC):
     after type-based conversion at their annotation level.
     """
 
-    _func_wrapper: FuncConverterWrapper[Any, Any, FrameT]
     mode: ModeType
+    _func_wrapper: FuncConverterWrapper[Any, Any, FrameT]
 
     def __init__(self, func: Callable[..., Any], /, *, mode: ModeType = "after"):
-        self._func_wrapper = FuncConverterWrapper(func)
         self.mode = mode
+        self._func_wrapper = FuncConverterWrapper(func)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._func_wrapper.func.__name__})"
 
     @abstractmethod
-    def invoke(self, obj: Any, frame: FrameT) -> Any:
+    def _invoke(self, obj: Any, frame: FrameT) -> Any:
         """
         Invoke the wrapped function and return the resulting object.
         """
@@ -73,9 +73,9 @@ class BasePlainTransformer[FrameT: BaseConversionFrame](BasePlainConverter[Frame
         func: PlainFuncType[Any, FrameT],
         /,
         *,
-        mode: ModeType = "after",
+        mode: ModeType,
     ):
         super().__init__(func, mode=mode)
 
-    def invoke(self, obj: Any, frame: FrameT) -> Any:
+    def _invoke(self, obj: Any, frame: FrameT) -> Any:
         return self._func_wrapper.invoke(obj, frame)

@@ -8,10 +8,12 @@ from typing import (
 
 from ..exceptions import ConversionErrorDetail, PredicateError
 from ..inspecting.annotations import Annotation
+from ..types import ModeType
 from .converter.base import BaseConversionFrame, BaseConversionParams, FuncConverterType
 from .converter.plain import (
     BasePlainConverter,
     BasePlainTransformer,
+    PlainFuncType,
     PredicateFuncType,
 )
 from .converter.type import (
@@ -147,6 +149,15 @@ class PlainValidator(BasePlainTransformer[ValidationFrame]):
     level. Return value replaces the object; exceptions are captured as errors.
     """
 
+    def __init__(
+        self,
+        func: PlainFuncType[Any, ValidationFrame],
+        /,
+        *,
+        mode: ModeType = "after",
+    ):
+        super().__init__(func, mode=mode)
+
 
 class PredicateValidator(BasePlainConverter[ValidationFrame]):
     """
@@ -158,7 +169,7 @@ class PredicateValidator(BasePlainConverter[ValidationFrame]):
     def __init__(self, func: PredicateFuncType[Any, ValidationFrame], /):
         super().__init__(func, mode="after")
 
-    def invoke(self, obj: Any, frame: ValidationFrame) -> Any:
+    def _invoke(self, obj: Any, frame: ValidationFrame) -> Any:
         if self._func_wrapper.invoke(obj, frame):
             return obj
         raise PredicateError(f"Predicate failed: {self._func_wrapper.func.__name__}")

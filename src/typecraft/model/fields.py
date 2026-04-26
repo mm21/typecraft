@@ -149,13 +149,15 @@ class FieldInfo:
         """
         Get field validators filtered by mode.
         """
-        return tuple(v for v in self.__field_validator_infos if v.mode == mode)
+        return tuple(i for i in self.__field_validator_infos if i.mode == mode)
 
-    def _get_serializer_infos(self) -> tuple[FieldSerializerInfo, ...]:
+    def _get_serializer_infos(
+        self, *, mode: ModeType
+    ) -> tuple[FieldSerializerInfo, ...]:
         """
         Get field serializers.
         """
-        return self.__field_serializer_infos
+        return tuple(i for i in self.__field_serializer_infos if i.mode == mode)
 
 
 @overload

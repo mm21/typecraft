@@ -69,7 +69,6 @@ Registry of validators for non-strict mode.
 class ValidationEngine(
     BaseConversionEngine[
         TypeValidatorRegistry,
-        BaseTypeValidator,
         ValidationFrame,
         ValidationParams,
         ValidationError,
