@@ -5,6 +5,8 @@ from pathlib import Path
 from doit.task import Task
 from doit.tools import create_folder
 
+Path("__cache__").mkdir(parents=True, exist_ok=True)
+
 PACKAGE = "typecraft"
 
 BADGES_PATH = Path("badges")
