@@ -116,7 +116,7 @@ class BaseConversionEngine[
         source_annotation: Annotation,
         target_annotation: Annotation,
         params: ParamsT | None,
-        context: Any | None,
+        context: Any,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
         errors: list[ConversionErrorDetail] | None = None,
@@ -135,7 +135,7 @@ class BaseConversionEngine[
             errors=errors,
         )
 
-    def invoke_process(self, obj: Any, frame: FrameT) -> Any:
+    def invoke_process(self, obj: object, frame: FrameT) -> object:
         """
         Entry point for conversion which handles error aggregation.
         """
@@ -150,9 +150,10 @@ class BaseConversionEngine[
             )
             raise self.__exception_cls(ref_annotation, frame.errors)
 
+        assert not isinstance(processed_obj, ErrorSentinel)
         return processed_obj
 
-    def process(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+    def process(self, obj: object, frame: FrameT) -> object | ErrorSentinel:
         """
         Main conversion dispatcher, wrapping type-based conversion with plain converters
         from `Annotated[...]` extras (before/after mode).
@@ -182,7 +183,7 @@ class BaseConversionEngine[
 
         return result
 
-    def _process_inner(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+    def _process_inner(self, obj: object, frame: FrameT) -> object | ErrorSentinel:
         """
         Type-based conversion dispatcher.
 
@@ -261,7 +262,9 @@ class BaseConversionEngine[
         """
         return not self._is_validating
 
-    def __process_collection(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+    def __process_collection(
+        self, obj: object, frame: FrameT
+    ) -> object | ErrorSentinel:
         """
         Process collection by recursing into items.
 
@@ -282,7 +285,7 @@ class BaseConversionEngine[
             assert issubclass(target_type, dict)
             return convert_to_dict(cast(Mapping, obj), frame)
 
-    def __invoke_conversion(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+    def __invoke_conversion(self, obj: object, frame: FrameT) -> object | ErrorSentinel:
         if frame.target_annotation.is_union:
             # handle union
             converted_obj = self.__invoke_union_conversion(obj, frame)
@@ -321,7 +324,9 @@ class BaseConversionEngine[
 
         return converted_obj
 
-    def __invoke_union_conversion(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+    def __invoke_union_conversion(
+        self, obj: object, frame: FrameT
+    ) -> object | ErrorSentinel:
         """
         Invoke conversion to union target type.
         """
@@ -349,7 +354,9 @@ class BaseConversionEngine[
         frame.append_error(obj, exception)
         return ERROR_SENTINEL
 
-    def __invoke_type_conversion(self, obj: Any, frame: FrameT) -> Any | ErrorSentinel:
+    def __invoke_type_conversion(
+        self, obj: object, frame: FrameT
+    ) -> object | ErrorSentinel:
         """
         Invoke conversion to a single (non-union) type.
         """
@@ -370,7 +377,7 @@ class BaseConversionEngine[
         return ERROR_SENTINEL
 
     def __attempt_conversion(
-        self, obj: Any, frame: FrameT, target_annotation: Annotation
+        self, obj: object, frame: FrameT, target_annotation: Annotation
     ) -> tuple[Any | ErrorSentinel, Exception | None]:
         if converter := self.__find_converter(obj, frame, target_annotation):
             frame_ = frame._copy(target_annotation=target_annotation)
@@ -390,7 +397,7 @@ class BaseConversionEngine[
         return (ERROR_SENTINEL, TypeError("No matching converters"))
 
     def __find_converter(
-        self, obj: Any, frame: FrameT, target_annotation: Annotation
+        self, obj: object, frame: FrameT, target_annotation: Annotation
     ) -> BaseTypeConverter | None:
         # try converters from annotation extras first (Annotated[])
         extras = (

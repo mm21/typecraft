@@ -93,8 +93,29 @@ def test_simple_dataclass():
     assert serialize(test_validated) == test_serialized
 
     # test invalid
-    with raises(ValidationError):
+    with raises(ValidationError) as exc_info:
         _ = validate("not-a-dict", SimpleDataclass)
+
+    assert (
+        str(exc_info.value)
+        == """\
+1 validation error for SimpleDataclass
+<root>=not-a-dict: str -> SimpleDataclass: TypeError
+  No matching converters"""
+    )
+
+    with raises(ValidationError) as exc_info:
+        _ = validate({"name": 123, "age": "30"}, SimpleDataclass)
+
+    assert (
+        str(exc_info.value)
+        == """\
+2 validation errors for SimpleDataclass
+name=123: int -> str: TypeError
+  No matching converters
+age=30: str -> int: TypeError
+  No matching converters"""
+    )
 
 
 def test_dataclass_with_defaults():

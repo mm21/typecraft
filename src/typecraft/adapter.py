@@ -4,7 +4,7 @@ Mechanism for bidirectional type-based conversion (validation and serialization)
 
 from __future__ import annotations
 
-from typing import Any, overload
+from typing import Any, cast, overload
 
 from .converting.serializer import JSON_SERIALIZABLE_ANNOTATION
 from .inspecting.annotations import Annotation
@@ -71,10 +71,10 @@ class Adapter[T]:
 
     def validate(
         self,
-        obj: Any,
+        obj: object,
         *,
         params: ValidationParams | None = None,
-        context: Any | None = None,
+        context: Any = None,
     ) -> T:
         """
         Validate an object to the validated type.
@@ -90,14 +90,14 @@ class Adapter[T]:
             params=params,
             context=context,
         )
-        return self.__validation_engine.invoke_process(obj, frame)
+        return cast(T, self.__validation_engine.invoke_process(obj, frame))
 
     def serialize(
         self,
         obj: T,
         *,
         params: SerializationParams | None = None,
-        context: Any | None = None,
+        context: Any = None,
     ) -> JsonSerializableType:
         """
         Serialize an object from the validated type.
@@ -113,4 +113,6 @@ class Adapter[T]:
             params=params,
             context=context,
         )
-        return self.__serialization_engine.invoke_process(obj, frame)
+        return cast(
+            JsonSerializableType, self.__serialization_engine.invoke_process(obj, frame)
+        )

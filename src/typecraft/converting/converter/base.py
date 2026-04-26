@@ -8,7 +8,7 @@ from ...exceptions import ConversionErrorDetail
 from ...inspecting.annotations import ANY, Annotation
 from ...inspecting.functions import ParameterInfo, SignatureInfo
 from ...inspecting.generics import extract_arg
-from .._types import ERROR_SENTINEL
+from .._types import ERROR_SENTINEL, ErrorSentinel
 
 if TYPE_CHECKING:
     from ..engine import BaseConversionEngine
@@ -115,7 +115,7 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
     Parameters passed at validation/serialization entry point.
     """
 
-    context: Any | None
+    context: Any
     """
     User context passed at validation/serialization entry point.
 
@@ -160,7 +160,7 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
         source_annotation: Annotation,
         target_annotation: Annotation,
         params: ParamsT | None,
-        context: Any | None,
+        context: Any,
         engine: BaseConversionEngine | None = None,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
@@ -199,14 +199,14 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
 
     def recurse(
         self,
-        obj: Any,
+        obj: object,
         path_segment: str | int,
         /,
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation,
-        context: Any | None = ...,
-    ) -> Any:
+        context: Any = ...,
+    ) -> object | ErrorSentinel:
         """
         Create a new frame and recurse using the engine.
 
@@ -254,7 +254,7 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
 
         return next_obj
 
-    def append_error(self, obj: Any, exception: Exception):
+    def append_error(self, obj: object, exception: Exception):
         """
         Append a conversion error to the shared error list.
         """
@@ -265,7 +265,7 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation | None = None,
-        context: Any | None = ...,
+        context: Any = ...,
         path_append: str | int | None = None,
         path_prepend: str | int | None = None,
     ) -> Self:

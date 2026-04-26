@@ -3,7 +3,6 @@ from __future__ import annotations
 import itertools
 from collections.abc import Mapping
 from typing import (
-    Any,
     Generator,
     Iterable,
     Sized,
@@ -256,7 +255,7 @@ def convert_to_dict(
     return ERROR_SENTINEL
 
 
-def select_ann_from_union(obj: Any, union: Annotation) -> Annotation:
+def select_ann_from_union(obj: object, union: Annotation) -> Annotation:
     """
     Select the annotation from the union which matches the given object.
 

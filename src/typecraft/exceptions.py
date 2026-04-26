@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Generator
 
 from .inspecting.annotations import Annotation
 
@@ -29,7 +29,7 @@ class ConversionErrorDetail:
     Details about a single conversion error.
     """
 
-    obj: Any
+    obj: object
     """
     The object attempted to be converted.
     """

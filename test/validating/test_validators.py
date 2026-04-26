@@ -148,11 +148,11 @@ def test_any():
     Test conversion to Any.
     """
 
-    def func1(obj: Any) -> Any:
+    def func1(obj: object) -> int:
         assert isinstance(obj, int)
         return -obj
 
-    def func2(obj: Any, frame: ValidationFrame) -> Any:
+    def func2(obj: object, frame: ValidationFrame) -> int:
         assert isinstance(obj, int)
         assert frame.params.strict
         assert frame.target_annotation.concrete_type is object

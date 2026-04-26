@@ -56,7 +56,7 @@ class BasePlainConverter[FrameT: BaseConversionFrame](ABC):
         return f"{self.__class__.__name__}({self._func_wrapper.func.__name__})"
 
     @abstractmethod
-    def _invoke(self, obj: Any, frame: FrameT) -> Any:
+    def _invoke(self, obj: object, frame: FrameT) -> object:
         """
         Invoke the wrapped function and return the resulting object.
         """
@@ -77,5 +77,5 @@ class BasePlainTransformer[FrameT: BaseConversionFrame](BasePlainConverter[Frame
     ):
         super().__init__(func, mode=mode)
 
-    def _invoke(self, obj: Any, frame: FrameT) -> Any:
+    def _invoke(self, obj: object, frame: FrameT) -> object:
         return self._func_wrapper.invoke(obj, frame)

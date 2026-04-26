@@ -94,37 +94,37 @@ class ValidationEngine(
 
 @overload
 def validate[T](
-    obj: Any,
+    obj: object,
     target_type: type[T],
     /,
     *validators: BaseTypeValidator[Any, T],
     registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
-    context: Any | None = None,
+    context: Any = None,
 ) -> T: ...
 
 
 @overload
 def validate(
-    obj: Any,
+    obj: object,
     target_type: Annotation | Any,
     /,
     *validators: BaseTypeValidator[Any, Any],
     registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
-    context: Any | None = None,
-) -> Any: ...
+    context: Any = None,
+) -> object: ...
 
 
 def validate(
-    obj: Any,
+    obj: object,
     target_type: Annotation | Any,
     /,
     *validators: BaseTypeValidator[Any, Any],
     registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
-    context: Any | None = None,
-) -> Any:
+    context: Any = None,
+) -> object:
     """
     Recursively validate object by type, converting to the target type if configured by
     `params`.
@@ -161,7 +161,7 @@ def normalize_to_list[T](
     *validators: TypeValidator[Any, T],
     params: ValidationParams | None = None,
     registry: TypeValidatorRegistry | None = None,
-    context: Any | None = None,
+    context: Any = None,
 ) -> list[T]: ...
 
 
@@ -173,7 +173,7 @@ def normalize_to_list(
     *validators: TypeValidator[Any, Any],
     params: ValidationParams | None = None,
     registry: TypeValidatorRegistry | None = None,
-    context: Any | None = None,
+    context: Any = None,
 ) -> list[Any]: ...
 
 
@@ -184,7 +184,7 @@ def normalize_to_list(
     *validators: TypeValidator[Any, Any],
     registry: TypeValidatorRegistry | None = None,
     params: ValidationParams | None = None,
-    context: Any | None = None,
+    context: Any = None,
 ) -> list[Any]:
     """
     Validate object(s) and normalize to a list of the item type.

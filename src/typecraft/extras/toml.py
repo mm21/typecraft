@@ -159,7 +159,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
         return VALIDATORS
 
     @field_validator(mode="before")
-    def _validate_field(self, value: Any, info: ValidationInfo) -> Any:
+    def _validate_field(self, value: object, info: ValidationInfo) -> object:
         value_ = _normalize_value(value) if value is not None else None
 
         # if applicable, propagate to wrapped tomlkit object
@@ -341,7 +341,8 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
             for i, o in enumerate(items)
         ]
 
-        obj = cls(validated_items)
+        # TODO: handle ErrorSentinel objects
+        obj = cls(cast(list[ItemT], validated_items))
         return cls._finalize_obj(tomlkit_obj, obj)
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):

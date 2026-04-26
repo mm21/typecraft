@@ -61,13 +61,13 @@ class NestedInvalidTest(BaseModel):
 
     @field_validator("basic")
     @classmethod
-    def validate_basic(cls, obj: Any) -> Any:
+    def validate_basic(cls, obj: object) -> object:
         assert isinstance(obj, dict)
         return BasicTest(**obj)
 
     @field_validator("union")
     @classmethod
-    def validate_union(cls, obj: Any) -> Any:
+    def validate_union(cls, obj: object) -> object:
         assert isinstance(obj, dict)
         return UnionTest(**obj)
 
@@ -86,7 +86,7 @@ class FieldValidatorTest(BaseModel):
     a: MyInt
 
     @field_validator
-    def validate_a_before_1(self, obj: Any, info: ValidationInfo) -> Any:
+    def validate_a_before_1(self, obj: object, info: ValidationInfo) -> object:
         """
         Demonstrate passing info and using an instance method.
         """
@@ -96,7 +96,7 @@ class FieldValidatorTest(BaseModel):
 
     @field_validator("a", mode="before")
     @classmethod
-    def validate_a_before_2(cls, obj: Any) -> Any:
+    def validate_a_before_2(cls, obj: object) -> object:
         """
         Convert string to int before builtin validation.
         """
@@ -107,7 +107,7 @@ class FieldValidatorTest(BaseModel):
 
     @field_validator("a", mode="after")
     @classmethod
-    def validate_a_after(cls, obj: Any) -> Any:
+    def validate_a_after(cls, obj: object) -> object:
         """
         Ensure value is positive after validation.
         """
@@ -126,7 +126,7 @@ class FieldValidatorAllFieldsTest(BaseModel):
 
     @field_validator(mode="before")
     @classmethod
-    def validate_all_before(cls, obj: Any) -> Any:
+    def validate_all_before(cls, obj: object) -> object:
         """
         Convert string to int for all fields.
         """
@@ -136,7 +136,7 @@ class FieldValidatorAllFieldsTest(BaseModel):
 
     @field_validator(mode="after")
     @classmethod
-    def validate_all_after(cls, obj: Any, info: ValidationInfo) -> Any:
+    def validate_all_after(cls, obj: object, info: ValidationInfo) -> object:
         """
         Ensure all int values are positive.
         """
@@ -173,7 +173,7 @@ class FieldSerializerAllFieldsTest(BaseModel):
     b: MyInt
 
     @field_serializer
-    def serialize_all(self, obj: Any) -> int:
+    def serialize_all(self, obj: object) -> int:
         """
         Serialize all MyInt fields back to int.
         """
@@ -233,7 +233,7 @@ class MultipleFieldValidatorTest(BaseModel):
 
     @field_validator("a", mode="before")
     @classmethod
-    def strip_whitespace(cls, obj: Any) -> Any:
+    def strip_whitespace(cls, obj: object) -> object:
         """
         Strip whitespace if string.
         """
@@ -243,7 +243,7 @@ class MultipleFieldValidatorTest(BaseModel):
 
     @field_validator("a", mode="before")
     @classmethod
-    def convert_to_int(cls, obj: Any) -> Any:
+    def convert_to_int(cls, obj: object) -> object:
         """
         Convert string to int.
         """
@@ -284,7 +284,7 @@ class CombinedValidatorSerializerTest(BaseModel):
 
     @field_validator("plain_int", mode="before")
     @classmethod
-    def validate_plain(cls, obj: Any) -> Any:
+    def validate_plain(cls, obj: object) -> object:
         """
         Convert string to int.
         """

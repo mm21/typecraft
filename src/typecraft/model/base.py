@@ -229,7 +229,7 @@ class BaseModel:
         /,
         *,
         params: ValidationParams | None = None,
-        context: Any | None = None,
+        context: Any = None,
     ) -> Self:
         """
         Create instance of model from mapping, substituting aliases if `by_alias` is
@@ -255,7 +255,7 @@ class BaseModel:
         return cls(**values)
 
     def model_serialize(
-        self, *, params: SerializationParams | None = None, context: Any | None = None
+        self, *, params: SerializationParams | None = None, context: Any = None
     ) -> dict[str, JsonSerializableType]:
         """
         Dump model to dictionary of JSON-serializable types, substituting aliases if
@@ -375,14 +375,14 @@ class BaseModel:
 
     def __invoke_conversion(
         self,
-        obj: Any,
+        obj: object,
         field_info: FieldInfo,
         engine: BaseConversionEngine,
         frame: BaseConversionFrame,
         before_converter_infos: tuple[BaseFieldConverterInfo, ...],
         after_converter_infos: tuple[BaseFieldConverterInfo, ...],
         conversion_info_cls: type[BaseConversionInfo],
-    ) -> tuple[Any, list[ConversionErrorDetail] | None]:
+    ) -> tuple[object, list[ConversionErrorDetail] | None]:
         """
         Core conversion procedure shared by validation and serialization:
 
@@ -427,7 +427,7 @@ class BaseModel:
             errors.append(ConversionErrorDetail(processed_obj, frame, e))
         return processed_obj, errors
 
-    def __invoke_validation(self, obj: Any, field_info: FieldInfo) -> Any:
+    def __invoke_validation(self, obj: object, field_info: FieldInfo) -> object:
         """
         Invoke validation procedure:
 
@@ -464,10 +464,10 @@ class BaseModel:
 
     def __invoke_serialization(
         self,
-        obj: Any,
+        obj: object,
         field_info: FieldInfo,
         params: SerializationParams,
-        context: Any | None,
+        context: Any,
     ) -> JsonSerializableType:
         """
         Invoke serialization procedure:
@@ -498,12 +498,12 @@ class BaseModel:
 
     def __invoke_field_converters[InfoT: BaseConversionInfo](
         self,
-        obj: Any,
+        obj: object,
         field_info: FieldInfo,
         frame: BaseConversionFrame,
         converter_infos: tuple[BaseFieldConverterInfo, ...],
         conversion_info_cls: type[InfoT],
-    ):
+    ) -> object:
         """
         Run field converters.
         """
@@ -512,10 +512,10 @@ class BaseModel:
             func = info.get_bound_func(self)
             if info.accepts_info:
                 info = conversion_info_cls(field_info, frame)
-                func = cast(Callable[[Any, InfoT], Any], func)
+                func = cast(Callable[[object, InfoT], object], func)
                 processed_obj = func(processed_obj, info)
             else:
-                func = cast(Callable[[Any], Any], func)
+                func = cast(Callable[[object], object], func)
                 processed_obj = func(processed_obj)
 
         return processed_obj

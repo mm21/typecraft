@@ -114,6 +114,9 @@ def test_document():
     assert isinstance(document.array_test[0], Integer)
     assert document.array_test == [10, 2, 3]
 
+    # TODO: after implementing type checks: should raise ValidationError
+    # document.array_test[0] = '10'
+
     new_inner_array = ArrayWrapper([10])
     assert isinstance(new_inner_array.tomlkit_obj, Array)
 
@@ -127,9 +130,7 @@ def test_document():
     new_inline_table = InlineTableTest(
         inline_table_string_test="jkl", inline_table_int_test=3
     )
-    assert isinstance(
-        new_inline_table.inline_table_string_test, String
-    ), f"got type: {type(new_inline_table.inline_table_string_test)}"
+    assert isinstance(new_inline_table.inline_table_string_test, String)
     assert isinstance(new_inline_table.inline_table_int_test, Integer)
     document.inline_table_array_test.append(new_inline_table)
     assert len(document.inline_table_array_test) == 3

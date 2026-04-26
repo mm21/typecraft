@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from ...inspecting.annotations import Annotation
 from ...inspecting.generics import extract_arg
@@ -235,7 +235,7 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         return not match_any_union
 
     def _check_convert(
-        self, obj: Any, source_annotation: Annotation, target_annotation: Annotation
+        self, obj: object, source_annotation: Annotation, target_annotation: Annotation
     ) -> bool:
         """
         Check if this converter can convert this object.
@@ -247,7 +247,9 @@ class BaseTypeConverter[SourceT, TargetT, FrameT: BaseConversionFrame](
         if not self._source_annotation.check_instance(obj):
             return False
         # check if converter can convert this specific object
-        if not self.can_convert(obj, source_annotation, target_annotation):
+        if not self.can_convert(
+            cast(SourceT, obj), source_annotation, target_annotation
+        ):
             return False
         return True
 
@@ -289,7 +291,7 @@ class BaseTypeConverterRegistry[ConverterT: BaseTypeConverter](ABC):
 
     def find(
         self,
-        obj: Any,
+        obj: object,
         source_annotation: Annotation,
         target_annotation: Annotation,
     ) -> ConverterT | None:

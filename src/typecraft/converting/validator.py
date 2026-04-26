@@ -74,7 +74,7 @@ class ValidationFrame(BaseConversionFrame[ValidationParams]):
         source_annotation: Annotation,
         target_annotation: Annotation,
         params: ValidationParams | None,
-        context: Any | None,
+        context: Any,
         engine: ValidationEngine | None = None,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
@@ -169,7 +169,7 @@ class PredicateValidator(BasePlainConverter[ValidationFrame]):
     def __init__(self, func: PredicateFuncType[Any, ValidationFrame], /):
         super().__init__(func, mode="after")
 
-    def _invoke(self, obj: Any, frame: ValidationFrame) -> Any:
+    def _invoke(self, obj: object, frame: ValidationFrame) -> object:
         if self._func_wrapper.invoke(obj, frame):
             return obj
         raise PredicateError(f"Predicate failed: {self._func_wrapper.func.__name__}")

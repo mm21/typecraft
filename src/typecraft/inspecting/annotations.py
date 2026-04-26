@@ -261,7 +261,7 @@ class Annotation:
 
         return True
 
-    def check_instance(self, obj: Any, /, *, recurse: bool = True) -> bool:
+    def check_instance(self, obj: object, /, *, recurse: bool = True) -> bool:
         """
         Check if object is an instance of this annotation; roughly equivalent to
         `isinstance(obj, annotation)`.
@@ -385,7 +385,7 @@ class Annotation:
         # satisfied
         return return_ann.is_narrower(other.return_annotation)
 
-    def _check_callable(self, obj: Any) -> bool:
+    def _check_callable(self, obj: object) -> bool:
         """
         Check if object matches this callable annotation.
         """
@@ -415,7 +415,7 @@ class Annotation:
             # can't get signature (e.g., built-in functions), assume it's fine
             return True
 
-    def _check_collection(self, obj: Any) -> bool:
+    def _check_collection(self, obj: object) -> bool:
         """
         Recursively check if object matches this collection's annotation.
         """
@@ -494,7 +494,7 @@ def is_narrower(annotation: Annotation | Any, other: Annotation | Any, /) -> boo
     return Annotation._normalize(annotation).is_narrower(other)
 
 
-def is_instance(obj: Any, annotation: Annotation | Any, /) -> bool:
+def is_instance(obj: object, annotation: Annotation | Any, /) -> bool:
     """
     Check whether an object is an "instance" of an annotation -- whether its type
     matches or is narrower than the annotation.

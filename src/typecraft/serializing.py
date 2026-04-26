@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import (
     Any,
+    cast,
 )
 
 from .converting.builtin_converters import get_builtin_serializer_registry
@@ -65,12 +66,12 @@ class SerializationEngine(
 
 
 def serialize(
-    obj: Any,
+    obj: object,
     /,
     *serializers: BaseTypeSerializer[Any, Any],
     registry: TypeSerializerRegistry | None = None,
     params: SerializationParams | None = None,
-    context: Any | None = None,
+    context: Any = None,
     source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType:
     """
@@ -104,4 +105,4 @@ def serialize(
         params=params,
         context=context,
     )
-    return engine.invoke_process(obj, frame)
+    return cast(JsonSerializableType, engine.invoke_process(obj, frame))

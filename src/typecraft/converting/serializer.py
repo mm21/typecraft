@@ -83,7 +83,7 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
         source_annotation: Annotation,
         target_annotation: Annotation | None = None,
         params: SerializationParams | None,
-        context: Any | None,
+        context: Any,
         engine: SerializationEngine,
         path: tuple[str | int, ...] | None = None,
         seen: set[int] | None = None,
@@ -102,14 +102,14 @@ class SerializationFrame(BaseConversionFrame[SerializationParams]):
 
     def recurse(
         self,
-        obj: Any,
+        obj: object,
         path_segment: str | int,
         /,
         *,
         source_annotation: Annotation | None = None,
         target_annotation: Annotation | None = None,
-        context: Any | None = ...,
-    ) -> Any:
+        context: Any = ...,
+    ) -> object:
         return super().recurse(
             obj,
             path_segment,

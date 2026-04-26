@@ -113,7 +113,7 @@ class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassPro
             )
             validated_fields[field_name] = validated_obj
 
-        # construct dataclass instance
+        # construct dataclass instance (error sentinels handled downstream)
         return dataclass_type(**validated_fields)
 
     @classmethod
