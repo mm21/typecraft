@@ -19,7 +19,7 @@ license-files = ["LICENSE"]
 name = "typecraft"
 readme = "README.md"
 requires-python = ">=3.12,<4"
-version = "0.1.0"
+version = "0.2.0"
 
 [project.optional-dependencies]
 toml = ["tomlkit>=0.13.3,<0.14"]
