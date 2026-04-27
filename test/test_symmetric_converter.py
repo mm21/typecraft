@@ -50,21 +50,23 @@ class RangeConverter(BaseSymmetricTypeConverter[list[int], range]):
     """
 
     @classmethod
-    def can_validate(cls, obj: list[int], *_) -> bool:
+    def can_validate(cls, obj: list[int]) -> bool:
         return len(obj) in range(1, 4)
 
     @classmethod
-    def validate(cls, obj: list[int], _: ValidationFrame) -> range:
+    def validate(cls, obj: list[int], frame: ValidationFrame) -> range:
         """
         Validate list to range.
         """
+        _ = frame
         return range(*obj)
 
     @classmethod
-    def serialize(cls, obj: range, _: SerializationFrame) -> list[int]:
+    def serialize(cls, obj: range, frame: SerializationFrame) -> list[int]:
         """
         Serialize range to list.
         """
+        _ = frame
         return [obj.start, obj.stop, obj.step]
 
 
