@@ -16,6 +16,7 @@ __all__ = [
     "PlainFuncType",
     "PredicateFuncType",
     "BasePlainConverter",
+    "BaseFuncPlainConverter",
     "BasePlainTransformer",
 ]
 
@@ -46,6 +47,19 @@ class BasePlainConverter[FrameT: BaseConversionFrame](ABC):
     """
 
     mode: ModeType
+
+    @abstractmethod
+    def _invoke(self, obj: object, frame: FrameT) -> object:
+        """
+        Invoke the converter and return the resulting object.
+        """
+
+
+class BaseFuncPlainConverter[FrameT: BaseConversionFrame](BasePlainConverter[FrameT]):
+    """
+    Base for function-driven plain converters.
+    """
+
     _func_wrapper: FuncConverterWrapper[Any, Any, FrameT]
 
     def __init__(self, func: Callable[..., Any], /, *, mode: ModeType = "after"):
@@ -55,14 +69,8 @@ class BasePlainConverter[FrameT: BaseConversionFrame](ABC):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._func_wrapper.func.__name__})"
 
-    @abstractmethod
-    def _invoke(self, obj: object, frame: FrameT) -> object:
-        """
-        Invoke the wrapped function and return the resulting object.
-        """
 
-
-class BasePlainTransformer[FrameT: BaseConversionFrame](BasePlainConverter[FrameT]):
+class BasePlainTransformer[FrameT: BaseConversionFrame](BaseFuncPlainConverter[FrameT]):
     """
     Plain transformer: return value replaces the object; exceptions propagate to the
     engine as conversion errors.

@@ -9,6 +9,7 @@ from pytest import raises
 from typecraft.converting.converter.type import MatchSpec
 from typecraft.exceptions import ValidationError
 from typecraft.inspecting.annotations import ANY, Annotation
+from typecraft.lib import EmailValidator, IntValidator, StrValidator
 from typecraft.validating import (
     BaseGenericTypeValidator,
     PlainValidator,
@@ -435,6 +436,98 @@ def test_plain():
 [1]=2.5: float -> int: TypeError
   Invalid type: float"""
     )
+
+
+def test_int_validator():
+    """
+    Test IntValidator with lt/lte/gt/gte bounds.
+    """
+
+    # lt
+    v = IntValidator(lt=10)
+    assert validate(9, Annotated[int, v]) == 9
+    with raises(ValidationError):
+        validate(10, Annotated[int, v])
+    with raises(ValidationError):
+        validate(11, Annotated[int, v])
+
+    # lte
+    v = IntValidator(lte=10)
+    assert validate(10, Annotated[int, v]) == 10
+    with raises(ValidationError):
+        validate(11, Annotated[int, v])
+
+    # gt
+    v = IntValidator(gt=0)
+    assert validate(1, Annotated[int, v]) == 1
+    with raises(ValidationError):
+        validate(0, Annotated[int, v])
+    with raises(ValidationError):
+        validate(-1, Annotated[int, v])
+
+    # gte
+    v = IntValidator(gte=0)
+    assert validate(0, Annotated[int, v]) == 0
+    with raises(ValidationError):
+        validate(-1, Annotated[int, v])
+
+    # combined
+    v = IntValidator(gt=0, lt=100)
+    assert validate(50, Annotated[int, v]) == 50
+    with raises(ValidationError):
+        validate(0, Annotated[int, v])
+    with raises(ValidationError):
+        validate(100, Annotated[int, v])
+
+
+def test_str_validator():
+    """
+    Test StrValidator with min/max length bounds.
+    """
+
+    v = StrValidator(min_len=2, max_len=5)
+    assert validate("ab", Annotated[str, v]) == "ab"
+    assert validate("abcde", Annotated[str, v]) == "abcde"
+    with raises(ValidationError):
+        validate("a", Annotated[str, v])
+    with raises(ValidationError):
+        validate("abcdef", Annotated[str, v])
+
+    # only min
+    v = StrValidator(min_len=3)
+    assert validate("abc", Annotated[str, v]) == "abc"
+    with raises(ValidationError):
+        validate("ab", Annotated[str, v])
+
+    # only max
+    v = StrValidator(max_len=3)
+    assert validate("abc", Annotated[str, v]) == "abc"
+    with raises(ValidationError):
+        validate("abcd", Annotated[str, v])
+
+
+def test_email_validator():
+    """
+    Test EmailValidator checks for a valid email pattern.
+    """
+
+    v = EmailValidator()
+    assert validate("user@example.com", Annotated[str, v]) == "user@example.com"
+    assert (
+        validate("a.b+tag@sub.domain.org", Annotated[str, v])
+        == "a.b+tag@sub.domain.org"
+    )
+
+    with raises(ValidationError):
+        validate("not-an-email", Annotated[str, v])
+    with raises(ValidationError):
+        validate("missing-at-sign.com", Annotated[str, v])
+    with raises(ValidationError):
+        validate("@example.com", Annotated[str, v])
+    with raises(ValidationError):
+        validate("user@.com", Annotated[str, v])
+    with raises(ValidationError):
+        validate("user@domain", Annotated[str, v])
 
 
 def _create_frame(

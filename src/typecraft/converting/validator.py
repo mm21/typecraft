@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -11,6 +12,7 @@ from ..inspecting.annotations import Annotation
 from ..types import ModeType
 from .converter.base import BaseConversionFrame, BaseConversionParams, FuncConverterType
 from .converter.plain import (
+    BaseFuncPlainConverter,
     BasePlainConverter,
     BasePlainTransformer,
     PlainFuncType,
@@ -159,7 +161,7 @@ class PlainValidator(BasePlainTransformer[ValidationFrame]):
         super().__init__(func, mode=mode)
 
 
-class PredicateValidator(BasePlainConverter[ValidationFrame]):
+class PredicateValidator(BaseFuncPlainConverter[ValidationFrame]):
     """
     Predicate validator: runs after type-based validation on the already-validated
     object. The object is returned unchanged if the predicate returns `True`;
@@ -173,3 +175,26 @@ class PredicateValidator(BasePlainConverter[ValidationFrame]):
         if self._func_wrapper.invoke(obj, frame):
             return obj
         raise PredicateError(f"Predicate failed: {self._func_wrapper.func.__name__}")
+
+
+# note: can only run in "after" mode
+class BaseValidator[T](BasePlainConverter[ValidationFrame]):
+    """
+    Base class for subclass-based validators.
+
+    Implement `validate()` to apply custom validation logic after type-based conversion.
+    """
+
+    mode: ModeType = "after"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
+
+    @abstractmethod
+    def validate(self, obj: T, frame: ValidationFrame) -> T:
+        """
+        Implemented by subclass for custom validation logic.
+        """
+
+    def _invoke(self, obj: object, frame: ValidationFrame) -> object:
+        return self.validate(obj, frame)  # type: ignore[arg-type]
