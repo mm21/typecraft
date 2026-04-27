@@ -10,7 +10,7 @@ from typecraft.extras.toml import (
     BaseInlineTable,
     BaseTable,
 )
-from typecraft.model import Field
+from typecraft.model.fields import Field
 
 
 class DocumentTest(BaseDocument):

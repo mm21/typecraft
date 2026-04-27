@@ -11,16 +11,15 @@ from typecraft.converting.serializer import (
     TypeSerializer,
 )
 from typecraft.exceptions import ValidationError
-from typecraft.model import (
-    BaseModel,
-    Field,
-    ModelConfig,
+from typecraft.model.base import BaseModel, ModelConfig
+from typecraft.model.fields import Field
+from typecraft.model.methods import (
+    ValidationInfo,
     field_serializer,
     field_validator,
     type_serializers,
     type_validators,
 )
-from typecraft.model.methods import ValidationInfo
 from typecraft.serializing import serialize
 from typecraft.validating import TypeValidator, ValidationParams, validate
 

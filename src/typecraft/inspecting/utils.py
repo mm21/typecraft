@@ -4,6 +4,10 @@ Inspecting utilities.
 
 from typing import Protocol
 
+__all__ = [
+    "robust_issubclass",
+]
+
 
 def robust_issubclass(cls: type, class_or_tuple: type | tuple[type, ...], /) -> bool:
     """
