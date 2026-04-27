@@ -84,6 +84,7 @@ class FieldValidatorTest(BaseModel):
     """
 
     a: MyInt
+    b: int | None = None
 
     @field_validator
     def validate_a_before_1(self, obj: object, info: ValidationInfo) -> object:
@@ -91,7 +92,14 @@ class FieldValidatorTest(BaseModel):
         Demonstrate passing info and using an instance method.
         """
         assert isinstance(self, FieldValidatorTest)
-        assert info.field_info.name == "a"
+        assert info.field_info.name in {"a", "b"}
+        if info.field_info.name == "b":
+            if obj is not None:
+                assert info.frame.context == 100
+                assert isinstance(obj, int)
+                return obj + info.frame.context
+            else:
+                assert info.frame.context is None
         return obj
 
     @field_validator("a", mode="before")
@@ -101,7 +109,7 @@ class FieldValidatorTest(BaseModel):
         Convert string to int before builtin validation.
         """
         assert issubclass(cls, FieldValidatorTest)
-        if isinstance(obj, str):
+        if isinstance(obj, (str, int)):
             return MyInt(int(obj))
         return obj
 
@@ -112,7 +120,8 @@ class FieldValidatorTest(BaseModel):
         Ensure value is positive after validation.
         """
         assert isinstance(obj, MyInt)
-        assert obj > 0, "Value must be positive"
+        if obj < 1:
+            raise ValueError("Value must be positive")
         return obj
 
 
@@ -425,6 +434,11 @@ def test_field_validator():
     # after validator ensures positive
     with raises(ValidationError, match="Value must be positive"):
         _ = FieldValidatorTest(a=MyInt(0))
+
+    # context gets propagated
+    dc = validate({"a": 123, "b": 321}, FieldValidatorTest, context=100)
+    assert dc.a == 123
+    assert dc.b == 421
 
 
 def test_field_validator_all_fields():
