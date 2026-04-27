@@ -1,6 +1,5 @@
 """
-TypeCraft: Annotation-native toolkit for data validation, transformation, and
-type inspection
+TypeCraft: Annotation-native toolkit for type inspection, validation, and data modeling
 """
 
 from .exceptions import SerializationError, ValidationError

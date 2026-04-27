@@ -13,7 +13,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed"
 ]
-description = "Annotation-native toolkit for data validation, transformation, and type inspection"
+description = "Annotation-native toolkit for type inspection, validation, and data modeling"
 license = "MIT"
 license-files = ["LICENSE"]
 name = "typecraft"
