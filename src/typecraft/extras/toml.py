@@ -47,19 +47,19 @@ from ..model.methods import ValidationInfo, field_validator, type_validators
 from ..validating import TypeValidator, ValidationFrame
 
 __all__ = [
-    "BaseDocumentWrapper",
-    "BaseTableWrapper",
-    "BaseInlineTableWrapper",
+    "BaseDocument",
+    "BaseTable",
+    "BaseInlineTable",
     "ArrayItemType",
     "ArrayWrapper",
-    "TableArrayWrapper",
+    "AoTWrapper",
 ]
 
 type BuiltinType = str | int | float | bool | datetime.date | datetime.time | datetime.datetime
 
 type TomlkitArrayItemType = String | Integer | Float | Bool | Date | Time | DateTime | InlineTable | Array
 
-type ArrayItemType = BuiltinType | TomlkitArrayItemType | BaseInlineTableWrapper | ArrayWrapper
+type ArrayItemType = BuiltinType | TomlkitArrayItemType | BaseInlineTable | ArrayWrapper
 """
 Types which can be used as array items.
 """
@@ -197,7 +197,7 @@ class BaseContainerWrapper[TomlkitT: MutableMapping[str, Any]](
             tomlkit_obj[field_name] = _normalize_item(value)
 
 
-class BaseDocumentWrapper(BaseContainerWrapper[TOMLDocument]):
+class BaseDocument(BaseContainerWrapper[TOMLDocument]):
     """
     Abstracts a TOML document.
 
@@ -227,7 +227,7 @@ class BaseDocumentWrapper(BaseContainerWrapper[TOMLDocument]):
         return TOMLDocument()
 
 
-class BaseTableWrapper(BaseContainerWrapper[Table]):
+class BaseTable(BaseContainerWrapper[Table]):
     """
     Abstracts a table with nested primitive types or other tables.
     """
@@ -236,7 +236,7 @@ class BaseTableWrapper(BaseContainerWrapper[Table]):
         return tomlkit.table()
 
 
-class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
+class BaseInlineTable(BaseContainerWrapper[InlineTable]):
     """
     Abstracts an inline table with nested primitive types.
     """
@@ -245,7 +245,7 @@ class BaseInlineTableWrapper(BaseContainerWrapper[InlineTable]):
         return tomlkit.inline_table()
 
 
-class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTableWrapper](
+class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTable](
     MutableSequence[ItemT], BaseTomlWrapper[TomlkitT]
 ):
     """
@@ -363,7 +363,7 @@ class ArrayWrapper[ItemT: ArrayItemType](BaseArrayWrapper[Array, ItemT]):
         return tomlkit_obj.value
 
 
-class TableArrayWrapper[ItemT: BaseTableWrapper](BaseArrayWrapper[AoT, ItemT]):
+class AoTWrapper[ItemT: BaseTable](BaseArrayWrapper[AoT, ItemT]):
     """
     Array of (non-inline) tables.
     """
@@ -411,35 +411,31 @@ def _normalize_items(objs: Iterable[ItemType]) -> list[Item]:
     return [_normalize_item(o) for o in objs]
 
 
-def validate_table(
-    obj: Any, frame: ValidationFrame
-) -> BaseTableWrapper | BaseInlineTableWrapper:
+def validate_table(obj: Any, frame: ValidationFrame) -> BaseTable | BaseInlineTable:
     type_ = frame.target_annotation.concrete_type
-    assert issubclass(type_, (BaseTableWrapper, BaseInlineTableWrapper))
+    assert issubclass(type_, (BaseTable, BaseInlineTable))
     return type_._from_tomlkit_obj(obj)
 
 
-def validate_array(
-    obj: Any, frame: ValidationFrame
-) -> ArrayWrapper | TableArrayWrapper:
+def validate_array(obj: Any, frame: ValidationFrame) -> ArrayWrapper | AoTWrapper:
     type_ = frame.target_annotation.concrete_type
-    assert issubclass(type_, (ArrayWrapper, TableArrayWrapper))
+    assert issubclass(type_, (ArrayWrapper, AoTWrapper))
     return type_._from_tomlkit_obj_with_frame(obj, frame)
 
 
 VALIDATORS = (
     TypeValidator(
         Table,
-        BaseTableWrapper,
+        BaseTable,
         func=validate_table,
         match_spec=MatchSpec(narrowable_target=True),
     ),
     TypeValidator(
         InlineTable,
-        BaseInlineTableWrapper,
+        BaseInlineTable,
         func=validate_table,
         match_spec=MatchSpec(narrowable_target=True),
     ),
     TypeValidator(Array, ArrayWrapper, func=validate_array),
-    TypeValidator(AoT, TableArrayWrapper, func=validate_array),
+    TypeValidator(AoT, AoTWrapper, func=validate_array),
 )

@@ -4,16 +4,16 @@ import tomlkit
 from tomlkit.items import Array, InlineTable, Integer, String
 
 from typecraft.extras.toml import (
+    AoTWrapper,
     ArrayWrapper,
-    BaseDocumentWrapper,
-    BaseInlineTableWrapper,
-    BaseTableWrapper,
-    TableArrayWrapper,
+    BaseDocument,
+    BaseInlineTable,
+    BaseTable,
 )
 from typecraft.model import Field
 
 
-class DocumentTest(BaseDocumentWrapper):
+class DocumentTest(BaseDocument):
     string_test: String
     int_test: Integer
     optional_int_test: int | None = None
@@ -27,14 +27,14 @@ class DocumentTest(BaseDocumentWrapper):
     inline_table_array_test: ArrayWrapper[InlineTableTest]
 
     table_test: TableTest = Field(alias="table-test")
-    table_array_test: TableArrayWrapper[TableTest]
+    table_array_test: AoTWrapper[TableTest]
 
 
-class TableTest(BaseTableWrapper):
+class TableTest(BaseTable):
     table_string_test: String
 
 
-class InlineTableTest(BaseInlineTableWrapper):
+class InlineTableTest(BaseInlineTable):
     inline_table_string_test: str
     inline_table_int_test: int
 
