@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="./assets/logo-light.svg#gh-light-mode-only" alt="Logo" />
+  <img src="./assets/logo-dark.svg#gh-dark-mode-only" alt="Logo" />
+</p>
+
 # TypeCraft
 
 Annotation-native toolkit for type inspection, validation, and data modeling
