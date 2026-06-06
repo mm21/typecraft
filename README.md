@@ -50,7 +50,22 @@ Type annotations in Python are an expressive, structured description of data, bu
 3. A modeling layer (`BaseModel`) that turns ordinary dataclasses into validated models with field- and type-level converters, aliases, and configurable behavior &mdash; without metaclass shenanigans.
 4. A TOML extra that combines the modeling layer with `tomlkit` to give a typed, mutable, round-trippable interface for TOML documents.
 
-Each layer is usable on its own. You can use `Annotation` purely as a typing utility, or `validate()` and `serialize()` as standalone functions, without ever touching `BaseModel` or the TOML extra.
+TypeCraft trades speed for precision: it matches against the full parameterized annotation (e.g. `list[int]` rather than just `list`) so converters and checks can dispatch on the exact shape of the data, generics and all.
+
+The following compares TypeCraft against similar libraries.
+
+| | TypeCraft | Pydantic | cattrs | msgspec |
+| --- | --- | --- | --- | --- |
+| Standalone `isinstance`/`issubclass`-like checks over generics, unions, `Literal[]` | ✅ | ❌ | ❌ | ❌ |
+| Validation (typed-from-loose) | ✅ | ✅ | ✅ | ✅ |
+| Serialization (JSON-compatible primitives) | ✅ | ✅ | ✅ | ✅ |
+| Standalone validation / serialization (no model required) | ✅ `validate` / `serialize` | ✅ `TypeAdapter` | ✅ `structure` / `unstructure` | ✅ `convert` / `to_builtins` |
+| Data models | ✅ `BaseModel` | ✅ `BaseModel` | ➖ uses `attrs`/dataclasses | ✅ `Struct` |
+| Plain `@dataclass`, no custom metaclass | ✅ | ❌ | ✅ | ❌ |
+| Inline converters via `Annotated[]` | ✅ | ✅ | ✅ | ⚠️ `Meta` constraints (no conversion) |
+| Custom type-based converter registry | ✅ | ⚠️ via validators | ✅ converters | ⚠️ `enc_hook`/`dec_hook` |
+| Round-trippable TOML (formatting-preserving) | ✅ | ❌ | ❌ | ⚠️ (no formatting preservation) |
+| Implementation | pure Python | Rust core | pure Python | C extension |
 
 ## Getting started
 
