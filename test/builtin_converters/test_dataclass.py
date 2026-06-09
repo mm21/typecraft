@@ -8,8 +8,6 @@ from pytest import raises
 
 from typecraft.adapter import Adapter
 from typecraft.converting.builtin_converters import DataclassConverter
-from typecraft.converting.serializer import SerializationParams
-from typecraft.converting.validator import ValidationParams
 from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import TypeSerializerRegistry, serialize
 from typecraft.validating import TypeValidatorRegistry, validate
@@ -59,8 +57,6 @@ def test_simple_dataclass():
     """
     Test basic dataclass validation and serialization.
     """
-    validation_params = ValidationParams(use_builtin_validators=False)
-    serialization_params = SerializationParams(use_builtin_serializers=False)
     adapter = Adapter(
         SimpleDataclass,
         validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
@@ -72,19 +68,19 @@ def test_simple_dataclass():
 
     # make sure we get an exception without the adapter
     with raises(ValidationError):
-        _ = validate(test_serialized, SimpleDataclass, params=validation_params)
+        _ = validate(test_serialized, SimpleDataclass, use_builtin_validators=False)
 
     with raises(SerializationError):
-        _ = serialize(test_validated, params=serialization_params)
+        _ = serialize(test_validated, use_builtin_serializers=False)
 
     # test validation
-    validated = adapter.validate(test_serialized, params=validation_params)
+    validated = adapter.validate(test_serialized, use_builtin_validators=False)
     assert isinstance(validated, SimpleDataclass)
     assert validated.name == test_validated.name
     assert validated.age == test_validated.age
 
     # test serialization
-    serialized = adapter.serialize(test_validated, params=serialization_params)
+    serialized = adapter.serialize(test_validated, use_builtin_serializers=False)
     assert isinstance(serialized, dict)
     assert serialized == test_serialized
 
@@ -105,7 +101,7 @@ def test_simple_dataclass():
     )
 
     with raises(ValidationError) as exc_info:
-        _ = validate({"name": 123, "age": "30"}, SimpleDataclass)
+        _ = validate({"name": 123, "age": "30"}, SimpleDataclass, strict=True)
 
     assert (
         str(exc_info.value)
@@ -234,7 +230,7 @@ def test_invalid():
     )
 
     with raises(ValidationError) as exc_info:
-        _ = validate(test_serialized, NestedDataclass)
+        _ = validate(test_serialized, NestedDataclass, strict=True)
 
     assert len(exc_info.value.errors) == 2
     assert (

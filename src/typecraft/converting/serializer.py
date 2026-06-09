@@ -61,14 +61,19 @@ class SerializationParams(BaseConversionParams):
     Serialization params passed by user.
     """
 
+    sort_sets: bool = True
+    """
+    Whether to sort sets, producing deterministic output.
+    """
+
     use_builtin_serializers: bool = True
     """
     For non-serializable types, whether to use builtin serializers like `date` to `str`.
     """
 
-    sort_sets: bool = True
+    by_alias: bool = False
     """
-    Whether to sort sets, producing deterministic output.
+    Whether to serialize models by alias.
     """
 
 

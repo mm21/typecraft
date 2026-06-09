@@ -12,8 +12,6 @@ from typecraft.converting.builtin_converters import (
     DateTimeConverter,
     TimeConverter,
 )
-from typecraft.converting.serializer import SerializationParams
-from typecraft.converting.validator import ValidationParams
 from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import TypeSerializerRegistry, serialize
 from typecraft.validating import TypeValidatorRegistry, validate
@@ -28,17 +26,15 @@ def test_date_converter():
         validator_registry=TypeValidatorRegistry(DateConverter.as_validator()),
         serializer_registry=TypeSerializerRegistry(DateConverter.as_serializer()),
     )
-    validation_params = ValidationParams(use_builtin_validators=False)
-    serialization_params = SerializationParams(use_builtin_serializers=False)
 
     test_serialized = "2024-03-15"
     test_validated = date(2024, 3, 15)
 
     # make sure we get an exception without the adapter
     with raises(ValidationError, match="No matching converters"):
-        _ = validate(test_serialized, date, params=validation_params)
+        _ = validate(test_serialized, date, use_builtin_validators=False)
     with raises(SerializationError, match="No matching converters"):
-        _ = serialize(test_validated, params=serialization_params)
+        _ = serialize(test_validated, use_builtin_serializers=False)
 
     # test validation
     validated = adapter.validate(test_serialized)
@@ -71,17 +67,15 @@ def test_datetime_converter():
         validator_registry=TypeValidatorRegistry(DateTimeConverter.as_validator()),
         serializer_registry=TypeSerializerRegistry(DateTimeConverter.as_serializer()),
     )
-    validation_params = ValidationParams(use_builtin_validators=False)
-    serialization_params = SerializationParams(use_builtin_serializers=False)
 
     test_serialized = "2024-03-15T10:30:00"
     test_validated = datetime(2024, 3, 15, 10, 30, 0)
 
     # make sure we get an exception without the adapter
     with raises(ValidationError, match="No matching converters"):
-        _ = validate(test_serialized, datetime, params=validation_params)
+        _ = validate(test_serialized, datetime, use_builtin_validators=False)
     with raises(SerializationError, match="No matching converters"):
-        _ = serialize(test_validated, params=serialization_params)
+        _ = serialize(test_validated, use_builtin_serializers=False)
 
     # test validation
     validated = adapter.validate(test_serialized)
@@ -111,17 +105,15 @@ def test_time_converter():
         validator_registry=TypeValidatorRegistry(TimeConverter.as_validator()),
         serializer_registry=TypeSerializerRegistry(TimeConverter.as_serializer()),
     )
-    validation_params = ValidationParams(use_builtin_validators=False)
-    serialization_params = SerializationParams(use_builtin_serializers=False)
 
     test_serialized = "10:30:00"
     test_validated = time(10, 30, 0)
 
     # make sure we get an exception without the adapter
     with raises(ValidationError, match="No matching converters"):
-        _ = validate(test_serialized, time, params=validation_params)
+        _ = validate(test_serialized, time, use_builtin_validators=False)
     with raises(SerializationError, match="No matching converters"):
-        _ = serialize(test_validated, params=serialization_params)
+        _ = serialize(test_validated, use_builtin_serializers=False)
 
     # test validation
     validated = adapter.validate(test_serialized)

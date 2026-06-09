@@ -98,8 +98,10 @@ def validate[T](
     target_type: type[T],
     /,
     *validators: BaseTypeValidator[Any, T],
+    strict: bool = False,
+    use_builtin_validators: bool = True,
+    by_alias: bool = False,
     registry: TypeValidatorRegistry | None = None,
-    params: ValidationParams | None = None,
     context: Any = None,
 ) -> T: ...
 
@@ -110,8 +112,10 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: BaseTypeValidator[Any, Any],
+    strict: bool = False,
+    use_builtin_validators: bool = True,
+    by_alias: bool = False,
     registry: TypeValidatorRegistry | None = None,
-    params: ValidationParams | None = None,
     context: Any = None,
 ) -> object: ...
 
@@ -121,8 +125,10 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: BaseTypeValidator[Any, Any],
+    strict: bool = False,
+    use_builtin_validators: bool = True,
+    by_alias: bool = False,
     registry: TypeValidatorRegistry | None = None,
-    params: ValidationParams | None = None,
     context: Any = None,
 ) -> object:
     """
@@ -138,11 +144,16 @@ def validate(
     :param obj: Object to validate
     :param target_type: Type to validate to
     :param validators: Custom type-based validators
+    :param strict: For serializable target types, don't attempt to coerce values; just validate
+    :param use_builtin_validators: For non-serializable target types, whether to use builtin validators like `str` to `date`
+    :param by_alias: Whether to validate/serialize models by alias
     :param registry: Registry of custom type-based validators
-    :param params: Parameters to configure validation behavior
     :param context: User-defined context passed to validators
     :raises ConversionError: If any conversion errors are encountered
     """
+    params = ValidationParams(
+        by_alias=by_alias, strict=strict, use_builtin_validators=use_builtin_validators
+    )
     engine = ValidationEngine(converters=validators, registry=registry)
     frame = engine.create_frame(
         source_annotation=Annotation(type(obj)),

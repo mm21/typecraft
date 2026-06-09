@@ -53,15 +53,15 @@ class ValidationParams(BaseConversionParams):
     Validation params passed by user.
     """
 
+    strict: bool = False
+    """
+    For serializable target types, don't attempt to coerce values; just validate.
+    """
+
     use_builtin_validators: bool = True
     """
     For non-serializable target types, whether to use builtin validators like `str` to
     `date`.
-    """
-
-    strict: bool = True
-    """
-    For serializable target types, don't attempt to coerce values; just validate.
     """
 
 

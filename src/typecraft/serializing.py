@@ -69,8 +69,10 @@ def serialize(
     obj: object,
     /,
     *serializers: BaseTypeSerializer[Any, Any],
+    sort_sets: bool = True,
+    use_builtin_serializers: bool = True,
+    by_alias: bool = False,
     registry: TypeSerializerRegistry | None = None,
-    params: SerializationParams | None = None,
     context: Any = None,
     source_type: Annotation | Any | None = None,
 ) -> JsonSerializableType:
@@ -88,13 +90,20 @@ def serialize(
 
     :param obj: Object to serialize
     :param serializers: Custom type-based serializers
+    :param sort_sets: Whether to sort sets, producing deterministic output
+    :param use_builtin_serializers: For non-serializable types, whether to use builtin serializers like `date` to `str`
+    :param by_alias: Whether to serialize models by alias
     :param registry: Registry of custom type-based serializers
-    :param params:  Parameters to configure serialization behavior
     :param context: User-defined context passed to serializers
     :param source_type: Optional source type annotation for type-specific \
     serialization; if `None`, type is inferred from the object
     :raises ConversionError: If any conversion errors are encountered
     """
+    params = SerializationParams(
+        sort_sets=sort_sets,
+        use_builtin_serializers=use_builtin_serializers,
+        by_alias=by_alias,
+    )
     source_annotation = (
         Annotation._normalize(source_type) if source_type else Annotation(type(obj))
     )

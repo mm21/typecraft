@@ -30,13 +30,19 @@ class BasicTest(BaseModel):
 
 
 class UnionTest(BaseModel):
-    model_config = ModelConfig(validate_on_assignment=True)
+    model_config = ModelConfig(
+        validate_on_assignment=True,
+        default_validation_params=ValidationParams(strict=True),
+    )
 
     a: int | str = 123
 
 
 class ValidateOnAssignmentTest(BaseModel):
-    model_config = ModelConfig(validate_on_assignment=True)
+    model_config = ModelConfig(
+        validate_on_assignment=True,
+        default_validation_params=ValidationParams(strict=True),
+    )
 
     a: int = 123
     b: str = "abc"
@@ -50,6 +56,8 @@ class CoercionTest(BaseModel):
 
 
 class NestedTest(BaseModel):
+    model_config = ModelConfig(default_validation_params=ValidationParams(strict=True))
+
     basic: BasicTest
     union: UnionTest
 
@@ -302,10 +310,14 @@ class CombinedValidatorSerializerTest(BaseModel):
 
 
 class ExtraFieldTest(BasicTest):
-    model_config = ModelConfig(extra="forbid")
+    model_config = ModelConfig(
+        extra="forbid", default_validation_params=ValidationParams(strict=True)
+    )
 
 
 class NestedExtraFieldTest(BaseModel):
+    model_config = ModelConfig(default_validation_params=ValidationParams(strict=True))
+
     extra_field_test: ExtraFieldTest
 
 
