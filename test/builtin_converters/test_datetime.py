@@ -32,7 +32,7 @@ def test_date_converter():
 
     # make sure we get an exception without the adapter
     with raises(ValidationError, match="No matching converters"):
-        _ = validate(test_serialized, date, use_builtin_validators=False)
+        _ = validate(test_serialized, date)
     with raises(SerializationError, match="No matching converters"):
         _ = serialize(test_validated, use_builtin_serializers=False)
 
@@ -47,7 +47,9 @@ def test_date_converter():
     assert serialized == test_serialized
 
     # test roundtrip with builtin converter
-    assert validate(test_serialized, date) == test_validated
+    assert (
+        validate(test_serialized, date, use_builtin_validators=True) == test_validated
+    )
     assert serialize(test_validated) == test_serialized
 
     # test invalid date string
@@ -73,7 +75,7 @@ def test_datetime_converter():
 
     # make sure we get an exception without the adapter
     with raises(ValidationError, match="No matching converters"):
-        _ = validate(test_serialized, datetime, use_builtin_validators=False)
+        _ = validate(test_serialized, datetime)
     with raises(SerializationError, match="No matching converters"):
         _ = serialize(test_validated, use_builtin_serializers=False)
 
@@ -88,7 +90,10 @@ def test_datetime_converter():
     assert serialized == test_serialized
 
     # test roundtrip with builtin converter
-    assert validate(test_serialized, datetime) == test_validated
+    assert (
+        validate(test_serialized, datetime, use_builtin_validators=True)
+        == test_validated
+    )
     assert serialize(test_validated) == test_serialized
 
     # test invalid datetime string
@@ -111,7 +116,7 @@ def test_time_converter():
 
     # make sure we get an exception without the adapter
     with raises(ValidationError, match="No matching converters"):
-        _ = validate(test_serialized, time, use_builtin_validators=False)
+        _ = validate(test_serialized, time)
     with raises(SerializationError, match="No matching converters"):
         _ = serialize(test_validated, use_builtin_serializers=False)
 
@@ -126,7 +131,9 @@ def test_time_converter():
     assert serialized == test_serialized
 
     # test roundtrip with builtin converter
-    assert validate(test_serialized, time) == test_validated
+    assert (
+        validate(test_serialized, time, use_builtin_validators=True) == test_validated
+    )
     assert serialize(test_validated) == test_serialized
 
     # test invalid time string

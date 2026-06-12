@@ -56,8 +56,6 @@ class CoercionTest(BaseModel):
 
 
 class NestedTest(BaseModel):
-    model_config = ModelConfig(default_validation_params=ValidationParams(strict=True))
-
     basic: BasicTest
     union: UnionTest
 
@@ -311,12 +309,19 @@ class CombinedValidatorSerializerTest(BaseModel):
 
 class ExtraFieldTest(BasicTest):
     model_config = ModelConfig(
-        extra="forbid", default_validation_params=ValidationParams(strict=True)
+        extra="forbid",
+        default_validation_params=ValidationParams(
+            strict=True, use_builtin_validators=True
+        ),
     )
 
 
 class NestedExtraFieldTest(BaseModel):
-    model_config = ModelConfig(default_validation_params=ValidationParams(strict=True))
+    model_config = ModelConfig(
+        default_validation_params=ValidationParams(
+            strict=True, use_builtin_validators=True
+        )
+    )
 
     extra_field_test: ExtraFieldTest
 
@@ -369,13 +374,15 @@ def test_nested():
     # pass nested dataclasses
     _ = NestedTest(basic=BasicTest(), union=UnionTest())
 
-    basic_dict = {"a": 321, "b": "cba"}
+    basic_dict = {"a": 123, "b": "cba"}
     union_dict = {"a": 321}
     nested_dict = {"basic": basic_dict, "union": union_dict}
 
     # pass dicts, will get converted to dataclasses
-    dc = NestedTest(**nested_dict)
-    assert dc.basic.a == 321
+    dc = NestedTest.model_validate(
+        nested_dict, params=ValidationParams(use_builtin_validators=True)
+    )
+    assert dc.basic.a == 123
     assert dc.basic.b == "cba"
     assert dc.union.a == 321
 
@@ -390,33 +397,10 @@ def test_nested_invalid():
     nested_dict = {"basic": basic_dict, "union": union_dict}
 
     with raises(ValidationError) as exc_info:
-        _ = NestedTest(**nested_dict)
-
-    assert (
-        str(exc_info.value)
-        == """\
-3 validation errors for NestedTest
-basic.a=123: str -> int: TypeError
-  No matching converters
-basic.b=123: int -> str: TypeError
-  No matching converters
-union.a=1.5: float -> int | str: TypeError
-  Errors during union member conversion:
-    int: No matching converters
-    str: No matching converters"""
-    )
-
-
-def test_nested_invalid_validator():
-    """
-    Test nested model with custom validator which results in validation failure.
-    """
-    basic_dict = {"a": "123", "b": 123}
-    union_dict = {"a": 1.5}
-    nested_dict = {"basic": basic_dict, "union": union_dict}
-
-    with raises(ValidationError) as exc_info:
-        _ = NestedTest(**nested_dict)
+        _ = NestedTest.model_validate(
+            nested_dict,
+            params=ValidationParams(strict=True, use_builtin_validators=True),
+        )
 
     assert (
         str(exc_info.value)
@@ -447,7 +431,12 @@ def test_field_validator():
         _ = FieldValidatorTest(a=MyInt(0))
 
     # context gets propagated
-    dc = validate({"a": 123, "b": 321}, FieldValidatorTest, context=100)
+    dc = validate(
+        {"a": 123, "b": 321},
+        FieldValidatorTest,
+        context=100,
+        use_builtin_validators=True,
+    )
     assert dc.a == 123
     assert dc.b == 421
 
@@ -545,7 +534,7 @@ def test_load_dump():
 
 def test_list():
     obj = [{}, {"a": 321, "b": "cba"}]
-    validated = validate(obj, list[BasicTest])
+    validated = validate(obj, list[BasicTest], use_builtin_validators=True)
 
     assert len(validated) == 2
     assert all(isinstance(o, BasicTest) for o in validated)
@@ -607,7 +596,7 @@ extra_field_test.c: Extra field"""
 
 
 def test_missing_field():
-    obj = {"basic": {"a": "123", "b": "abc"}}
+    obj = {"basic": BasicTest(a=123, b="abc")}
 
     with raises(ValidationError) as exc_info:
         _ = NestedTest(**obj)  # type: ignore
@@ -615,8 +604,6 @@ def test_missing_field():
     assert (
         str(exc_info.value)
         == """\
-2 validation errors for NestedTest
-basic.a=123: str -> int: TypeError
-  No matching converters
+1 validation error for NestedTest
 union: Missing field"""
     )

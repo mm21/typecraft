@@ -74,7 +74,7 @@ class Adapter[T]:
         obj: object,
         *,
         strict: bool = False,
-        use_builtin_validators: bool = True,
+        use_builtin_validators: bool = False,
         by_alias: bool = False,
         context: Any = None,
     ) -> T:

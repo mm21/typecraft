@@ -68,13 +68,13 @@ def test_simple_dataclass():
 
     # make sure we get an exception without the adapter
     with raises(ValidationError):
-        _ = validate(test_serialized, SimpleDataclass, use_builtin_validators=False)
+        _ = validate(test_serialized, SimpleDataclass)
 
     with raises(SerializationError):
         _ = serialize(test_validated, use_builtin_serializers=False)
 
     # test validation
-    validated = adapter.validate(test_serialized, use_builtin_validators=False)
+    validated = adapter.validate(test_serialized)
     assert isinstance(validated, SimpleDataclass)
     assert validated.name == test_validated.name
     assert validated.age == test_validated.age
@@ -85,12 +85,15 @@ def test_simple_dataclass():
     assert serialized == test_serialized
 
     # test roundtrip with builtin converter
-    assert validate(test_serialized, SimpleDataclass) == test_validated
+    assert (
+        validate(test_serialized, SimpleDataclass, use_builtin_validators=True)
+        == test_validated
+    )
     assert serialize(test_validated) == test_serialized
 
     # test invalid
     with raises(ValidationError) as exc_info:
-        _ = validate("not-a-dict", SimpleDataclass)
+        _ = validate("not-a-dict", SimpleDataclass, use_builtin_validators=True)
 
     assert (
         str(exc_info.value)
@@ -101,7 +104,12 @@ def test_simple_dataclass():
     )
 
     with raises(ValidationError) as exc_info:
-        _ = validate({"name": 123, "age": "30"}, SimpleDataclass, strict=True)
+        _ = validate(
+            {"name": 123, "age": "30"},
+            SimpleDataclass,
+            strict=True,
+            use_builtin_validators=True,
+        )
 
     assert (
         str(exc_info.value)
@@ -230,7 +238,9 @@ def test_invalid():
     )
 
     with raises(ValidationError) as exc_info:
-        _ = validate(test_serialized, NestedDataclass, strict=True)
+        _ = validate(
+            test_serialized, NestedDataclass, strict=True, use_builtin_validators=True
+        )
 
     assert len(exc_info.value.errors) == 2
     assert (
