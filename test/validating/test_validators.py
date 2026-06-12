@@ -155,7 +155,6 @@ def test_any():
 
     def func2(obj: object, frame: ValidationFrame) -> int:
         assert isinstance(obj, int)
-        assert frame.params.strict
         assert frame.target_annotation.concrete_type is object
         return -2 * obj
 
@@ -538,6 +537,6 @@ def _create_frame(
     return ValidationEngine().create_frame(
         source_annotation=Annotation(source_annotation),
         target_annotation=Annotation(target_annotation),
-        params=params or ValidationParams(strict=True),
+        params=params or ValidationParams(),
         context=None,
     )

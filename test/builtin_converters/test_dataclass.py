@@ -107,7 +107,6 @@ def test_simple_dataclass():
         _ = validate(
             {"name": 123, "age": "30"},
             SimpleDataclass,
-            strict=True,
             use_builtin_validators=True,
         )
 
@@ -238,9 +237,7 @@ def test_invalid():
     )
 
     with raises(ValidationError) as exc_info:
-        _ = validate(
-            test_serialized, NestedDataclass, strict=True, use_builtin_validators=True
-        )
+        _ = validate(test_serialized, NestedDataclass, use_builtin_validators=True)
 
     assert len(exc_info.value.errors) == 2
     assert (

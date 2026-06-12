@@ -6,6 +6,7 @@ from typing import Any
 
 from pytest import raises
 
+from typecraft.converting.builtin_converters import IntConverter, StrConverter
 from typecraft.converting.serializer import (
     SerializationParams,
     TypeSerializer,
@@ -30,29 +31,26 @@ class BasicTest(BaseModel):
 
 
 class UnionTest(BaseModel):
-    model_config = ModelConfig(
-        validate_on_assignment=True,
-        default_validation_params=ValidationParams(strict=True),
-    )
+    model_config = ModelConfig(validate_on_assignment=True)
 
     a: int | str = 123
 
 
 class ValidateOnAssignmentTest(BaseModel):
-    model_config = ModelConfig(
-        validate_on_assignment=True,
-        default_validation_params=ValidationParams(strict=True),
-    )
+    model_config = ModelConfig(validate_on_assignment=True)
 
     a: int = 123
     b: str = "abc"
 
 
 class CoercionTest(BaseModel):
-    model_config = ModelConfig(default_validation_params=ValidationParams(strict=False))
-
     a: int = 123
     b: str = "abc"
+
+    @type_validators
+    @classmethod
+    def coerce(cls) -> tuple[TypeValidator, ...]:
+        return (IntConverter.as_validator(), StrConverter.as_validator())
 
 
 class NestedTest(BaseModel):
@@ -310,17 +308,13 @@ class CombinedValidatorSerializerTest(BaseModel):
 class ExtraFieldTest(BasicTest):
     model_config = ModelConfig(
         extra="forbid",
-        default_validation_params=ValidationParams(
-            strict=True, use_builtin_validators=True
-        ),
+        default_validation_params=ValidationParams(use_builtin_validators=True),
     )
 
 
 class NestedExtraFieldTest(BaseModel):
     model_config = ModelConfig(
-        default_validation_params=ValidationParams(
-            strict=True, use_builtin_validators=True
-        )
+        default_validation_params=ValidationParams(use_builtin_validators=True)
     )
 
     extra_field_test: ExtraFieldTest
@@ -399,7 +393,7 @@ def test_nested_invalid():
     with raises(ValidationError) as exc_info:
         _ = NestedTest.model_validate(
             nested_dict,
-            params=ValidationParams(strict=True, use_builtin_validators=True),
+            params=ValidationParams(use_builtin_validators=True),
         )
 
     assert (

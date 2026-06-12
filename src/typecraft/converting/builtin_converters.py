@@ -4,6 +4,7 @@ Library of builtin converters.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import fields
 from datetime import date, datetime, time
 from functools import cache
@@ -15,8 +16,29 @@ from ._types import ERROR_SENTINEL, ErrorSentinel
 from .converter.symmetric import BaseSymmetricTypeConverter
 from .converter.type import MatchSpec
 from .serializer import SerializationFrame, TypeSerializer, TypeSerializerRegistry
-from .utils import convert_to_list
-from .validator import TypeValidatorRegistry, ValidationFrame
+from .utils import convert_to_dict, convert_to_list, convert_to_set, convert_to_tuple
+from .validator import TypeValidator, TypeValidatorRegistry, ValidationFrame
+
+__all__ = [
+    "DateConverter",
+    "DateTimeConverter",
+    "TimeConverter",
+    "DataclassConverter",
+    "IntConverter",
+    "FloatConverter",
+    "BoolConverter",
+    "StrConverter",
+    "ListConverter",
+    "TupleConverter",
+    "SetConverter",
+    "FrozenSetConverter",
+    "DictConverter",
+    "BUILTIN_SYMMETRIC_CONVERTERS",
+    "BUILTIN_SERIALIZERS",
+    "get_builtin_converters",
+    "get_builtin_validator_registry",
+    "get_builtin_serializer_registry",
+]
 
 
 class DateConverter(BaseSymmetricTypeConverter[str, date]):
@@ -62,7 +84,7 @@ class TimeConverter(BaseSymmetricTypeConverter[str, time]):
         return obj.isoformat()
 
 
-class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassProtocol]):
+class DataclassConverter(BaseSymmetricTypeConverter[Mapping[str, Any], DataclassProtocol]):
     """
     Converter for dictionaries to/from dataclass instances.
 
@@ -74,12 +96,12 @@ class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassPro
     @classmethod
     def validate(
         cls,
-        obj: dict[str, Any],
+        obj: Mapping[str, Any],
         frame: ValidationFrame,
         /,
     ) -> DataclassProtocol:
         """
-        Recursively validate dictionary to dataclass instance.
+        Recursively validate mapping to dataclass instance.
         """
         # get the target dataclass type
         dataclass_type = frame.target_annotation.concrete_type
@@ -149,6 +171,101 @@ class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassPro
             serialized_fields[field_name] = serialized_value
 
         return serialized_fields
+
+
+class IntConverter:
+    """
+    Converts str/bytes/bytearray to int, supporting hex (0x), octal (0o), and binary
+    (0b) prefixes via base-0 inference.
+    """
+
+    @classmethod
+    def _validate(cls, obj: str | bytes | bytearray) -> int:
+        return int(obj, 0)
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator[str | bytes | bytearray, int]:
+        return TypeValidator(str | bytes | bytearray, int, func=cls._validate)
+
+
+class FloatConverter:
+    """
+    Converts str or int to float.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator[str | int, float]:
+        return TypeValidator(str | int, float)
+
+
+class BoolConverter:
+    """
+    Converts any object to bool.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator[Any, bool]:
+        return TypeValidator(Any, bool, match_spec=MatchSpec(widenable_target=False))
+
+
+class StrConverter:
+    """
+    Converts any object to str.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator[Any, str]:
+        return TypeValidator(Any, str)
+
+
+class ListConverter:
+    """
+    Converts collection types to list.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator:
+        return TypeValidator(ValueCollectionType, list, func=convert_to_list)
+
+
+class TupleConverter:
+    """
+    Converts collection types to tuple.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator:
+        return TypeValidator(ValueCollectionType, tuple, func=convert_to_tuple)
+
+
+class SetConverter:
+    """
+    Converts collection types to set.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator:
+        return TypeValidator(ValueCollectionType, set, func=convert_to_set)
+
+
+class FrozenSetConverter:
+    """
+    Converts collection types to frozenset.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator:
+        return TypeValidator(ValueCollectionType, frozenset, func=convert_to_set)
+
+
+class DictConverter:
+    """
+    Converts mapping types to dict.
+    """
+
+    @classmethod
+    def as_validator(cls) -> TypeValidator:
+        return TypeValidator(Mapping, dict, func=convert_to_dict)
 
 
 _T_contra = TypeVar("_T_contra", contravariant=True)
