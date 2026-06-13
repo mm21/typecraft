@@ -4,10 +4,19 @@ Library of builtin converters.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import fields
 from datetime import date, datetime, time
 from functools import cache
-from typing import Any, Protocol, TypeVar, cast, get_type_hints, runtime_checkable
+from typing import (
+    Any,
+    Iterable,
+    Protocol,
+    TypeVar,
+    cast,
+    get_type_hints,
+    runtime_checkable,
+)
 
 from ..inspecting.annotations import Annotation
 from ..types import DataclassProtocol, ValueCollectionType
@@ -15,8 +24,16 @@ from ._types import ERROR_SENTINEL, ErrorSentinel
 from .converter.symmetric import BaseSymmetricTypeConverter
 from .converter.type import MatchSpec
 from .serializer import SerializationFrame, TypeSerializer, TypeSerializerRegistry
-from .utils import convert_to_list
-from .validator import TypeValidatorRegistry, ValidationFrame
+from .utils import convert_to_dict, convert_to_list, convert_to_set, convert_to_tuple
+from .validator import TypeValidator, TypeValidatorRegistry, ValidationFrame
+
+__all__ = [
+    "DateConverter",
+    "DateTimeConverter",
+    "TimeConverter",
+    "DATACLASS_VALIDATOR",
+    "DATACLASS_SERIALIZER",
+]
 
 
 class DateConverter(BaseSymmetricTypeConverter[str, date]):
@@ -62,93 +79,62 @@ class TimeConverter(BaseSymmetricTypeConverter[str, time]):
         return obj.isoformat()
 
 
-class DataclassConverter(BaseSymmetricTypeConverter[dict[str, Any], DataclassProtocol]):
-    """
-    Converter for dictionaries to/from dataclass instances.
+def _validate_dataclass(
+    obj: Mapping[str, Any], frame: ValidationFrame
+) -> DataclassProtocol:
+    dataclass_type = frame.target_annotation.concrete_type
+    type_hints = get_type_hints(dataclass_type)
+    dataclass_fields = fields(dataclass_type)
 
-    Recursively validates and serializes all fields based on their type annotations.
-    """
+    validated_fields: dict[str, Any] = {}
+    for field in dataclass_fields:
+        field_name = field.name
+        if field_name not in obj:
+            # let TypeError be raised later upon __init__, which will aggregate
+            # all missing arguments
+            continue
+        field_annotation = Annotation(type_hints.get(field_name, Any))
+        validated_obj = frame.recurse(
+            obj[field_name],
+            field_name,
+            target_annotation=field_annotation,
+        )
+        validated_fields[field_name] = validated_obj
 
-    validation_match_spec = MatchSpec(narrowable_target=True)
+    return dataclass_type(**validated_fields)
 
-    @classmethod
-    def validate(
-        cls,
-        obj: dict[str, Any],
-        frame: ValidationFrame,
-        /,
-    ) -> DataclassProtocol:
-        """
-        Recursively validate dictionary to dataclass instance.
-        """
-        # get the target dataclass type
-        dataclass_type = frame.target_annotation.concrete_type
 
-        # get type hints for the dataclass fields
-        type_hints = get_type_hints(dataclass_type)
+def _serialize_dataclass(
+    obj: DataclassProtocol, frame: SerializationFrame
+) -> dict[str, Any]:
+    dataclass_type = type(obj)
+    type_hints = get_type_hints(dataclass_type)
 
-        # get dataclass fields
-        dataclass_fields = fields(dataclass_type)
+    serialized_fields: dict[str, Any] = {}
+    for field in fields(obj):
+        field_name = field.name
+        field_annotation = Annotation(type_hints.get(field_name, Any))
+        serialized_fields[field_name] = frame.recurse(
+            getattr(obj, field_name),
+            field_name,
+            source_annotation=field_annotation,
+        )
 
-        # validate each field
-        validated_fields: dict[str, Any] = {}
-        for field in dataclass_fields:
-            field_name = field.name
+    return serialized_fields
 
-            # check if field is present in input
-            if field_name not in obj:
-                # let TypeError be raised later upon __init__, which will aggregate
-                # all missing arguments
-                continue
 
-            # get field's type annotation
-            field_type = type_hints.get(field_name, Any)
-            field_annotation = Annotation(field_type)
+DATACLASS_VALIDATOR = TypeValidator(
+    Mapping[str, Any],
+    DataclassProtocol,
+    func=_validate_dataclass,
+    match_spec=MatchSpec(narrowable_target=True),
+)
 
-            # recurse to validate the field value
-            validated_obj = frame.recurse(
-                obj[field_name],
-                field_name,
-                target_annotation=field_annotation,
-            )
-            validated_fields[field_name] = validated_obj
-
-        # construct dataclass instance (error sentinels handled downstream)
-        return dataclass_type(**validated_fields)
-
-    @classmethod
-    def serialize(
-        cls,
-        obj: DataclassProtocol,
-        frame: SerializationFrame,
-        /,
-    ) -> dict[str, Any]:
-        """
-        Recursively serialize dataclass instance to dictionary.
-        """
-        # get type hints for the dataclass fields
-        dataclass_type = type(obj)
-        type_hints = get_type_hints(dataclass_type)
-
-        # serialize each field
-        serialized_fields: dict[str, Any] = {}
-        for field in fields(obj):
-            field_name = field.name
-            field_obj = getattr(obj, field_name)
-
-            # get field's type annotation
-            field_type = type_hints.get(field_name, Any)
-            field_annotation = Annotation(field_type)
-
-            # recurse to serialize the field value
-            serialized_value = frame.recurse(
-                field_obj,
-                field_name,
-                source_annotation=field_annotation,
-            )
-            serialized_fields[field_name] = serialized_value
-
-        return serialized_fields
+DATACLASS_SERIALIZER = TypeSerializer(
+    DataclassProtocol,
+    dict[str, Any],
+    func=_serialize_dataclass,
+)
 
 
 _T_contra = TypeVar("_T_contra", contravariant=True)
@@ -161,7 +147,7 @@ class SupportsComparison(Protocol[_T_contra]):
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
-def serialize_to_list(
+def _serialize_to_list(
     obj: ValueCollectionType, frame: SerializationFrame
 ) -> list | ErrorSentinel:
     """
@@ -182,22 +168,33 @@ def serialize_to_list(
         return obj_list
 
 
-BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricTypeConverter], ...] = (
+# collection validators
+LIST_VALIDATOR = TypeValidator(Iterable, list, func=convert_to_list)
+TUPLE_VALIDATOR = TypeValidator(Iterable, tuple, func=convert_to_tuple)
+SET_VALIDATOR = TypeValidator(Iterable, set, func=convert_to_set)
+FROZENSET_VALIDATOR = TypeValidator(Iterable, frozenset, func=convert_to_set)
+DICT_VALIDATOR = TypeValidator(Mapping, dict, func=convert_to_dict)
+
+# collection serializers
+LIST_SERIALIZER = TypeSerializer(set | frozenset | tuple, list, func=_serialize_to_list)
+
+
+_BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricTypeConverter], ...] = (
     TimeConverter,
     DateTimeConverter,
     DateConverter,
-    DataclassConverter,
 )
+"""
+Converters to use for symmetric validation/serialization.
+"""
 
-BUILTIN_SERIALIZERS = (
-    TypeSerializer(set | frozenset | tuple, list, func=serialize_to_list),
-)
+BUILTIN_SERIALIZERS = (LIST_SERIALIZER,)
 """
 Extra serializers to use for json serialization.
 """
 
 
-def get_model_converter() -> type[BaseSymmetricTypeConverter]:
+def _get_model_converter() -> type[BaseSymmetricTypeConverter]:
     """
     Get converter for `BaseModel`; must be lazy-loaded to avoid circular dependency.
     """
@@ -206,17 +203,22 @@ def get_model_converter() -> type[BaseSymmetricTypeConverter]:
     return ModelConverter
 
 
-def get_builtin_converters() -> tuple[type[BaseSymmetricTypeConverter], ...]:
-    return (*BUILTIN_SYMMETRIC_CONVERTERS, get_model_converter())
+def _get_builtin_converters() -> tuple[type[BaseSymmetricTypeConverter], ...]:
+    return (*_BUILTIN_SYMMETRIC_CONVERTERS, _get_model_converter())
 
 
 @cache
 def get_builtin_validator_registry() -> TypeValidatorRegistry:
-    return TypeValidatorRegistry(*(c.as_validator() for c in get_builtin_converters()))
+    return TypeValidatorRegistry(
+        DATACLASS_VALIDATOR,
+        *(c.as_validator() for c in _get_builtin_converters()),
+    )
 
 
 @cache
 def get_builtin_serializer_registry() -> TypeSerializerRegistry:
     return TypeSerializerRegistry(
-        *(c.as_serializer() for c in get_builtin_converters()), *BUILTIN_SERIALIZERS
+        DATACLASS_SERIALIZER,
+        *(c.as_serializer() for c in _get_builtin_converters()),
+        *BUILTIN_SERIALIZERS,
     )

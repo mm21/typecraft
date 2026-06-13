@@ -73,8 +73,7 @@ class Adapter[T]:
         self,
         obj: object,
         *,
-        strict: bool = False,
-        use_builtin_validators: bool = True,
+        use_builtin_validators: bool = False,
         by_alias: bool = False,
         context: Any = None,
     ) -> T:
@@ -82,15 +81,13 @@ class Adapter[T]:
         Validate an object to the validated type.
 
         :param obj: Object to validate
-        :param strict: For serializable target types, don't attempt to coerce values; just validate
-        :param use_builtin_validators: For non-serializable target types, whether to use builtin validators like `str` to `date`
+        :param use_builtin_validators: Whether to use builtin validators for non-serializable target types like `str` to `date`
         :param by_alias: Whether to validate/serialize models by alias
         :param context: User-defined context passed to validators
         :return: Validated object
         """
         params = ValidationParams(
             by_alias=by_alias,
-            strict=strict,
             use_builtin_validators=use_builtin_validators,
         )
         frame = self.__validation_engine.create_frame(

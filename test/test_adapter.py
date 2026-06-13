@@ -3,13 +3,15 @@ Test `Adapter`.
 """
 
 from typecraft.adapter import Adapter
+from typecraft.validating import TypeValidatorRegistry
+
+from .converters import INT_VALIDATOR
 
 
 def test_basic():
-    adapter = Adapter(int)
-
-    # validate with conversion
-    result = adapter.validate("123", strict=False)
+    # validate with conversion (explicit IntConverter needed since coercion is opt-in)
+    adapter = Adapter(int, validator_registry=TypeValidatorRegistry(INT_VALIDATOR))
+    result = adapter.validate("123")
     assert result == 123
 
     # serialize

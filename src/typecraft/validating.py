@@ -4,7 +4,6 @@ Validation capability.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import (
     Any,
     overload,
@@ -12,14 +11,7 @@ from typing import (
 
 from typecraft.converting.builtin_converters import get_builtin_validator_registry
 
-from .converting.converter.type import MatchSpec
 from .converting.engine import BaseConversionEngine
-from .converting.utils import (
-    convert_to_dict,
-    convert_to_list,
-    convert_to_set,
-    convert_to_tuple,
-)
 from .converting.validator import (
     BaseGenericTypeValidator,
     BaseTypeValidator,
@@ -33,7 +25,7 @@ from .converting.validator import (
 )
 from .exceptions import ValidationError
 from .inspecting.annotations import Annotation
-from .types import VALUE_COLLECTION_TYPES, ValueCollectionType
+from .types import VALUE_COLLECTION_TYPES
 
 __all__ = [
     "FuncValidatorType",
@@ -48,22 +40,6 @@ __all__ = [
     "validate",
     "normalize_to_list",
 ]
-
-NON_STRICT_REGISTRY = TypeValidatorRegistry(
-    TypeValidator(str | bytes | bytearray, int),
-    TypeValidator(str | int, float),
-    # set widenable_target=False so it doesn't match conversion to int
-    TypeValidator(Any, bool, match_spec=MatchSpec(widenable_target=False)),
-    TypeValidator(Any, str),
-    TypeValidator(ValueCollectionType, list, func=convert_to_list),
-    TypeValidator(ValueCollectionType, tuple, func=convert_to_tuple),
-    TypeValidator(ValueCollectionType, set, func=convert_to_set),
-    TypeValidator(ValueCollectionType, frozenset, func=convert_to_set),
-    TypeValidator(Mapping, dict, func=convert_to_dict),
-)
-"""
-Registry of validators for non-strict mode.
-"""
 
 
 class ValidationEngine(
@@ -83,13 +59,11 @@ class ValidationEngine(
     def _get_builtin_registries(
         self, frame: ValidationFrame
     ) -> tuple[TypeValidatorRegistry, ...]:
-        builtin_registry = (
+        return (
             (get_builtin_validator_registry(),)
             if frame.params.use_builtin_validators
             else ()
         )
-        non_strict_registry = () if frame.params.strict else (NON_STRICT_REGISTRY,)
-        return (*builtin_registry, *non_strict_registry)
 
 
 @overload
@@ -98,8 +72,7 @@ def validate[T](
     target_type: type[T],
     /,
     *validators: BaseTypeValidator[Any, T],
-    strict: bool = False,
-    use_builtin_validators: bool = True,
+    use_builtin_validators: bool = False,
     by_alias: bool = False,
     registry: TypeValidatorRegistry | None = None,
     context: Any = None,
@@ -112,8 +85,7 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: BaseTypeValidator[Any, Any],
-    strict: bool = False,
-    use_builtin_validators: bool = True,
+    use_builtin_validators: bool = False,
     by_alias: bool = False,
     registry: TypeValidatorRegistry | None = None,
     context: Any = None,
@@ -125,15 +97,13 @@ def validate(
     target_type: Annotation | Any,
     /,
     *validators: BaseTypeValidator[Any, Any],
-    strict: bool = False,
-    use_builtin_validators: bool = True,
+    use_builtin_validators: bool = False,
     by_alias: bool = False,
     registry: TypeValidatorRegistry | None = None,
     context: Any = None,
 ) -> object:
     """
-    Recursively validate object by type, converting to the target type if configured by
-    `params`.
+    Recursively validate object by type.
 
     If both `validators` and `registry` are passed, a new registry is created with
     `validators` appended.
@@ -144,15 +114,14 @@ def validate(
     :param obj: Object to validate
     :param target_type: Type to validate to
     :param validators: Custom type-based validators
-    :param strict: For serializable target types, don't attempt to coerce values; just validate
-    :param use_builtin_validators: For non-serializable target types, whether to use builtin validators like `str` to `date`
+    :param use_builtin_validators: Whether to use builtin validators for non-serializable target types like `str` to `date`
     :param by_alias: Whether to validate/serialize models by alias
     :param registry: Registry of custom type-based validators
     :param context: User-defined context passed to validators
     :raises ConversionError: If any conversion errors are encountered
     """
     params = ValidationParams(
-        by_alias=by_alias, strict=strict, use_builtin_validators=use_builtin_validators
+        by_alias=by_alias, use_builtin_validators=use_builtin_validators
     )
     engine = ValidationEngine(converters=validators, registry=registry)
     frame = engine.create_frame(
