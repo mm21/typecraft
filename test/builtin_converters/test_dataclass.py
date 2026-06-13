@@ -2,12 +2,38 @@
 Tests for dataclass symmetric converter.
 """
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from typing import Any
+
+
+class ImmutableMapping(Mapping[str, Any]):
+    """
+    Custom Mapping type that is not a dict.
+    """
+
+    _data: dict[str, Any]
+
+    def __init__(self, data: dict[str, Any]):
+        self._data = data
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
 
 from pytest import raises
 
 from typecraft.adapter import Adapter
-from typecraft.converting.builtin_converters import DataclassConverter
+from typecraft.converting.builtin_converters import (
+    DATACLASS_SERIALIZER,
+    DATACLASS_VALIDATOR,
+)
 from typecraft.exceptions import SerializationError, ValidationError
 from typecraft.serializing import TypeSerializerRegistry, serialize
 from typecraft.validating import TypeValidatorRegistry, validate
@@ -59,8 +85,8 @@ def test_simple_dataclass():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
+        serializer_registry=TypeSerializerRegistry(DATACLASS_SERIALIZER),
     )
 
     test_serialized = {"name": "Alice", "age": 30}
@@ -127,8 +153,8 @@ def test_dataclass_with_defaults():
     """
     adapter = Adapter(
         DataclassWithDefaults,
-        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
+        serializer_registry=TypeSerializerRegistry(DATACLASS_SERIALIZER),
     )
 
     # test with all fields provided
@@ -157,7 +183,7 @@ def test_missing_required_field():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
     )
 
     # missing 'age' field
@@ -171,8 +197,8 @@ def test_nested():
     """
     adapter = Adapter(
         NestedDataclass,
-        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
+        serializer_registry=TypeSerializerRegistry(DATACLASS_SERIALIZER),
     )
 
     test_serialized = {"person": {"name": "Alice", "age": 30}, "location": "NYC"}
@@ -200,8 +226,8 @@ def test_dataclass_with_list():
     """
     adapter = Adapter(
         DataclassWithList,
-        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
-        serializer_registry=TypeSerializerRegistry(DataclassConverter.as_serializer()),
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
+        serializer_registry=TypeSerializerRegistry(DATACLASS_SERIALIZER),
     )
 
     test_serialized = {"name": "Project", "tags": ["python", "testing", "ci"]}
@@ -224,7 +250,7 @@ def test_invalid():
     """
     adapter = Adapter(
         SimpleDataclass,
-        validator_registry=TypeValidatorRegistry(DataclassConverter.as_validator()),
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
     )
 
     class NonSerializable:
@@ -264,3 +290,21 @@ location=123: int -> str: TypeError
     # tuple input should fail
     with raises(ValidationError, match="No matching converters"):
         _ = adapter.validate(("Alice", 30))
+
+
+def test_custom_mapping():
+    """
+    Test that validation accepts any Mapping, not just dict.
+    """
+    adapter = Adapter(
+        SimpleDataclass,
+        validator_registry=TypeValidatorRegistry(DATACLASS_VALIDATOR),
+    )
+
+    mapping = ImmutableMapping({"name": "Alice", "age": 30})
+    assert not isinstance(mapping, dict)
+
+    validated = adapter.validate(mapping)
+    assert isinstance(validated, SimpleDataclass)
+    assert validated.name == "Alice"
+    assert validated.age == 30
