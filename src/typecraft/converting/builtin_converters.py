@@ -84,7 +84,9 @@ class TimeConverter(BaseSymmetricTypeConverter[str, time]):
         return obj.isoformat()
 
 
-class DataclassConverter(BaseSymmetricTypeConverter[Mapping[str, Any], DataclassProtocol]):
+class DataclassConverter(
+    BaseSymmetricTypeConverter[Mapping[str, Any], DataclassProtocol]
+):
     """
     Converter for dictionaries to/from dataclass instances.
 
