@@ -80,9 +80,7 @@ class TimeConverter(BaseSymmetricTypeConverter[str, time]):
 
 
 def _validate_dataclass(
-    obj: Mapping[str, Any],
-    frame: ValidationFrame,
-    /,
+    obj: Mapping[str, Any], frame: ValidationFrame
 ) -> DataclassProtocol:
     dataclass_type = frame.target_annotation.concrete_type
     type_hints = get_type_hints(dataclass_type)
@@ -107,9 +105,7 @@ def _validate_dataclass(
 
 
 def _serialize_dataclass(
-    obj: DataclassProtocol,
-    frame: SerializationFrame,
-    /,
+    obj: DataclassProtocol, frame: SerializationFrame
 ) -> dict[str, Any]:
     dataclass_type = type(obj)
     type_hints = get_type_hints(dataclass_type)
