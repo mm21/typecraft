@@ -2,6 +2,8 @@
 TypeCraft: Annotation-native toolkit for type inspection, validation, and data modeling
 """
 
+from .converting.serializer import SerializationParams
+from .converting.validator import ValidationParams
 from .exceptions import SerializationError, ValidationError
 from .inspecting.annotations import Annotation, is_instance, is_narrower
 from .model.base import BaseModel, ModelConfig
@@ -26,7 +28,9 @@ __all__ = [
     "type_serializers",
     # core operations
     "validate",
+    "ValidationParams",
     "serialize",
+    "SerializationParams",
     # exceptions
     "ValidationError",
     "SerializationError",
