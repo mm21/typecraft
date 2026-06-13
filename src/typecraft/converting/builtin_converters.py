@@ -8,7 +8,15 @@ from collections.abc import Mapping
 from dataclasses import fields
 from datetime import date, datetime, time
 from functools import cache
-from typing import Any, Protocol, TypeVar, cast, get_type_hints, runtime_checkable
+from typing import (
+    Any,
+    Iterable,
+    Protocol,
+    TypeVar,
+    cast,
+    get_type_hints,
+    runtime_checkable,
+)
 
 from ..inspecting.annotations import Annotation
 from ..types import DataclassProtocol, ValueCollectionType
@@ -24,20 +32,6 @@ __all__ = [
     "DateTimeConverter",
     "TimeConverter",
     "DataclassConverter",
-    "IntConverter",
-    "FloatConverter",
-    "BoolConverter",
-    "StrConverter",
-    "ListConverter",
-    "TupleConverter",
-    "SetConverter",
-    "FrozenSetConverter",
-    "DictConverter",
-    "BUILTIN_SYMMETRIC_CONVERTERS",
-    "BUILTIN_SERIALIZERS",
-    "get_builtin_converters",
-    "get_builtin_validator_registry",
-    "get_builtin_serializer_registry",
 ]
 
 
@@ -175,101 +169,6 @@ class DataclassConverter(
         return serialized_fields
 
 
-class IntConverter:
-    """
-    Converts str/bytes/bytearray to int, supporting hex (0x), octal (0o), and binary
-    (0b) prefixes via base-0 inference.
-    """
-
-    @classmethod
-    def _validate(cls, obj: str | bytes | bytearray) -> int:
-        return int(obj, 0)
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator[str | bytes | bytearray, int]:
-        return TypeValidator(str | bytes | bytearray, int, func=cls._validate)
-
-
-class FloatConverter:
-    """
-    Converts str or int to float.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator[str | int, float]:
-        return TypeValidator(str | int, float)
-
-
-class BoolConverter:
-    """
-    Converts any object to bool.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator[Any, bool]:
-        return TypeValidator(Any, bool, match_spec=MatchSpec(widenable_target=False))
-
-
-class StrConverter:
-    """
-    Converts any object to str.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator[Any, str]:
-        return TypeValidator(Any, str)
-
-
-class ListConverter:
-    """
-    Converts collection types to list.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator:
-        return TypeValidator(ValueCollectionType, list, func=convert_to_list)
-
-
-class TupleConverter:
-    """
-    Converts collection types to tuple.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator:
-        return TypeValidator(ValueCollectionType, tuple, func=convert_to_tuple)
-
-
-class SetConverter:
-    """
-    Converts collection types to set.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator:
-        return TypeValidator(ValueCollectionType, set, func=convert_to_set)
-
-
-class FrozenSetConverter:
-    """
-    Converts collection types to frozenset.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator:
-        return TypeValidator(ValueCollectionType, frozenset, func=convert_to_set)
-
-
-class DictConverter:
-    """
-    Converts mapping types to dict.
-    """
-
-    @classmethod
-    def as_validator(cls) -> TypeValidator:
-        return TypeValidator(Mapping, dict, func=convert_to_dict)
-
-
 _T_contra = TypeVar("_T_contra", contravariant=True)
 
 
@@ -280,7 +179,7 @@ class SupportsComparison(Protocol[_T_contra]):
     def __gt__(self, other: _T_contra, /) -> bool: ...
 
 
-def serialize_to_list(
+def _serialize_to_list(
     obj: ValueCollectionType, frame: SerializationFrame
 ) -> list | ErrorSentinel:
     """
@@ -301,22 +200,34 @@ def serialize_to_list(
         return obj_list
 
 
-BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricTypeConverter], ...] = (
+# collection validators
+LIST_VALIDATOR = TypeValidator(Iterable, list, func=convert_to_list)
+TUPLE_VALIDATOR = TypeValidator(Iterable, tuple, func=convert_to_tuple)
+SET_VALIDATOR = TypeValidator(Iterable, set, func=convert_to_set)
+FROZENSET_VALIDATOR = TypeValidator(Iterable, frozenset, func=convert_to_set)
+DICT_VALIDATOR = TypeValidator(Mapping, dict, func=convert_to_dict)
+
+# collection serializers
+LIST_SERIALIZER = TypeSerializer(set | frozenset | tuple, list, func=_serialize_to_list)
+
+
+_BUILTIN_SYMMETRIC_CONVERTERS: tuple[type[BaseSymmetricTypeConverter], ...] = (
     TimeConverter,
     DateTimeConverter,
     DateConverter,
     DataclassConverter,
 )
+"""
+Converters to use for symmetric validation/serialization.
+"""
 
-BUILTIN_SERIALIZERS = (
-    TypeSerializer(set | frozenset | tuple, list, func=serialize_to_list),
-)
+BUILTIN_SERIALIZERS = (LIST_SERIALIZER,)
 """
 Extra serializers to use for json serialization.
 """
 
 
-def get_model_converter() -> type[BaseSymmetricTypeConverter]:
+def _get_model_converter() -> type[BaseSymmetricTypeConverter]:
     """
     Get converter for `BaseModel`; must be lazy-loaded to avoid circular dependency.
     """
@@ -325,17 +236,17 @@ def get_model_converter() -> type[BaseSymmetricTypeConverter]:
     return ModelConverter
 
 
-def get_builtin_converters() -> tuple[type[BaseSymmetricTypeConverter], ...]:
-    return (*BUILTIN_SYMMETRIC_CONVERTERS, get_model_converter())
+def _get_builtin_converters() -> tuple[type[BaseSymmetricTypeConverter], ...]:
+    return (*_BUILTIN_SYMMETRIC_CONVERTERS, _get_model_converter())
 
 
 @cache
 def get_builtin_validator_registry() -> TypeValidatorRegistry:
-    return TypeValidatorRegistry(*(c.as_validator() for c in get_builtin_converters()))
+    return TypeValidatorRegistry(*(c.as_validator() for c in _get_builtin_converters()))
 
 
 @cache
 def get_builtin_serializer_registry() -> TypeSerializerRegistry:
     return TypeSerializerRegistry(
-        *(c.as_serializer() for c in get_builtin_converters()), *BUILTIN_SERIALIZERS
+        *(c.as_serializer() for c in _get_builtin_converters()), *BUILTIN_SERIALIZERS
     )

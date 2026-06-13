@@ -80,7 +80,7 @@ def test_simple_dataclass():
     assert validated.age == test_validated.age
 
     # test serialization
-    serialized = adapter.serialize(test_validated, use_builtin_serializers=False)
+    serialized = adapter.serialize(test_validated)
     assert isinstance(serialized, dict)
     assert serialized == test_serialized
 

@@ -6,7 +6,6 @@ from typing import Any
 
 from pytest import raises
 
-from typecraft.converting.builtin_converters import IntConverter, StrConverter
 from typecraft.converting.serializer import (
     SerializationParams,
     TypeSerializer,
@@ -23,6 +22,8 @@ from typecraft.model.methods import (
 )
 from typecraft.serializing import serialize
 from typecraft.validating import TypeValidator, ValidationParams, validate
+
+from .converters import INT_VALIDATOR, STR_VALIDATOR
 
 
 class BasicTest(BaseModel):
@@ -50,7 +51,7 @@ class CoercionTest(BaseModel):
     @type_validators
     @classmethod
     def coerce(cls) -> tuple[TypeValidator, ...]:
-        return (IntConverter.as_validator(), StrConverter.as_validator())
+        return (INT_VALIDATOR, STR_VALIDATOR)
 
 
 class NestedTest(BaseModel):

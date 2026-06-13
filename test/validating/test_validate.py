@@ -8,36 +8,18 @@ from typing import Annotated, Generator, Literal
 from pytest import raises
 
 from typecraft.converting.builtin_converters import (
-    BoolConverter,
-    DictConverter,
-    FloatConverter,
-    FrozenSetConverter,
-    IntConverter,
-    ListConverter,
-    SetConverter,
-    StrConverter,
-    TupleConverter,
+    LIST_VALIDATOR,
+    SET_VALIDATOR,
+    TUPLE_VALIDATOR,
 )
 from typecraft.exceptions import ValidationError
 from typecraft.validating import (
     TypeValidator,
-    TypeValidatorRegistry,
     normalize_to_list,
     validate,
 )
 
-# Registry covering all JSON-primitive coercions, used by tests that need them.
-COERCION_REGISTRY = TypeValidatorRegistry(
-    IntConverter.as_validator(),
-    FloatConverter.as_validator(),
-    BoolConverter.as_validator(),
-    StrConverter.as_validator(),
-    ListConverter.as_validator(),
-    TupleConverter.as_validator(),
-    SetConverter.as_validator(),
-    FrozenSetConverter.as_validator(),
-    DictConverter.as_validator(),
-)
+from ..converters import FLOAT_VALIDATOR, INT_VALIDATOR, STR_VALIDATOR
 
 
 class IntList(list[int]):
@@ -109,7 +91,7 @@ def test_invalid():
 
     # IntConverter is provided but "1.5" is not a valid integer in any base
     with raises(ValidationError) as exc_info:
-        _ = validate(["1.5", "2.5"], list[int], IntConverter.as_validator())
+        _ = validate(["1.5", "2.5"], list[int], INT_VALIDATOR)
 
     assert len(exc_info.value.errors) == 2
     assert (
@@ -173,32 +155,26 @@ def test_nested_invalid():
 def test_conversion():
 
     # list[str | int] -> list[int]: str coerced to int via IntConverter
-    result = validate(["1", "2", 3], list[int], IntConverter.as_validator())
+    result = validate(["1", "2", 3], list[int], INT_VALIDATOR)
     assert result == [1, 2, 3]
 
     # hex string via IntConverter (base-0 auto-detects 0x prefix)
-    result = validate(["0xff", "0b11", "42"], list[int], IntConverter.as_validator())
+    result = validate(["0xff", "0b11", "42"], list[int], INT_VALIDATOR)
     assert result == [255, 3, 42]
 
     # list[tuple[str]] -> list[list[int]]
     obj = [("1", "2"), ("3", "4")]
-    result = validate(
-        obj, list[list[int]], IntConverter.as_validator(), ListConverter.as_validator()
-    )
+    result = validate(obj, list[list[int]], INT_VALIDATOR, LIST_VALIDATOR)
     assert result == [[1, 2], [3, 4]]
 
     # list[str] -> tuple[int, str]
     obj = ["1", "2"]
-    result = validate(
-        obj, tuple[int, str], IntConverter.as_validator(), TupleConverter.as_validator()
-    )
+    result = validate(obj, tuple[int, str], INT_VALIDATOR, TUPLE_VALIDATOR)
     assert result == (1, "2")
 
     # list[int] -> tuple[str, ...]
     obj = [1, 2]
-    result = validate(
-        obj, tuple[str, ...], StrConverter.as_validator(), TupleConverter.as_validator()
-    )
+    result = validate(obj, tuple[str, ...], STR_VALIDATOR, TUPLE_VALIDATOR)
     assert result == ("1", "2")
 
     # list[list[tuple[str, str]]] -> list[list[list[int]]]
@@ -206,8 +182,8 @@ def test_conversion():
     result = validate(
         obj,
         list[list[list[int]]],
-        IntConverter.as_validator(),
-        ListConverter.as_validator(),
+        INT_VALIDATOR,
+        LIST_VALIDATOR,
     )
     assert result == [[[1, 2], [3, 4]], [[5, 6]]]
 
@@ -216,21 +192,19 @@ def test_conversion():
     result = validate(
         obj,
         dict[str, list[int]],
-        IntConverter.as_validator(),
-        StrConverter.as_validator(),
+        INT_VALIDATOR,
+        STR_VALIDATOR,
     )
     assert result == {"1": [1, 2], "2": [3, 4]}
 
     # list[int] -> set[str]
     obj = [1, 2, 3, 2, 1]
-    result = validate(
-        obj, set[str], StrConverter.as_validator(), SetConverter.as_validator()
-    )
+    result = validate(obj, set[str], STR_VALIDATOR, SET_VALIDATOR)
     assert result == {"1", "2", "3"}
 
     # str -> int | float  (IntConverter fails for "1.5", FloatConverter succeeds)
     obj = "1.5"
-    result = validate(obj, int | float, registry=COERCION_REGISTRY)
+    result = validate(obj, int | float, FLOAT_VALIDATOR)
     assert result == 1.5
 
     # annotated type
@@ -238,13 +212,13 @@ def test_conversion():
     result = validate(
         obj,
         Annotated[list[int], "positive integers"],
-        IntConverter.as_validator(),
+        INT_VALIDATOR,
     )
     assert result == [1, 2, 3]
 
     # range -> list[int]
     obj = range(3)
-    result = validate(obj, list[int], ListConverter.as_validator())
+    result = validate(obj, list[int], LIST_VALIDATOR)
     assert result == [0, 1, 2]
 
     # generator -> list[int]
@@ -253,12 +227,12 @@ def test_conversion():
             yield i
 
     obj = gen()
-    result = validate(obj, list[int], ListConverter.as_validator())
+    result = validate(obj, list[int], LIST_VALIDATOR)
     assert result == [0, 1, 2]
 
     # generator -> tuple[int, int, int]
     obj = gen()
-    result = validate(obj, tuple[int, int, int], TupleConverter.as_validator())
+    result = validate(obj, tuple[int, int, int], TUPLE_VALIDATOR)
     assert result == (0, 1, 2)
 
 
@@ -293,7 +267,7 @@ def test_collection_subclass():
         obj,
         IntList,
         TypeValidator(list, IntList),
-        IntConverter.as_validator(),
+        INT_VALIDATOR,
     )
     assert isinstance(result, IntList)
     assert result == [0, 1, 2]
@@ -312,7 +286,7 @@ def test_collection_subclass():
         obj,
         IntStrDict,
         TypeValidator(dict, IntStrDict),
-        IntConverter.as_validator(),
+        INT_VALIDATOR,
     )
     assert isinstance(result, IntStrDict)
     assert result == {0: "a"}
@@ -348,8 +322,8 @@ def test_normalize_to_list():
     obj1 = [1, 2, "3"]
     obj2 = 1
 
-    norm_obj1 = normalize_to_list(obj1, str, StrConverter.as_validator())
+    norm_obj1 = normalize_to_list(obj1, str, STR_VALIDATOR)
     assert norm_obj1 == ["1", "2", "3"]
 
-    norm_obj2 = normalize_to_list(obj2, str, StrConverter.as_validator())
+    norm_obj2 = normalize_to_list(obj2, str, STR_VALIDATOR)
     assert norm_obj2 == ["1"]
