@@ -29,7 +29,7 @@ homepage = "https://github.com/mm21/typecraft"
 
 [dependency-groups]
 dev = [
-  "pyprojkit[all]"
+  "pyprojkit[all]>=0.3.0,<0.4.0"
 ]
 
 [build-system]
@@ -58,13 +58,11 @@ exclude_lines = [
 [tool.coverage.run]  # managed by pyprojkit
 data_file = "__cache__/.coverage"
 
-[tool.docformatter]  # managed by pyprojkit
-black = true
+[tool.docfmt]  # managed by pyprojkit
+force-reflow = true
 in-place = true
-make-summary-multi-line = true
-non-strict = true
-pre-summary-newline = true
 recursive = true
+summary-on-own-line = true
 
 [tool.doit]  # managed by pyprojkit
 dep_file = "__cache__/.doit.db"
@@ -84,7 +82,7 @@ managed = [
   "tool.black",
   "tool.coverage.report",
   "tool.coverage.run",
-  "tool.docformatter",
+  "tool.docfmt",
   "tool.doit",
   "tool.isort",
   "tool.nox",
@@ -107,5 +105,4 @@ sort_table_keys = true
 spaces_before_inline_comment = 2
 
 [tool.uv.sources]
-docformatter = {git = "https://github.com/mm21/docformatter.git"}
 mkinit = {git = "https://github.com/mm21/mkinit.git"}
