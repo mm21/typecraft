@@ -298,8 +298,7 @@ class Annotation:
         """
         Check whether this annotation is equivalent to `other`.
 
-        Comparison against `Any`
-        returns `True` if `match_any=True`.
+        Comparison against `Any` returns `True` if `match_any=True`.
         """
         if self is other:
             return True
@@ -363,8 +362,8 @@ class Annotation:
         Callable annotation. Treats self as Callable[..., X] where X is the type
         parameter (accepts any parameters, returns instances of X).
 
-        Note: The annotation `int` represents instances of int (not callable).
-        The annotation `type[int]` represents the type itself (callable).
+        Note: The annotation `int` represents instances of int (not callable). The
+        annotation `type[int]` represents the type itself (callable).
         """
         # only type[X] annotations represent callable types
         if self.origin is not type:
@@ -509,8 +508,8 @@ def is_instance(obj: object, annotation: Annotation | Any, /) -> bool:
 
 def is_union(annotation: Any, /) -> bool:
     """
-    Check whether annotation is a union, accommodating both `int | str` and `Union[int,
-    str]`.
+    Check whether annotation is a union, accommodating both `int | str` and
+    `Union[int, str]`.
     """
     return isinstance(annotation, UnionType) or get_origin(annotation) is Union
 

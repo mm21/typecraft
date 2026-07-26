@@ -85,8 +85,8 @@ def serialize(
     specified source type).
 
     Specifying the source type may be useful to match a custom serializer, e.g.
-    specifying `tuple[int, str]` would match a serializer with that source type
-    whereas the source type would be considered as `tuple[Any, ...]` otherwise.
+    specifying `tuple[int, str]` would match a serializer with that source type whereas
+    the source type would be considered as `tuple[Any, ...]` otherwise.
 
     :param obj: Object to serialize
     :param serializers: Custom type-based serializers

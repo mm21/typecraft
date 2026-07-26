@@ -202,8 +202,8 @@ class BaseDocument(BaseContainerWrapper[TOMLDocument]):
     """
     Abstracts a TOML document.
 
-    Saves the parsed `TOMLDocument` upon loading so it can be
-    updated upon storing, preserving item attributes like whether arrays are multiline.
+    Saves the parsed `TOMLDocument` upon loading so it can be updated upon storing,
+    preserving item attributes like whether arrays are multiline.
     """
 
     @classmethod

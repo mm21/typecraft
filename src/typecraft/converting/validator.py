@@ -102,8 +102,8 @@ class BaseGenericTypeValidator[SourceT, TargetT](
     BaseTypeValidator[SourceT, TargetT],
 ):
     """
-    Generic validator: subclass with type parameters to determine source/target
-    type and implement `convert()`.
+    Generic validator: subclass with type parameters to determine source/target type and
+    implement `convert()`.
     """
 
 
@@ -142,8 +142,8 @@ class TypeValidatorRegistry(BaseTypeConverterRegistry[BaseTypeValidator]):
 
 class PlainValidator(BasePlainTransformer[ValidationFrame]):
     """
-    Plain validator: runs before or after type-based validation at its annotation
-    level. Return value replaces the object; exceptions are captured as errors.
+    Plain validator: runs before or after type-based validation at its annotation level.
+    Return value replaces the object; exceptions are captured as errors.
     """
 
     def __init__(
@@ -159,8 +159,8 @@ class PlainValidator(BasePlainTransformer[ValidationFrame]):
 class PredicateValidator(BaseFuncPlainConverter[ValidationFrame]):
     """
     Predicate validator: runs after type-based validation on the already-validated
-    object. The object is returned unchanged if the predicate returns `True`;
-    `False` raises `PredicateError`.
+    object. The object is returned unchanged if the predicate returns `True`; `False`
+    raises `PredicateError`.
     """
 
     def __init__(self, func: PredicateFuncType[Any, ValidationFrame], /):

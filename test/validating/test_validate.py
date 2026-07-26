@@ -48,8 +48,8 @@ class MyDict[K, V](dict[K, V]):
 
 def test_valid():
     """
-    Test with no conversions: the validated type should be the same object as the
-    input type.
+    Test with no conversions: the validated type should be the same object as the input
+    type.
     """
 
     # literal values

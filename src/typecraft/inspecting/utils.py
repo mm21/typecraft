@@ -15,9 +15,9 @@ def robust_issubclass(cls: type, class_or_tuple: type | tuple[type, ...], /) -> 
     types. Additionally handle checking a class against a protocol while taking
     attributes into consideration (not supported by `issubclass()`.)
 
-    `issubclass()` has this limitation since it's messy to differentiate between
-    class vs instance attributes. Here we won't differentiate between them,
-    which works for most cases (like `DataclassProtocol`).
+    `issubclass()` has this limitation since it's messy to differentiate between class
+    vs instance attributes. Here we won't differentiate between them, which works for
+    most cases (like `DataclassProtocol`).
     """
     # make sure the user passed types; don't want to mask that reason for TypeError
     if not isinstance(cls, type):

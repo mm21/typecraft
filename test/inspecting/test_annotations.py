@@ -456,8 +456,8 @@ def test_callable_type_is_narrower():
     """
     Test that type annotations (type[int], type[str], etc.) are recognized as callables.
 
-    Note: The annotation `int` represents instances of int (not callable).
-    The annotation `type[int]` represents the type itself (callable).
+    Note: The annotation `int` represents instances of int (not callable). The
+    annotation `type[int]` represents the type itself (callable).
     """
     # type[int] is like Callable[..., int]
     a1 = Annotation(type[int])

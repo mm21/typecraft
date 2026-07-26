@@ -132,8 +132,8 @@ class BaseGenericTypeSerializer[SourceT, TargetT](
     BaseTypeSerializer[SourceT, TargetT],
 ):
     """
-    Generic serializer: subclass with type parameters to determine source/target
-    type and implement `convert()`.
+    Generic serializer: subclass with type parameters to determine source/target type
+    and implement `convert()`.
     """
 
 

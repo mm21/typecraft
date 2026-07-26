@@ -108,8 +108,8 @@ def validate(
     If both `validators` and `registry` are passed, a new registry is created with
     `validators` appended.
 
-    Handles nested parameterized types like `list[list[int]]` by recursively
-    applying validation and conversion at each level.
+    Handles nested parameterized types like `list[list[int]]` by recursively applying
+    validation and conversion at each level.
 
     :param obj: Object to validate
     :param target_type: Type to validate to

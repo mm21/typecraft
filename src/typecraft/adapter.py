@@ -29,8 +29,8 @@ class Adapter[T]:
     """
     Bidirectional converter for type-based validation and serialization.
 
-    Provides a convenient interface similar to Pydantic's `TypeAdapter` for
-    validating objects to a target type and serializing objects from that type.
+    Provides a convenient interface similar to Pydantic's `TypeAdapter` for validating
+    objects to a target type and serializing objects from that type.
     """
 
     __annotation: Annotation

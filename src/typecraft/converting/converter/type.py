@@ -61,9 +61,9 @@ class MatchSpec:
     - "If I convert to `int`, can I also handle a request to convert to `int | str`?
     - "If I convert to `bool`, can I also handle a request to convert to `int`?
 
-    Set to `False` for converters with specific semantic requirements. For example,
-    it may be unexpected to convert to `int` and get a `bool` even though the type
-    is technically satisfied.
+    Set to `False` for converters with specific semantic requirements. For example, it
+    may be unexpected to convert to `int` and get a `bool` even though the type is
+    technically satisfied.
     """
 
 

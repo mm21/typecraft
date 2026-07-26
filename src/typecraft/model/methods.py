@@ -476,9 +476,9 @@ def field_validator[FuncT: FieldValidatorFuncType](
 
     If field names are omitted, the validator applies to all fields.
 
-    Field-level validators are semantically different from `PlainValidator`s since
-    the former has a concept of fields, and thus accepts `ValidationInfo`
-    which additionally contains `FieldInfo`.
+    Field-level validators are semantically different from `PlainValidator`s since the
+    former has a concept of fields, and thus accepts `ValidationInfo` which additionally
+    contains `FieldInfo`.
     """
 
     def register(
@@ -527,9 +527,9 @@ def field_serializer[FuncT: FieldSerializerFuncType](
 
     If field names are omitted, the serializer applies to all fields.
 
-    Field-level serializer are semantically different from `PlainSerializer`s since
-    the former has a concept of fields, and thus accepts
-    `SerializationInfo` which additionally contains `FieldInfo`.
+    Field-level serializer are semantically different from `PlainSerializer`s since the
+    former has a concept of fields, and thus accepts `SerializationInfo` which
+    additionally contains `FieldInfo`.
     """
 
     def register(func: FuncT, field_names: tuple[str, ...] | None = None) -> FuncT:
