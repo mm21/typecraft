@@ -30,7 +30,7 @@ homepage = "https://github.com/mm21/typecraft"
 
 [dependency-groups]
 dev = [
-  "pyprojkit[all]>=0.3.0,<0.4.0"
+  "pyprojkit[all]>=0.3.1,<0.4.0"
 ]
 
 [build-system]
