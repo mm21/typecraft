@@ -321,6 +321,10 @@ class BaseTypeConverterRegistry[ConverterT: BaseTypeConverter](ABC):
     @cached_property
     def _converter_cls(self) -> type[ConverterT]:
         converter_cls = extract_arg(
-            type(self), BaseTypeConverterRegistry, "ConverterT", BaseTypeConverter
+            type(self),
+            BaseTypeConverterRegistry,
+            "ConverterT",
+            # cast since abstract classes can't be passed as type[T]
+            cast(type[BaseTypeConverter], BaseTypeConverter),
         )
         return cast(type[ConverterT], converter_cls)

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import (
     Any,
+    Iterable,
+    cast,
     overload,
 )
 
@@ -175,7 +177,7 @@ def normalize_to_list(
     :raises ConversionError: If any conversion errors are encountered
     """
     objs = (
-        obj_or_objs
+        cast(Iterable[Any], obj_or_objs)
         if isinstance(obj_or_objs, VALUE_COLLECTION_TYPES)
         else [obj_or_objs]
     )

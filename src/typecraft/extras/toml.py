@@ -6,9 +6,6 @@ from __future__ import annotations
 
 import datetime
 from abc import ABC, abstractmethod
-from datetime import date as Date
-from datetime import datetime as DateTime
-from datetime import time as Time
 from functools import cached_property
 from pathlib import Path
 from typing import (
@@ -258,13 +255,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTable](
     List of ItemT values normalized to tomlkit objects or wrappers.
     """
 
-    @overload
-    def __init__(self): ...
-
-    @overload
-    def __init__(self, iterable: Iterable[ItemT], /): ...
-
-    def __init__(self, iterable: Iterable[ItemT] | None = None):
+    def __init__(self, iterable: Iterable[ItemT] = (), /):
         self.__list = []
         if iterable:
             self += iterable
@@ -293,10 +284,10 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTable](
         else:
             assert isinstance(index, slice)
             assert isinstance(value, Iterable)
-            value_ = _normalize_values(value)
-            self.__list[index] = value_
+            values_ = _normalize_values(value)
+            self.__list[index] = values_
             if self._tomlkit_obj:
-                self._tomlkit_obj[index] = _normalize_items(value_)
+                self._tomlkit_obj[index] = _normalize_items(values_)
 
     def __delitem__(self, index: int | slice):
         del self.__list[index]
@@ -348,7 +339,7 @@ class BaseArrayWrapper[TomlkitT: list, ItemT: ArrayItemType | BaseTable](
 
     def _propagate_tomlkit_obj(self, tomlkit_obj: TomlkitT):
         assert len(tomlkit_obj) == 0
-        tomlkit_obj += _normalize_items(self.__list)
+        tomlkit_obj.extend(_normalize_items(self.__list))
 
 
 class ArrayWrapper[ItemT: ArrayItemType](BaseArrayWrapper[Array, ItemT]):

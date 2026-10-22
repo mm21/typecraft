@@ -90,12 +90,12 @@ class FuncConverterWrapper[SourceT, TargetT, FrameT: BaseConversionFrame]:
     def invoke(self, obj: SourceT, frame: FrameT, /) -> TargetT:
         if self.frame_param:
             # invoke with frame
-            func = cast(Callable[[SourceT, FrameT], TargetT], self.func)
-            return func(obj, frame)
+            func_with_frame = cast(Callable[[SourceT, FrameT], TargetT], self.func)
+            return func_with_frame(obj, frame)
         else:
             # invoke without frame
-            func = cast(Callable[[SourceT], TargetT], self.func)
-            return func(obj)
+            func_without_frame = cast(Callable[[SourceT], TargetT], self.func)
+            return func_without_frame(obj)
 
 
 class BaseConversionFrame[ParamsT: BaseConversionParams]:
@@ -224,7 +224,7 @@ class BaseConversionFrame[ParamsT: BaseConversionParams]:
             # - if passed, it may contain a specific annotation to match a serializer
             source_annotation_ = (
                 Annotation(type(obj))
-                if source_annotation in (None, ANY)
+                if source_annotation is None or source_annotation == ANY
                 else source_annotation
             )
 

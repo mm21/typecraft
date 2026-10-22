@@ -100,11 +100,11 @@ def test_basic():
   No matching converters"""
     )
 
-    with raises(SerializationError) as exc_info:
+    with raises(SerializationError) as serialization_exc_info:
         _ = serialize(MyClass(321))
 
     assert (
-        str(exc_info.value)
+        str(serialization_exc_info.value)
         == """\
 1 serialization error for MyClass
 <root>=MyClass(val=321): MyClass -> str | int | float | bool | None | list[JsonSerializableType] | dict[str | int | float | bool, JsonSerializableType]: TypeError
@@ -118,13 +118,13 @@ def test_basic():
     dict[str | int | float | bool, JsonSerializableType]: No matching converters"""
     )
 
-    result = adapter.validate(123)
-    assert isinstance(result, MyClass)
-    assert result.val == 123
+    validated = adapter.validate(123)
+    assert isinstance(validated, MyClass)
+    assert validated.val == 123
 
-    result = adapter.serialize(MyClass(321))
-    assert isinstance(result, int)
-    assert result == 321
+    serialized = adapter.serialize(MyClass(321))
+    assert isinstance(serialized, int)
+    assert serialized == 321
 
 
 def test_range():
@@ -139,13 +139,13 @@ def test_range():
         serializer_registry=TypeSerializerRegistry(serializer),
     )
 
-    result = adapter.validate([10])
-    assert isinstance(result, range)
-    assert result == range(0, 10)
+    validated = adapter.validate([10])
+    assert isinstance(validated, range)
+    assert validated == range(0, 10)
 
-    result = adapter.serialize(range(10))
-    assert isinstance(result, list)
-    assert result == [0, 10, 1]
+    serialized = adapter.serialize(range(10))
+    assert isinstance(serialized, list)
+    assert serialized == [0, 10, 1]
 
     # make sure we can't validate non-matching objects
     with raises(ValidationError, match="No matching converters"):

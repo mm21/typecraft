@@ -124,14 +124,14 @@ def extract_arg[ParamT](
 
     if isinstance(name_or_index, str):
         # lookup by name
-        args = extract_arg_map(cls, base_cls)
+        arg_map = extract_arg_map(cls, base_cls)
         name = name_or_index
-        if name not in args:
+        if name not in arg_map:
             raise KeyError(
                 f"Type parameter '{name}' not found in {base_cls}. "
-                f"Available parameters: {list(args.keys())}"
+                f"Available parameters: {list(arg_map.keys())}"
             )
-        arg = args[name]
+        arg = arg_map[name]
         desc = f"name '{name}'"
     else:
         args = extract_args(cls, base_cls)

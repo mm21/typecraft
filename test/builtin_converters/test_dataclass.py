@@ -276,7 +276,7 @@ location=123: int -> str: TypeError
   No matching converters"""
     )
 
-    with raises(SerializationError) as exc_info:
+    with raises(SerializationError):
         _ = serialize(test_validated)
 
     # list input should fail

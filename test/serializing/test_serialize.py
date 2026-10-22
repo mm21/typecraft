@@ -2,7 +2,7 @@
 Test end-to-end serialization via APIs.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from typecraft.serializing import TypeSerializer, serialize
 
@@ -60,7 +60,7 @@ def test_nested_collections():
     Test serialization of nested collections.
     """
     # list[list[int]]
-    obj = [[1, 2], [3, 4]]
+    obj: Any = [[1, 2], [3, 4]]
     assert serialize(obj) == [[1, 2], [3, 4]]
     assert serialize(obj, source_type=list[list[int]]) == [[1, 2], [3, 4]]
 

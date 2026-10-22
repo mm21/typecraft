@@ -83,17 +83,17 @@ def test_all_args():
     """
     Test extracting all args.
     """
-    result = extract_arg_map(IntContainer, BaseContainer)
-    assert result == {"T": int}
+    arg_map = extract_arg_map(IntContainer, BaseContainer)
+    assert arg_map == {"T": int}
 
-    result = extract_args(IntContainer, BaseContainer)
-    assert result == (int,)
+    args = extract_args(IntContainer, BaseContainer)
+    assert args == (int,)
 
-    result = extract_arg_map(IntMiddleContainer, BaseContainer)
-    assert result == {"T": int}
+    arg_map = extract_arg_map(IntMiddleContainer, BaseContainer)
+    assert arg_map == {"T": int}
 
-    result = extract_args(IntMiddleContainer, BaseContainer)
-    assert result == (int,)
+    args = extract_args(IntMiddleContainer, BaseContainer)
+    assert args == (int,)
 
 
 def test_extract_args_with_typevar():
@@ -104,16 +104,16 @@ def test_extract_args_with_typevar():
     class GenericTransformer(BaseTransformer[T, int]):
         pass
 
-    result = extract_arg_map(GenericTransformer, BaseTransformer)
+    arg_map = extract_arg_map(GenericTransformer, BaseTransformer)
 
     # should include the unresolved TypeVar
-    assert list(result.keys()) == ["InputT", "OutputT"]
-    assert isinstance(result["InputT"], TypeVar)
-    assert result["InputT"] is T
-    assert result["OutputT"] is int
+    assert list(arg_map.keys()) == ["InputT", "OutputT"]
+    assert isinstance(arg_map["InputT"], TypeVar)
+    assert arg_map["InputT"] is T
+    assert arg_map["OutputT"] is int
 
-    result = extract_args(GenericTransformer, BaseTransformer)
-    assert result == (T, int)
+    args = extract_args(GenericTransformer, BaseTransformer)
+    assert args == (T, int)
 
 
 def test_direct_inheritance():
@@ -208,12 +208,12 @@ def test_extract_by_index_with_param_cls():
         pass
 
     # extract input type by index
-    result = extract_arg(MyTransformer, BaseTransformer, 0, Input)
-    assert result is InputImpl
+    input_cls = extract_arg(MyTransformer, BaseTransformer, 0, Input)
+    assert input_cls is InputImpl
 
     # extract output type by index
-    result = extract_arg(MyTransformer, BaseTransformer, 1, Output)
-    assert result is OutputImpl
+    output_cls = extract_arg(MyTransformer, BaseTransformer, 1, Output)
+    assert output_cls is OutputImpl
 
 
 def test_index_with_partially_resolved():
@@ -273,12 +273,12 @@ def test_multiple_type_params_with_filter():
         pass
 
     # extract input type
-    result = extract_arg(MyTransformer, BaseTransformer, "InputT", Input)
-    assert result is InputImpl
+    input_cls = extract_arg(MyTransformer, BaseTransformer, "InputT", Input)
+    assert input_cls is InputImpl
 
     # extract output type
-    result = extract_arg(MyTransformer, BaseTransformer, "OutputT", Output)
-    assert result is OutputImpl
+    output_cls = extract_arg(MyTransformer, BaseTransformer, "OutputT", Output)
+    assert output_cls is OutputImpl
 
 
 def test_nested_with_multiple_type_params():
@@ -292,11 +292,11 @@ def test_nested_with_multiple_type_params():
     class ConcreteTransformer(MiddleTransformer[InputImpl, OutputImpl]):
         pass
 
-    result = extract_arg(ConcreteTransformer, BaseTransformer, "InputT", Input)
-    assert result is InputImpl
+    input_cls = extract_arg(ConcreteTransformer, BaseTransformer, "InputT", Input)
+    assert input_cls is InputImpl
 
-    result = extract_arg(ConcreteTransformer, BaseTransformer, "OutputT", Output)
-    assert result is OutputImpl
+    output_cls = extract_arg(ConcreteTransformer, BaseTransformer, "OutputT", Output)
+    assert output_cls is OutputImpl
 
 
 def test_complex_nested_hierarchy():
@@ -488,53 +488,53 @@ def test_builtins():
     class MyParameterizedDict[K, V](dict[K, V]):
         pass
 
-    result = extract_args(MyList, list)
-    assert result == (int,)
+    args = extract_args(MyList, list)
+    assert args == (int,)
 
-    result = extract_arg_map(MyList, list)
-    assert result == {}
+    arg_map = extract_arg_map(MyList, list)
+    assert arg_map == {}
 
-    result = extract_arg(MyList, list, 0)
-    assert result is int
+    arg = extract_arg(MyList, list, 0)
+    assert arg is int
 
-    result = extract_args(MyParameterizedList[int], list)
-    assert result == (int,)
+    args = extract_args(MyParameterizedList[int], list)
+    assert args == (int,)
 
-    result = extract_arg_map(MyParameterizedList, list)
-    assert list(result.keys()) == ["T"]
+    arg_map = extract_arg_map(MyParameterizedList, list)
+    assert list(arg_map.keys()) == ["T"]
 
-    result = extract_args(MyTuple, tuple)
-    assert result == (int, str)
+    args = extract_args(MyTuple, tuple)
+    assert args == (int, str)
 
-    result = extract_arg_map(MyTuple, tuple)
-    assert result == {}
+    arg_map = extract_arg_map(MyTuple, tuple)
+    assert arg_map == {}
 
-    result = extract_args(MyDict, dict)
-    assert result == (int, str)
+    args = extract_args(MyDict, dict)
+    assert args == (int, str)
 
-    result = extract_arg_map(MyDict, dict)
-    assert result == {}
+    arg_map = extract_arg_map(MyDict, dict)
+    assert arg_map == {}
 
-    result = extract_args(MyParameterizedDict[int, str], dict)
-    assert result == (int, str)
+    args = extract_args(MyParameterizedDict[int, str], dict)
+    assert args == (int, str)
 
-    result = extract_arg_map(MyParameterizedDict[int, str], dict)
-    assert list(result.keys()) == ["K", "V"]
+    arg_map = extract_arg_map(MyParameterizedDict[int, str], dict)
+    assert list(arg_map.keys()) == ["K", "V"]
 
 
 def test_from_self():
     """
     Test extracting args from same base class.
     """
-    result = extract_arg_map(BaseContainer, BaseContainer)
-    assert len(result) == 1
-    assert result["T"].__name__ == "T"
+    arg_map = extract_arg_map(BaseContainer, BaseContainer)
+    assert len(arg_map) == 1
+    assert arg_map["T"].__name__ == "T"
 
-    result = extract_args(list[int], list)
-    assert result == (int,)
+    args = extract_args(list[int], list)
+    assert args == (int,)
 
-    result = extract_arg(list[int], list, 0)
-    assert result is int
+    arg = extract_arg(list[int], list, 0)
+    assert arg is int
 
 
 def test_from_abc():

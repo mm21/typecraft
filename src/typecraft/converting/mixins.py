@@ -86,7 +86,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         :param match_spec: Conversion match specification
         :return: Converter instance
         """
-        func_wrapper = FuncConverterWrapper(func)
+        func_wrapper = FuncConverterWrapper[SourceT, TargetT, FrameT](func)
         assert func_wrapper.obj_param.annotation
         assert func_wrapper.sig_info.return_annotation
 
@@ -121,6 +121,7 @@ class FuncConverterMixin[SourceT, TargetT, FrameT: BaseConversionFrame](
         """
         Convert object using the wrapped function or direct construction.
         """
+        converted_obj: object
         if func := self.__func_wrapper:
             # provided conversion function
             converted_obj = func.invoke(obj, frame)

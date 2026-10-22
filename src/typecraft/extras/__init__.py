@@ -5,9 +5,25 @@ To use, install this package with the respective extras group, e.g. `typecraft[t
 """
 
 # requires optional dependencies, so not rolled up
-__submodules__ = []
+__submodules__: list[str] = []
 
 # isort: off
 # <AUTOGEN_INIT>
-__all__ = []
+from .toml import (
+    BaseDocument,
+    BaseTable,
+    BaseInlineTable,
+    ArrayItemType,
+    ArrayWrapper,
+    AoTWrapper,
+)
+
+__all__ = [
+    "BaseDocument",
+    "BaseTable",
+    "BaseInlineTable",
+    "ArrayItemType",
+    "ArrayWrapper",
+    "AoTWrapper",
+]
 # </AUTOGEN_INIT>

@@ -38,13 +38,13 @@ def robust_issubclass(cls: type, class_or_tuple: type | tuple[type, ...], /) -> 
             class_or_tuple if isinstance(class_or_tuple, tuple) else (class_or_tuple,)
         )
         for c in tuple_:
-            if issubclass(c, Protocol):
+            if Protocol in c.__mro__:
                 protocol_attrs = getattr(c, "__protocol_attrs__", None)
                 assert isinstance(protocol_attrs, set)
 
                 # aggregate attributes from annotations (which includes type
                 # hints for not-yet-set attributes), including from parent classes
-                cls_attrs = set()
+                cls_attrs: set[str] = set()
                 for base in cls.__mro__:
                     cls_attrs.update(getattr(base, "__annotations__", {}))
 

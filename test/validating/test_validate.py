@@ -3,7 +3,7 @@ Test end-to-end validation via APIs.
 """
 
 from types import NoneType
-from typing import Annotated, Generator, Literal
+from typing import Annotated, Any, Generator, Literal
 
 from pytest import raises
 
@@ -163,7 +163,7 @@ def test_conversion():
     assert result == [255, 3, 42]
 
     # list[tuple[str]] -> list[list[int]]
-    obj = [("1", "2"), ("3", "4")]
+    obj: Any = [("1", "2"), ("3", "4")]
     result = validate(obj, list[list[int]], INT_VALIDATOR, LIST_VALIDATOR)
     assert result == [[1, 2], [3, 4]]
 
@@ -240,8 +240,8 @@ def test_collection_subclass():
     """
     Test subclass of list and dict with extraction of type param.
     """
-    obj = IntList([0, 1, 2])
-    result = validate(obj, IntList)
+    obj: Any = IntList([0, 1, 2])
+    result: Any = validate(obj, IntList)
     assert result is obj
 
     with raises(ValidationError) as exc_info:
@@ -298,8 +298,8 @@ def test_generic_subclass():
     """
 
     # custom list type
-    obj = MyList([0, 1, 2])
-    result = validate(obj, MyList[int])
+    obj: Any = MyList([0, 1, 2])
+    result: Any = validate(obj, MyList[int])
     assert result is obj
 
     result = validate(obj, list[int])

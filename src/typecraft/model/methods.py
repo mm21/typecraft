@@ -82,14 +82,15 @@ type BoundTypeSerializersFuncType = BoundTypeConvertersFuncType[BaseTypeSerializ
 Annotates a bound type-based serializer registration method.
 """
 
-type FieldConverterFuncType[
-    ModelT: BaseModel, ConversionInfoT: BaseConversionInfo
-] = Callable[[ModelT | type[ModelT], Any], Any] | Callable[
-    [ModelT | type[ModelT], Any, ConversionInfoT], Any
-]
+type FieldConverterFuncType[ModelT: BaseModel, ConversionInfoT: BaseConversionInfo] = (
+    Callable[[ModelT, Any], Any]
+    | Callable[[type[ModelT], Any], Any]
+    | Callable[[ModelT, Any, ConversionInfoT], Any]
+    | Callable[[type[ModelT], Any, ConversionInfoT], Any]
+)
 """
 Annotates a field converter (validator/serializer) method which has not been bound to an
-object.
+object: an instance method or classmethod, optionally taking conversion info.
 """
 
 type BoundFieldConverterFuncType[ConversionInfoT: BaseConversionInfo] = Callable[
@@ -490,7 +491,7 @@ def field_validator[FuncT: FieldValidatorFuncType](
         setattr(normalized_func, FIELD_VALIDATOR_ATTR, info)
         return cast(FuncT, func)
 
-    if isinstance(func_or_name, (Callable, classmethod)):
+    if callable(func_or_name) or isinstance(func_or_name, classmethod):
         assert len(names) == 0
         return register(func_or_name)
 
@@ -537,7 +538,7 @@ def field_serializer[FuncT: FieldSerializerFuncType](
         setattr(func, FIELD_SERIALIZER_ATTR, info)
         return func
 
-    if isinstance(func_or_name, Callable):
+    if callable(func_or_name):
         assert len(names) == 0
         return register(func_or_name)
 
@@ -554,4 +555,4 @@ def _normalize_attr[T](func: T | classmethod) -> T:
     """
     Normalize attribute to extract the raw function in case of classmethod.
     """
-    return func.__func__ if isinstance(func, classmethod) else func
+    return cast(T, func.__func__) if isinstance(func, classmethod) else func

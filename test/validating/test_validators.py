@@ -293,7 +293,7 @@ def test_registry():
     registry.register(int_to_str_validator)
 
     # use the registry
-    obj = "42"
+    obj: Any = "42"
 
     # str to int (not encompassing bool)
     validator = registry.find(obj, Annotation(str), Annotation(int))

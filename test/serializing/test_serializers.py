@@ -94,12 +94,12 @@ def test_nested_custom_serializer():
         "bob": {"name": "Bob", "age": 25},
     }
 
-    data = {
+    teams = {
         "team_a": [Person("Alice", 30), Person("Bob", 25)],
         "team_b": [Person("Charlie", 35)],
     }
 
-    result = serialize(data, PERSON_SERIALIZER)
+    result = serialize(teams, PERSON_SERIALIZER)
 
     assert result == {
         "team_a": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}],

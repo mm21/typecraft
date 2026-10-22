@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import NoneType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -33,7 +32,7 @@ __all__ = [
     "PlainSerializer",
 ]
 
-type JsonSerializableType = str | int | float | bool | NoneType | list[
+type JsonSerializableType = str | int | float | bool | None | list[
     JsonSerializableType
 ] | dict[str | int | float | bool, JsonSerializableType]
 """

@@ -252,7 +252,7 @@ class Annotation:
 
         # pad missing args in my_arg_annotations, assumed to be Any
         if len(my_args) < len(other_args):
-            my_args = list(my_args) + [ANY] * (len(other_args) - len(my_args))
+            my_args += (ANY,) * (len(other_args) - len(my_args))
 
         # recurse into args
         for my_arg, other_arg in zip(my_args, other_args):

@@ -148,7 +148,7 @@ class BaseModel:
 
         # swap out newly created init for wrapper
         cls.__dataclass_init = cls.__init__
-        cls.__init__ = cls.__init_wrapper
+        setattr(cls, "__init__", cls.__init_wrapper)
 
     def __setattr__(self, name: str, value: Any):
         field_info = self.__fields.get(name)
@@ -352,8 +352,9 @@ class BaseModel:
                     context=self.__validation_context,
                     path=(field_name,),
                 )
-                exc = ExtraFieldError()
-                self.__validation_errors.append(ConversionErrorDetail(Any, frame, exc))
+                self.__validation_errors.append(
+                    ConversionErrorDetail(Any, frame, ExtraFieldError())
+                )
 
         # raise errors if required fields not passed
         for f in missing_fields:
@@ -364,8 +365,9 @@ class BaseModel:
                 context=self.__validation_context,
                 path=(f.name,),
             )
-            exc = MissingFieldError()
-            self.__validation_errors.append(ConversionErrorDetail(Any, frame, exc))
+            self.__validation_errors.append(
+                ConversionErrorDetail(Any, frame, MissingFieldError())
+            )
 
         # raise any aggregated validation errors
         if errors := self.__validation_errors:
@@ -511,9 +513,9 @@ class BaseModel:
         for info in converter_infos:
             func = info.get_bound_func(self)
             if info.accepts_info:
-                info = conversion_info_cls(field_info, frame)
+                conversion_info = conversion_info_cls(field_info, frame)
                 func = cast(Callable[[object, InfoT], object], func)
-                processed_obj = func(processed_obj, info)
+                processed_obj = func(processed_obj, conversion_info)
             else:
                 func = cast(Callable[[object], object], func)
                 processed_obj = func(processed_obj)
