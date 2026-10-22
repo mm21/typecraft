@@ -1,7 +1,6 @@
 __cache__
 __out__
 __pycache__
-.claude
 .venv
 build
 dist

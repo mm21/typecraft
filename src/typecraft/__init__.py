@@ -2,40 +2,162 @@
 TypeCraft: Annotation-native toolkit for type inspection, validation, and data modeling
 """
 
-from .converting.serializer import SerializationParams
-from .converting.validator import ValidationParams
-from .exceptions import SerializationError, ValidationError
-from .inspecting.annotations import Annotation, is_instance, is_narrower
-from .model.base import BaseModel, ModelConfig
-from .model.fields import Field
-from .model.methods import (
-    field_serializer,
-    field_validator,
-    type_serializers,
+__submodules__ = [
+    "model",
+    "validating",
+    "serializing",
+    "exceptions",
+    "inspecting",
+    "adapter",
+    "types",
+    "lib",
+]
+
+# isort: off
+# <AUTOGEN_INIT>
+from .model import (
+    ModelConfig,
+    BaseModel,
+    Field,
+    FieldMetadata,
+    FieldInfo,
+    TypeValidatorsFuncType,
+    TypeSerializersFuncType,
+    FieldValidatorFuncType,
+    FieldSerializerFuncType,
     type_validators,
+    type_serializers,
+    field_validator,
+    field_serializer,
 )
-from .serializing import serialize
-from .validating import validate
+from .validating import (
+    FuncValidatorType,
+    ValidationParams,
+    ValidationFrame,
+    BaseTypeValidator,
+    BaseGenericTypeValidator,
+    TypeValidator,
+    TypeValidatorRegistry,
+    PlainValidator,
+    PredicateValidator,
+    validate,
+    normalize_to_list,
+)
+from .serializing import (
+    JsonSerializableType,
+    FuncSerializerType,
+    SerializationParams,
+    SerializationFrame,
+    BaseTypeSerializer,
+    BaseGenericTypeSerializer,
+    TypeSerializer,
+    TypeSerializerRegistry,
+    PlainSerializer,
+    serialize,
+)
+from .exceptions import (
+    ConversionErrorDetail,
+    ValidationError,
+    SerializationError,
+    ExtraFieldError,
+    MissingFieldError,
+    PredicateError,
+)
+from .inspecting import (
+    ANY,
+    Annotation,
+    is_narrower,
+    is_instance,
+    is_union,
+    unwrap_alias,
+    split_annotated,
+    normalize_annotation,
+    flatten_union,
+    get_concrete_type,
+    ParameterInfo,
+    SignatureInfo,
+    extract_args,
+    extract_arg_map,
+    extract_arg,
+    normalize_args,
+    robust_issubclass,
+)
+from .adapter import (
+    Adapter,
+)
+from .types import (
+    ModeType,
+    DataclassProtocol,
+)
+from .lib import (
+    IntValidator,
+    StrValidator,
+    EmailValidator,
+)
 
 __all__ = [
-    # model
-    "BaseModel",
     "ModelConfig",
+    "BaseModel",
     "Field",
-    "field_validator",
-    "field_serializer",
+    "FieldMetadata",
+    "FieldInfo",
+    "TypeValidatorsFuncType",
+    "TypeSerializersFuncType",
+    "FieldValidatorFuncType",
+    "FieldSerializerFuncType",
     "type_validators",
     "type_serializers",
-    # core operations
-    "validate",
+    "field_validator",
+    "field_serializer",
+    "FuncValidatorType",
     "ValidationParams",
-    "serialize",
+    "ValidationFrame",
+    "BaseTypeValidator",
+    "BaseGenericTypeValidator",
+    "TypeValidator",
+    "TypeValidatorRegistry",
+    "PlainValidator",
+    "PredicateValidator",
+    "validate",
+    "normalize_to_list",
+    "JsonSerializableType",
+    "FuncSerializerType",
     "SerializationParams",
-    # exceptions
+    "SerializationFrame",
+    "BaseTypeSerializer",
+    "BaseGenericTypeSerializer",
+    "TypeSerializer",
+    "TypeSerializerRegistry",
+    "PlainSerializer",
+    "serialize",
+    "ConversionErrorDetail",
     "ValidationError",
     "SerializationError",
-    # annotation inspection
+    "ExtraFieldError",
+    "MissingFieldError",
+    "PredicateError",
+    "ANY",
     "Annotation",
-    "is_instance",
     "is_narrower",
+    "is_instance",
+    "is_union",
+    "unwrap_alias",
+    "split_annotated",
+    "normalize_annotation",
+    "flatten_union",
+    "get_concrete_type",
+    "ParameterInfo",
+    "SignatureInfo",
+    "extract_args",
+    "extract_arg_map",
+    "extract_arg",
+    "normalize_args",
+    "robust_issubclass",
+    "Adapter",
+    "ModeType",
+    "DataclassProtocol",
+    "IntValidator",
+    "StrValidator",
+    "EmailValidator",
 ]
+# </AUTOGEN_INIT>

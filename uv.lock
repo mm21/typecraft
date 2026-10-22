@@ -1,6 +1,10 @@
 version = 1
 revision = 3
-requires-python = ">=3.12, <3.15"
+requires-python = ">=3.12, <4.0"
+resolution-markers = [
+    "python_full_version >= '3.15'",
+    "python_full_version < '3.15'",
+]
 
 [[package]]
 name = "argcomplete"
@@ -304,11 +308,11 @@ wheels = [
 
 [[package]]
 name = "docfmt"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/17/ef/d717f937eda3a7c66b83d7981bc2f40523007d62785357792fb2a8b715c9/docfmt-0.2.0.tar.gz", hash = "sha256:471be7cb7263e0e31e8c0816136404b220b7b473df1ca347618595e21bc13a7a", size = 16663, upload-time = "2026-07-26T06:02:32.102Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/50/6c4a492d207d6197dcdc8fe6c0e163db1d692431f148fae6b38ff7056694/docfmt-0.3.0.tar.gz", hash = "sha256:47319bbff54dd4fcbf5a365eadecdc50053c8f1c90c32e4bd0d2f65a5c145cc6", size = 16604, upload-time = "2026-10-16T19:32:03.181Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/92/fd996fedc177a74a5e9f865c7a340d9d455c1631cd850b3746035b8e6b57/docfmt-0.2.0-py3-none-any.whl", hash = "sha256:d6f0ecb524cbefdf273baef086f2a5f7f928116ed1f8373cd40d8e46c320e9f2", size = 21210, upload-time = "2026-07-26T06:02:30.91Z" },
+    { url = "https://files.pythonhosted.org/packages/74/0c/6e6a514bafbf2ddff54d02b4b9534f3ea2e700926b7495a977d55eb6aae3/docfmt-0.3.0-py3-none-any.whl", hash = "sha256:873306120d5869d9f1cd85c2e426b8ff9cd9c3987e00a4698391744dd928c44a", size = 21208, upload-time = "2026-10-16T19:32:02.202Z" },
 ]
 
 [[package]]
@@ -548,14 +552,14 @@ wheels = [
 
 [[package]]
 name = "mkinit"
-version = "1.2.0"
+version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ubelt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/77/f7/a1bf60ea227c983f8b705ba41fa8db7c2949ca04239f227d5fd62a404cdf/mkinit-1.2.0.tar.gz", hash = "sha256:4b776ca991ccedbb202b079bd3e573d753121baa2a4f330324247325c9a1d346", size = 76556, upload-time = "2025-12-02T16:22:03.556Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/3e/160ef650c13c5cbc444143ca6869d7e06bc608eedb693f34dd5cc238ea98/mkinit-1.3.0.tar.gz", hash = "sha256:e6c7cc96ba20ddf80dc646744ef576aa1377541cc9fee0c131bdabff05f9ef0a", size = 70753, upload-time = "2026-10-21T21:14:02.283Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/c1/5cac576344167d1a21dc569d39e4aa230626a5a457d4f0ea514f27caa124/mkinit-1.2.0-py3-none-any.whl", hash = "sha256:172755988cdcdc5212d0b76b586ec4765c2bff9ae41266a93f5f4b962c3d2def", size = 70919, upload-time = "2025-12-02T16:22:00.967Z" },
+    { url = "https://files.pythonhosted.org/packages/05/60/54e5cfe33db8706668892a2bb75d072037bde6389fac250d96c16fe831fc/mkinit-1.3.0-py3-none-any.whl", hash = "sha256:c71480d10d5deb07ca917eac2d970c7e64b39ce47ce7271b7952a0ae8eed504b", size = 63995, upload-time = "2026-10-21T21:14:00.769Z" },
 ]
 
 [[package]]
@@ -767,7 +771,7 @@ wheels = [
 
 [[package]]
 name = "pyprojkit"
-version = "0.3.1"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "doit" },
@@ -776,9 +780,9 @@ dependencies = [
     { name = "toml-sort" },
     { name = "tomlkit" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/1b/971dcd37d726fd590e3cf60884246a2813bc81f40191a32b09b3fb930ad3/pyprojkit-0.3.1.tar.gz", hash = "sha256:a97f4ed3e7288a167bf00890673cbfb6b8a18579864d8e875fdcc2d9b6377954", size = 18872, upload-time = "2026-07-31T06:02:51.769Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/1c/0fc40797cc04c713a38e800fd97370a44b14494b6d4ab89f20e8c1a9bf33/pyprojkit-0.6.0.tar.gz", hash = "sha256:f6bf327ee225b41ffc07dba83ff1791d0d208f99d1a306e0f2c9e9062e9d0360", size = 29308, upload-time = "2026-10-22T08:21:50.385Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/9d/ddd158d868ed5e9ca4fa640e987e2c9238ece794368c96a45fad39ffc4ee/pyprojkit-0.3.1-py3-none-any.whl", hash = "sha256:5784b7152af7cb3aad796333be166ddc0f38ed99a3b8a700e32f88680bb77358", size = 24972, upload-time = "2026-07-31T06:02:50.635Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/d3/43ff3199e22ec4bdda321569d1ff7e535851c52737dd5ef4021217ad7056/pyprojkit-0.6.0-py3-none-any.whl", hash = "sha256:c18ef556f332d41081692e2dae5215dce46e8a8db3d431bec9359756b42a747e", size = 36199, upload-time = "2026-10-22T08:21:49.273Z" },
 ]
 
 [package.optional-dependencies]
@@ -954,7 +958,7 @@ requires-dist = [{ name = "tomlkit", marker = "extra == 'toml'", specifier = ">=
 provides-extras = ["toml"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pyprojkit", extras = ["all"], specifier = ">=0.3.1,<0.4.0" }]
+dev = [{ name = "pyprojkit", extras = ["all"], specifier = ">=0.6.0,<0.7.0" }]
 
 [[package]]
 name = "typing-extensions"
