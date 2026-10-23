@@ -14,7 +14,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",  # pyprojkit-managed
   "Programming Language :: Python :: Implementation :: CPython",
   "Topic :: Software Development :: Libraries :: Python Modules",
-  "Typing :: Typed"
+  "Typing :: Typed"  # pyprojkit-managed
 ]
 description = "Annotation-native toolkit for type inspection, validation, and data modeling"
 license = "MIT"
@@ -32,7 +32,7 @@ homepage = "https://github.com/mm21/typecraft"
 
 [dependency-groups]
 dev = [
-  "pyprojkit[all]>=0.7.0,<0.8.0"
+  "pyprojkit[all]>=0.8.1,<0.9.0"
 ]
 
 [build-system]
@@ -90,7 +90,7 @@ pythonVersion = "3.12"  # pyprojkit-managed
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib -s -v -rA"  # pyprojkit-managed
 cache_dir = "__cache__/pytest"  # pyprojkit-managed
-testpaths = "test"  # pyprojkit-managed
+testpaths = ["test"]  # pyprojkit-managed
 
 [tool.tomlsort]
 sort_first = [
